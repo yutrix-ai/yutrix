@@ -1,12 +1,12 @@
-# PromptGate
+# Yutrix（驭算）
 
 <p align="center">
-  <img src="./apps/web/public/favicon.svg" width="120" alt="PromptGate Logo" />
+  <img src="./apps/web/public/favicon.svg" width="120" alt="Yutrix Logo" />
 </p>
 
 [English README](./README.md)
 
-PromptGate 是一个轻量级 LLM 协议网关与管理控制台，用于在自有域名下统一管理 API Key、供应商、路由、提示词策略、并发控制、降级转发、Token 统计与实时日志。
+Yutrix（驭算，前身为 PromptGate）是一个轻量级 LLM 协议网关与管理控制台，用于在自有域名下统一管理 API Key、供应商、路由、提示词策略、并发控制、降级转发、Token 统计与实时日志。
 
 PromptGate 专注于 LLM 协议网关本身：统一入口、统一鉴权、统一路由、统一日志和统一降级，而不是试图重新发明一个完整的模型平台。
 
@@ -563,7 +563,7 @@ docker logs -f promptgate
 
 ```bash
 git clone https://github.com/yutrix-ai/yutrix.git
-cd PromptGate
+cd yutrix
 ```
 
 #### 2. 安装依赖

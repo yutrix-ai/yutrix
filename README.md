@@ -1,10 +1,12 @@
-# PromptGate
+# Yutrix（驭算）
+
+> Formerly **PromptGate**. Open-source Community edition for cost control, routing, and audit.
 
 <p align="center">
-  <img src="./apps/web/public/favicon.svg" width="120" alt="PromptGate Logo" />
+  <img src="./apps/web/public/favicon.svg" width="120" alt="Yutrix Logo" />
 </p>
 
-**A lightweight LLM protocol gateway and admin console for OpenAI-compatible and Anthropic-style APIs.**
+**Yutrix (formerly PromptGate) is a lightweight LLM protocol gateway and admin console for OpenAI-compatible and Anthropic-style APIs.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.16-339933.svg)](./package.json)
@@ -41,7 +43,7 @@ Provider exits -> final upstream protocol
 modelId        -> the string written into the request body
 ```
 
-## Why PromptGate?
+## Why Yutrix?
 
 LLM applications often start with a simple proxy and quickly run into operational needs:
 
@@ -356,7 +358,7 @@ First startup prints admin username, password, and invite code.
 
 ```bash
 git clone https://github.com/yutrix-ai/yutrix.git
-cd PromptGate
+cd yutrix
 pnpm install
 ```
 
