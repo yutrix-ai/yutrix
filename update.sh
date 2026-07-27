@@ -4,7 +4,7 @@
 set -e
 
 echo "====================================="
-echo "  PromptGate Auto Update Script"
+echo "  Yutrix Auto Update Script"
 echo "====================================="
 
 echo "[1/4] Fetching latest code from git..."

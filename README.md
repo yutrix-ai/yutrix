@@ -15,12 +15,12 @@
 
 [中文文档 / Chinese documentation](./README.zh-CN.md) | [Caddy deployment guide](./docs/deployment-caddy.md)
 
-PromptGate focuses on the gateway layer of LLM applications: one entry point, one authentication layer, one routing system, one logging surface, and one fallback path. It is not trying to reinvent a full model platform.
+Yutrix focuses on the gateway layer of LLM applications: one entry point, one authentication layer, one routing system, one logging surface, and one fallback path. It is not trying to reinvent a full model platform.
 
 It gives you a deployable control plane for:
 
 - routing requests by `Host`, path, and protocol;
-- validating PromptGate API keys;
+- validating Yutrix API keys;
 - replacing upstream provider API keys;
 - rewriting the request `model` field from route configuration;
 - forwarding OpenAI-compatible and Anthropic-style requests;
@@ -33,7 +33,7 @@ It gives you a deployable control plane for:
 - returning a configurable model discovery list via `/v1/models` for third-party client compatibility;
 - failing over when an upstream is rate-limited, overloaded, or unavailable.
 
-PromptGate is a **protocol gateway**, not a model-type gateway.
+Yutrix is a **protocol gateway**, not a model-type gateway.
 
 ```text
 API Key        -> user identity
@@ -57,11 +57,11 @@ LLM applications often start with a simple proxy and quickly run into operationa
 - request logs that are readable by humans;
 - a UI for configuration instead of hand-editing runtime files.
 
-PromptGate keeps the small-proxy mental model, but turns it into a configurable, observable, and production-deployable gateway.
+Yutrix keeps the small-proxy mental model, but turns it into a configurable, observable, and production-deployable gateway.
 
 ### Logo Philosophy
 
-The PromptGate logo features a modern arch or gateway with a central glowing code spark. This symbolizes a powerful, secure, and intelligent portal for LLM prompts, with the blue gradient conveying technology, depth, and reliability.
+The Yutrix logo features a modern arch or gateway with a central glowing code spark. This symbolizes a powerful, secure, and intelligent portal for LLM prompts, with the blue gradient conveying technology, depth, and reliability.
 
 ## Features
 
@@ -71,8 +71,8 @@ The PromptGate logo features a modern arch or gateway with a central glowing cod
 - **Provider Model Aliases**: Models can now be assigned a display alias. This alias gracefully appears in the Admin UI, LLM Audit Logs, and automated DingTalk usage reports, while the gateway continues to use the actual model ID (e.g., `gpt-4o`) for strict protocol adherence with upstreams.
 - **Model Discovery List**: The `/v1/models` endpoint now returns a fully configurable model list that is **completely independent** of the system's actual provider models. This ensures maximum compatibility with third-party clients (Claude Desktop, opencode, Codex CLI, etc.) by advertising well-known official model IDs. Admins configure separate OpenAI and Anthropic model lists via a dialog in the Routes page. Enabled by default with sensible defaults (`gpt-4.1`, `o3`, `claude-opus-4-20250918`, etc.).
 - **Continuation-Aware Model Locking**: Strategy Routing now distinguishes real user input from tool results, system-reminders, and auto-continuations. The model is decided once on each genuine user message (text or image upload) and stays locked until the next user message arrives — no mid-task model switching during tool-call loops, agentic workflows, or background requests.
-- **User / Group Input Token Limits**: Admins can now configure a default maximum input token limit on user groups and override it per user. `0` means unlimited. When a request exceeds the effective limit, PromptGate applies a conservative sliding-window truncation strategy before calling the upstream model, preserving system/developer messages and recent tool-call context whenever possible.
-- **Strategy Routing**: Routes can now use deterministic task-type routing instead of LLM-driven handoff. PromptGate classifies the current user input locally into `vision`, `debug`, `code`, `long_context`, `writing`, or `general`, then forwards the request to the model configured for that task type with no extra LLM call, cache lookup, or preflight delay.
+- **User / Group Input Token Limits**: Admins can now configure a default maximum input token limit on user groups and override it per user. `0` means unlimited. When a request exceeds the effective limit, Yutrix applies a conservative sliding-window truncation strategy before calling the upstream model, preserving system/developer messages and recent tool-call context whenever possible.
+- **Strategy Routing**: Routes can now use deterministic task-type routing instead of LLM-driven handoff. Yutrix classifies the current user input locally into `vision`, `debug`, `code`, `long_context`, `writing`, or `general`, then forwards the request to the model configured for that task type with no extra LLM call, cache lookup, or preflight delay.
 - **Route Scheduling (路由计划)**: Allows administrators to configure recurring weekly time-based overrides for route configurations. During active periods, the gateway automatically switches to scheduled models, fallback providers, and Best Effort options. The interface automatically calculates next-day cross-midnight indicators and includes a detailed tooltipped instruction manual.
 - **AI Client Detection**: Automatically identifies the AI coding client (e.g., Claude Code, Cursor, OpenCode, Xcode, Augment Code) via heuristic analysis of request headers, paths, and prompt signatures. Detected clients are displayed as color-coded brand badges in the Audit Logs UI. Legacy data or unrecognized clients gracefully degrade by showing no badge.
 - **Response Cache** — A response caching mechanism that lets administrators pin specific user inputs to pre-defined responses:
@@ -83,7 +83,7 @@ The PromptGate logo features a modern arch or gateway with a central glowing cod
   - Cached responses are marked with a "Cache Hit" badge in audit logs and follow the normal session merging behavior
 - **System Information & Database Management**: Added a comprehensive system information panel to the Settings page, displaying application, memory, and host machine details. Also introduced the ability to view SQLite database file information and download backups directly from the admin console.
 - **Audit Logs UI Redesign & Markdown Support**: Redesigned the LLM Audit Logs interface with a new interactive minimap, persistent auto-scroll toggles, and lightweight markdown rendering for assistant outputs, making it much easier to review long conversations.
-- **Thinking Models Compatibility**: Added gateway-level support for OpenAI-compatible "Thinking" models (e.g., DeepSeek-R1, Qwen). PromptGate now automatically strips `reasoning_content` from both stream and non-stream responses before sending them to the client, preventing naive LLM clients from crashing while still preserving the content for internal audit logs.
+- **Thinking Models Compatibility**: Added gateway-level support for OpenAI-compatible "Thinking" models (e.g., DeepSeek-R1, Qwen). Yutrix now automatically strips `reasoning_content` from both stream and non-stream responses before sending them to the client, preventing naive LLM clients from crashing while still preserving the content for internal audit logs.
 - **LLM Audit Logs & Smart Session Merging**: Intelligently merges multi-turn and tool-call loops (e.g., from Claude Code, Cursor, Augment Code) into cohesive sessions using a robust 4-priority fallback system. Also includes an **Audit Exemption** feature to completely bypass logging for specific privileged users.
 - **Admin UI & Sidebar Improvements**: Refactored the admin sidebar with persistent expanded states, logical grouping, and a new quick access section for the Dashboard.
 - **User Groups & Route Authorization**: Added user group management with a default group. Routes can now be authorized for specific users and groups, with automatic backward-compatible migration for existing deployments.
@@ -123,7 +123,7 @@ The model name itself does not decide the protocol. The route protocol and provi
 
 ### API key management
 
-PromptGate API keys identify users of the gateway.
+Yutrix API keys identify users of the gateway.
 
 - Full keys are shown only once when created.
 - The database stores key hashes and prefixes, not raw keys.
@@ -132,7 +132,7 @@ PromptGate API keys identify users of the gateway.
 
 ### User Groups and Route Authorization
 
-PromptGate supports granular route access control through user groups:
+Yutrix supports granular route access control through user groups:
 
 - **Default Group**: Automatically created on first startup. All existing users and routes are automatically assigned to it for backward compatibility.
 - **Custom Groups**: Admins can create additional groups, assign users to multiple groups, and remove members from any group, including the default group.
@@ -144,13 +144,13 @@ This system enables fine-grained access control while maintaining simplicity: mo
 
 ### Input Token Limits and Truncation
 
-PromptGate can enforce maximum input token limits before a request is sent upstream:
+Yutrix can enforce maximum input token limits before a request is sent upstream:
 
 - **Group default**: Each user group can define `maxInputTokens`. New and existing members inherit it unless they have a user-level override.
 - **User override**: Admins can set `maxInputTokensOverride` for a specific user. A non-null user override always wins over group limits.
 - **Unlimited value**: `0` means unlimited. A user override of `0` explicitly disables the inherited group limit for that user.
-- **Multiple groups**: If a user belongs to multiple groups and has no override, PromptGate applies the strictest positive group limit. If every group limit is `0`, the user is unlimited.
-- **Request handling**: If the effective limit is exceeded, PromptGate drops older conversation turns first. If the latest turn alone is too large, it truncates the largest text block with a head-and-tail strategy.
+- **Multiple groups**: If a user belongs to multiple groups and has no override, Yutrix applies the strictest positive group limit. If every group limit is `0`, the user is unlimited.
+- **Request handling**: If the effective limit is exceeded, Yutrix drops older conversation turns first. If the latest turn alone is too large, it truncates the largest text block with a head-and-tail strategy.
 - **Protected context**: System/developer messages, body-level system instructions, tools/functions, and recent tool-call/tool-result chains are preserved as much as possible. If fixed system/tool content already exceeds the budget, the request is rejected with a structured gateway error.
 - **Counting strategy**: OpenAI-family estimates use `tiktoken-node` when compatible and `tiktoken` for newer `o200k_base` models such as GPT-4o/GPT-5/o-series. Non-OpenAI models use configured tokenizer repositories when available and fall back to conservative heuristics. Final usage logs still prefer upstream `usage` payloads when providers return them.
 
@@ -167,11 +167,11 @@ Each provider can define:
 
 ### Prompt policies
 
-PromptGate supports configurable prompt injection policies for OpenAI-compatible and Anthropic-style request shapes. This is useful for organization-wide system prompts, Claude Code policies, safety constraints, and role presets.
+Yutrix supports configurable prompt injection policies for OpenAI-compatible and Anthropic-style request shapes. This is useful for organization-wide system prompts, Claude Code policies, safety constraints, and role presets.
 
 ### Concurrency, queueing, and fallback
 
-PromptGate supports layered concurrency limits:
+Yutrix supports layered concurrency limits:
 
 ```text
 global concurrency
@@ -220,17 +220,17 @@ The classifier runs locally in the gateway. It extracts the current user input t
 
 For continuation requests (tool results, system-reminders, auto-generated titles, etc.), the gateway looks up the model used in the previous turn via the session matching engine and inherits it. If no previous model is found, the current model is kept as-is.
 
-If a matched strategy model is no longer enabled or available, PromptGate safely keeps the request on the route's current target model. Route schedules still cover time-based target and fallback overrides. Strategy Routing runs inside the normal queueing, fallback, protocol adaptation, token accounting, action log, and audit log pipeline.
+If a matched strategy model is no longer enabled or available, Yutrix safely keeps the request on the route's current target model. Route schedules still cover time-based target and fallback overrides. Strategy Routing runs inside the normal queueing, fallback, protocol adaptation, token accounting, action log, and audit log pipeline.
 
 #### Long Context Override Safety Net
 
-PromptGate implements a robust, first-principles safety net for context window limits. If the requested target model has a configured `maxOutputTokens` (which doubles as the physical context ceiling for dynamic-output models like Kimi) and the incoming request (plus any injected prompt policies) exceeds this limit, the gateway intercepts the request *before* hitting the upstream API. 
+Yutrix implements a robust, first-principles safety net for context window limits. If the requested target model has a configured `maxOutputTokens` (which doubles as the physical context ceiling for dynamic-output models like Kimi) and the incoming request (plus any injected prompt policies) exceeds this limit, the gateway intercepts the request *before* hitting the upstream API. 
 
 It will automatically override the decision and seamlessly route the massive request to the `long_context` task model (e.g., `qwen3.7-plus`), preventing a guaranteed `400 Bad Request` context length exceeded error while preserving upstream API key cursors and fallback strategies. This operates orthogonally to the Response Continuity Engine, meaning extreme continuation requests that breach the original model's capacity are smoothly handed off to the long-context model for completion.
 
 ### Smart Session Merging
 
-PromptGate features an advanced heuristic engine to logically group disparate API requests into cohesive, human-readable sessions. If a client does not send an explicit `X-Server-Session-Id` header, PromptGate determines the correct session through an ordered cascade. Strong deterministic signals are checked first; weaker heuristics run only if every earlier layer misses:
+Yutrix features an advanced heuristic engine to logically group disparate API requests into cohesive, human-readable sessions. If a client does not send an explicit `X-Server-Session-Id` header, Yutrix determines the correct session through an ordered cascade. Strong deterministic signals are checked first; weaker heuristics run only if every earlier layer misses:
 
 0. **Client Session ID**: Matches `X-Client-Session-Id`, `X-Conversation-Id`, or `X-Session-Id` when clients provide one.
 1. **Previous Assistant Hash**: Matches the exact cryptographic hash of the assistant's previous response, handling truncation and stripping of reasoning tokens. Best for tools that send full conversation histories (e.g., standard API clients, basic Web UIs).
@@ -243,7 +243,7 @@ PromptGate features an advanced heuristic engine to logically group disparate AP
 
 ### Token Usage Quality Score (TUQS 2.0)
 
-PromptGate evaluates developer prompt proficiency without accessing user business code, by relying purely on physical gateway telemetry. The score is calculated based on 5 core metrics:
+Yutrix evaluates developer prompt proficiency without accessing user business code, by relying purely on physical gateway telemetry. The score is calculated based on 5 core metrics:
 
 1. **Context Spike Rate**: Detects when `promptTokens[n] > promptTokens[n-1] * 5` within the same `sessionTitle`, and `completionTokens[n]` is very short (< 200). A high rate indicates the user is blindly dumping huge, unoptimized text. (Lower is better)
 2. **Stream Abort Rate**: The ratio of aborted requests to total requests (`Aborted Requests / Total Requests`), determined by `isAborted = true` when the client disconnects before the stream naturally ends. A high rate indicates poor prompt intent control. (Lower is better)
@@ -285,11 +285,11 @@ Typical production deployment:
 ```text
 Internet
   -> HTTPS / Caddy
-  -> PromptGate on 127.0.0.1:3001
+  -> Yutrix on 127.0.0.1:3001
   -> upstream LLM providers
 ```
 
-PromptGate is a single service:
+Yutrix is a single service:
 
 - admin web console;
 - admin API;
@@ -300,10 +300,10 @@ PromptGate is a single service:
 Recommended:
 
 - let Caddy terminate HTTPS;
-- keep PromptGate bound to `127.0.0.1`;
+- keep Yutrix bound to `127.0.0.1`;
 - preserve the original `Host` header;
-- do not expose the PromptGate port directly to the public internet;
-- run the service as a non-root user (e.g., `promptgate`).
+- do not expose the Yutrix port directly to the public internet;
+- run the service as a non-root user (e.g., `yutrix`).
 
 ## Quick Start
 
@@ -318,8 +318,10 @@ mkdir -p /opt/promptgate/data
 ```
 
 ```bash
+# Preferred container name for new deploys: yutrix (legacy name `promptgate` still fine).
+# Keep the volume at /opt/promptgate/data for compatibility with existing data.
 docker run -d \
-  --name promptgate \
+  --name yutrix \
   --restart unless-stopped \
   -p 3000:3000 \
   -v /opt/promptgate/data:/app/data \
@@ -334,7 +336,7 @@ docker run -d \
 ```
 
 ```bash
-docker logs -f promptgate
+docker logs -f yutrix
 ```
 
 First startup prints admin username, password, and invite code.
@@ -383,7 +385,7 @@ pm2 start ecosystem.config.cjs --update-env
 pm2 logs promptgate-server
 ```
 
-On first startup, PromptGate initializes the SQLite database and prints:
+On first startup, Yutrix initializes the SQLite database and prints:
 
 - the initial admin username;
 - the initial admin password;
@@ -406,8 +408,8 @@ For Docker deployments, pull the new image and recreate the container while keep
 
 ```bash
 docker pull ghcr.io/yutrix-ai/yutrix:latest
-docker stop promptgate
-docker rm promptgate
+docker stop yutrix
+docker rm yutrix
 # run the same docker run command as above, with the same /app/data volume
 ```
 
@@ -446,11 +448,11 @@ curl https://code.example.com/v1/messages \
   }'
 ```
 
-The public hostname is part of routing. If you call PromptGate through a shared domain or local proxy, preserve or override the `Host` header accordingly.
+The public hostname is part of routing. If you call Yutrix through a shared domain or local proxy, preserve or override the `Host` header accordingly.
 
 ## Reverse Proxy (SSE Optimization)
 
-When exposing PromptGate to the internet, it is highly recommended to disable proxy buffering for the API endpoints (`/v1/*`, `/v0/*`) to ensure Server-Sent Events (SSE) and streaming responses are instantly delivered to clients without being delayed by compression or proxy buffers. This prevents `499 Client Closed Request` timeouts caused by large LLMs taking a long time to think.
+When exposing Yutrix to the internet, it is highly recommended to disable proxy buffering for the API endpoints (`/v1/*`, `/v0/*`) to ensure Server-Sent Events (SSE) and streaming responses are instantly delivered to clients without being delayed by compression or proxy buffers. This prevents `499 Client Closed Request` timeouts caused by large LLMs taking a long time to think.
 
 ### Caddy Recommended Configuration
 
@@ -534,7 +536,7 @@ Important environment variables:
 
 ### Database Backup Security Configuration
 
-For security compliance and to enforce **Separation of Duties (SoD)**, PromptGate decouples application administration from raw database custody:
+For security compliance and to enforce **Separation of Duties (SoD)**, Yutrix decouples application administration from raw database custody:
 * By default, database backup downloading is **disabled** (the download button and input field are hidden, and API calls return `403 Forbidden`).
 * To enable this feature, define the `DB_BACKUP_PASSWORD` environment variable (or configure it in your `.env` file).
 * Once configured, administrators must enter the correct verification password in the console UI to activate and download the SQLite backup file.
@@ -542,7 +544,7 @@ For security compliance and to enforce **Separation of Duties (SoD)**, PromptGat
 ## Project Structure
 
 ```text
-PromptGate/
+Yutrix/
 ├── apps/
 │   ├── server/          # Fastify backend, gateway, admin APIs, SSE logs
 │   └── web/             # React + Vite admin console
@@ -599,6 +601,6 @@ Please keep changes focused and include enough context in your PR for maintainer
 
 ## License
 
-PromptGate is released under the [MIT License](./LICENSE).
+Yutrix is released under the [MIT License](./LICENSE).
 
 Copyright (c) 2026 Tom Wu.

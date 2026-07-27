@@ -2,14 +2,14 @@
 
 # A simple script to verify deployment environment before starting the service
 
-echo "=== PromptGate Environment Check ==="
+echo "=== Yutrix Environment Check ==="
 
 # 1. Check Node
 if command -v node >/dev/null 2>&1; then
   NODE_VER=$(node -v)
   NODE_MAJOR=$(echo "$NODE_VER" | cut -d 'v' -f2 | cut -d '.' -f1)
   if [ "$NODE_MAJOR" -lt 24 ]; then
-    echo "[WARN] 警告：当前 Node.js 版本 ($NODE_VER) 低于推荐版本。PromptGate 生产环境推荐 Node.js 24.16.x LTS。"
+    echo "[WARN] 警告：当前 Node.js 版本 ($NODE_VER) 低于推荐版本。Yutrix 生产环境推荐 Node.js 24.16.x LTS。"
   else
     echo "[OK] node is installed: $NODE_VER"
   fi

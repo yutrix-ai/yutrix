@@ -8,11 +8,11 @@
 
 Yutrix（驭算，前身为 PromptGate）是一个轻量级 LLM 协议网关与管理控制台，用于在自有域名下统一管理 API Key、供应商、路由、提示词策略、并发控制、降级转发、Token 统计与实时日志。
 
-PromptGate 专注于 LLM 协议网关本身：统一入口、统一鉴权、统一路由、统一日志和统一降级，而不是试图重新发明一个完整的模型平台。
+Yutrix 专注于 LLM 协议网关本身：统一入口、统一鉴权、统一路由、统一日志和统一降级，而不是试图重新发明一个完整的模型平台。
 
 - 根据 Host / 二级域名分流；
 - 根据 Path 和协议识别 OpenAI / Anthropic 请求；
-- 校验 PromptGate API Key；
+- 校验 Yutrix API Key；
 - 替换上游供应商 API Key；
 - 改写请求中的 `model`；
 - 处理并发排队；
@@ -21,7 +21,7 @@ PromptGate 专注于 LLM 协议网关本身：统一入口、统一鉴权、统�
 - 记录 Token、耗时、用户、路由、供应商、模型等日志；
 - 在上游限流或主供应商并发满时，按规则切换到备用供应商。
 
-PromptGate 的核心抽象是：
+Yutrix 的核心抽象是：
 
 ```text
 API Key 代表用户身份
@@ -31,7 +31,7 @@ Path + 路由协议代表请求形态
 modelId 只是写入请求体的模型字符串
 ```
 
-也就是说，PromptGate 是 **协议网关**，不是“Anthropic 模型 / OpenAI 模型”的类型网关。
+也就是说，Yutrix 是 **协议网关**，不是“Anthropic 模型 / OpenAI 模型”的类型网关。
 
 ---
 
@@ -71,7 +71,7 @@ modelId 只是写入请求体的模型字符串
 
 ### Logo 设计理念
 
-PromptGate 的 Logo 采用了极具现代感的拱门（Gate）造型，中央悬浮着一颗发光的代码火花（Prompt）。这象征着它作为一个强大、安全、智能的 LLM 提示词网关（Portal）。标志性的青蓝色渐变色调传达出科技感、深度与可靠性。
+Yutrix 的 Logo 采用了极具现代感的拱门（Gate）造型，中央悬浮着一颗发光的代码火花（Prompt）。这象征着它作为一个强大、安全、智能的 LLM 提示词网关（Portal）。标志性的青蓝色渐变色调传达出科技感、深度与可靠性。
 
 ## 最近更新 (Recent Updates)
 
@@ -79,7 +79,7 @@ PromptGate 的 Logo 采用了极具现代感的拱门（Gate）造型，中央�
 - **尽力而为模型匹配 (Best Effort Matching)**：为降级目标引入了全新的“尽力而为”模式。现在不再需要将降级死锁在一个固定模型上，网关会在触发降级时智能扫描目标供应商，尝试寻找与原请求同名的模型，在跨供应商切换时最大程度保留用户的原始模型意图。
 - **提供商模型别名 (Model Aliases)**：现在可以为模型配置易读的显示别名。该别名将优雅地展示在管理后台、LLM 审计日志以及自动化的钉钉使用报告中，同时网关仍会严格按照其实际的模型 ID（如 `gpt-4o`）向上游发起请求，兼顾可读性与协议严谨性。
 - **模型发现列表 (Model Discovery List)**：`/v1/models` 端点现在返回**完全可配置**的模型列表，与系统实际配置的供应商模型**完全脱钩**。这确保了第三方客户端（Claude Desktop、opencode、Codex CLI 等）连接网关时能够自动发现并使用标准的官方模型 ID，获得最佳兼容性。管理员可在路由页面通过弹窗分别配置 OpenAI 和 Anthropic 协议的模型列表。默认启用，预置了常用模型（`gpt-4.1`、`o3`、`claude-opus-4-20250918` 等）。
-- **用户/用户组输入 Token 限制**：管理员可以在用户组上配置默认最大输入 Token，也可以为单个用户设置覆盖值。`0` 表示不限制。实际 LLM 请求超过有效阈值时，PromptGate 会在上游调用前执行保守的滑动窗口截断，优先保留 system/developer 消息、最新对话轮次和工具调用链上下文。
+- **用户/用户组输入 Token 限制**：管理员可以在用户组上配置默认最大输入 Token，也可以为单个用户设置覆盖值。`0` 表示不限制。实际 LLM 请求超过有效阈值时，Yutrix 会在上游调用前执行保守的滑动窗口截断，优先保留 system/developer 消息、最新对话轮次和工具调用链上下文。
 - **续接感知模型锁定 (Continuation-Aware Model Locking)**：策略路由现在能区分「真实用户输入」和「工具结果 / system-reminder / 自动继续」。模型仅在用户每次真实发消息（输入文字或上传图片）时决策一次，之后锁定不变，直到下一次用户输入再重新决策——工具调用循环、Agentic 工作流和后台请求期间不会发生模型切换。
 - **策略路由 (Strategy Routing)**：路由不再依赖 LLM 预判或模型交接，而是由网关本地按任务类型确定目标模型。系统会基于当前用户真实输入和是否携带图片，毫秒级归类为 `vision`、`debug`、`code`、`long_context`、`writing` 或 `general`，再转发到管理员为该任务配置的模型。没有额外 LLM 调用、没有语义缓存表、也没有 preflight 等待。
 - **路由周期计划 (Route Scheduling)**：支持为任何路由规则配置按周/按时段循环的计划覆盖。在设定的生效时段内，网关将自动选用定制的模型、降级通道和尽力而为（Best Effort）策略。交互端支持“全天/具体时段”双模式切换，去除了繁琐的手动配置，改由程序自动感应并展示跨零点“次日”标识，并内置可视化浮窗规则说明，极低上手认知成本。
@@ -92,7 +92,7 @@ PromptGate 的 Logo 采用了极具现代感的拱门（Gate）造型，中央�
   - 缓存命中的回复在审计日志中标记「缓存命中」徽章，并按正常策略合并会话
 - **系统信息与数据库管理**：在设置页面新增了全面的系统信息看板，可实时查看应用、内存及宿主机的详细运行状态。同时新增了 SQLite 数据库文件信息展示与备份下载功能。
 - **审计日志 UI 重构与 Markdown 支持**：全新设计的 LLM 审计日志界面，移除了中间栏，新增了交互式对话迷你地图（Minimap）、持久化自动滚动开关，并为 AI 回复添加了轻量级 Markdown 渲染，极大优化了长对话的阅读体验。
-- **Thinking 模型兼容性支持**：在网关层增加了对 OpenAI 兼容格式的“思考型”模型（如 DeepSeek-R1、Qwen）的支持。PromptGate 现会在将流式或非流式响应发送给客户端前，自动剥离 `reasoning_content` 字段，以防止旧版 LLM 客户端崩溃，同时在内部审计日志中完整保留该思考过程。
+- **Thinking 模型兼容性支持**：在网关层增加了对 OpenAI 兼容格式的“思考型”模型（如 DeepSeek-R1、Qwen）的支持。Yutrix 现会在将流式或非流式响应发送给客户端前，自动剥离 `reasoning_content` 字段，以防止旧版 LLM 客户端崩溃，同时在内部审计日志中完整保留该思考过程。
 - **LLM 审计日志与智能会话合并**：利用强大的四级降级策略系统，智能地将多轮对话和工具调用循环（例如来自 Claude Code, Cursor, Augment Code 等自动助手）合并为连贯的会话。同时新增了**免审计用户**功能，可为特定高权限用户完全豁免日志记录。
 - **后台 UI 与侧边栏优化**：重构了管理后台的侧边栏菜单分组，增加了状态持久化记忆功能，并新增了仪表盘（Dashboard）的快速访问入口。
 - **用户组与路由授权**：新增用户组管理功能，支持默认组和自定义组。路由可按用户和组进行授权访问，现有部署自动向下兼容迁移，并支持从默认组移除成员。
@@ -125,7 +125,7 @@ Path: /v1/messages
 
 ### 2. 协议网关，而不是模型类型网关
 
-PromptGate 的协议路由规则由：
+Yutrix 的协议路由规则由：
 
 ```text
 入口协议 + 供应商出口能力
@@ -152,7 +152,7 @@ PromptGate 的协议路由规则由：
 
 ### 3. API Key 自主管理
 
-用户创建自己的 PromptGate API Key。完整 Key 只在创建时显示一次，数据库只保存 hash 和前缀。
+用户创建自己的 Yutrix API Key。完整 Key 只在创建时显示一次，数据库只保存 hash 和前缀。
 
 管理员可以查看、审计和管理 Key 状态；普通用户只能查看和作废自己的 Key。
 
@@ -171,7 +171,7 @@ PromptGate 的协议路由规则由：
 
 ### 5. 并发控制
 
-PromptGate 支持多层并发控制：
+Yutrix 支持多层并发控制：
 
 ```text
 全局队列
@@ -232,13 +232,13 @@ API Key 队列
 
 #### 长上下文安全网 (Long Context Override Safety Net)
 
-PromptGate 针对上下文窗口限制实现了自动溢出路由。如果被分配到的目标模型配置了 `maxOutputTokens`（该值兼作物理上下文天花板），且网关估算到本次请求（加上即将注入的提示词策略）会超出此上限，网关会在把请求真正发给上游 API **之前**将其拦截，并自动将请求转交给为该路由配置的 `long_context` 任务模型。
+Yutrix 针对上下文窗口限制实现了自动溢出路由。如果被分配到的目标模型配置了 `maxOutputTokens`（该值兼作物理上下文天花板），且网关估算到本次请求（加上即将注入的提示词策略）会超出此上限，网关会在把请求真正发给上游 API **之前**将其拦截，并自动将请求转交给为该路由配置的 `long_context` 任务模型。
 
 该机制无论请求的任务类型如何（vision、code、debug、writing 等），都会生效。即使是 vision 类型请求，当所有 vision 模型容量不足时，也会回落到 Long Context 列寻找备用模型。并发降级后的请求同样适用此机制。
 
 ### 7. Token 处理流水线
 
-PromptGate 的 Token 处理分为两条独立的流水线，互不干扰：
+Yutrix 的 Token 处理分为两条独立的流水线，互不干扰：
 
 #### 输入 Token 流水线（控制 Prompt 长度）
 
@@ -278,7 +278,7 @@ PromptGate 的 Token 处理分为两条独立的流水线，互不干扰：
 
 ### 8. Anthropic → OpenAI-compatible 适配
 
-当入口是 Anthropic 协议，但供应商没有 Anthropic 出口、只有 OpenAI-compatible 出口时，PromptGate 可以执行非流式协议适配：
+当入口是 Anthropic 协议，但供应商没有 Anthropic 出口、只有 OpenAI-compatible 出口时，Yutrix 可以执行非流式协议适配：
 
 ```text
 Anthropic request
@@ -310,7 +310,7 @@ data/action.log
 
 ### 10. 智能会话合并
 
-PromptGate 搭载了先进的启发式引擎，可将离散的 API 请求逻辑分组为高连贯性、人类可读的会话（Session）。如果客户端未显式传递 `X-Server-Session-Id` 请求头，PromptGate 会按有序级联逐层筛查：强确定性信号优先，弱启发式只会在前面全部未命中时执行。
+Yutrix 搭载了先进的启发式引擎，可将离散的 API 请求逻辑分组为高连贯性、人类可读的会话（Session）。如果客户端未显式传递 `X-Server-Session-Id` 请求头，Yutrix 会按有序级联逐层筛查：强确定性信号优先，弱启发式只会在前面全部未命中时执行。
 
 0. **客户端会话 ID (Client Session ID)**：匹配客户端传入的 `X-Client-Session-Id`、`X-Conversation-Id` 或 `X-Session-Id`。
 1. **上一轮助理回复哈希 (Previous Assistant Hash)**：精确匹配 AI 助手上一轮回复内容的密码学哈希，自动处理内容截断和思考 token（Reasoning Tokens）剥离。最适合发送完整对话历史记录的工具（如标准 API 客户端或常规 Web UI）。
@@ -323,7 +323,7 @@ PromptGate 搭载了先进的启发式引擎，可将离散的 API 请求逻辑�
 
 ### 11. Token Usage Quality Score (TUQS 2.0)
 
-PromptGate 能够在不侵入用户业务代码的前提下，纯粹通过物理网关遥测数据来评估开发者的提示词质量。该评分基于 5 个核心指标计算：
+Yutrix 能够在不侵入用户业务代码的前提下，纯粹通过物理网关遥测数据来评估开发者的提示词质量。该评分基于 5 个核心指标计算：
 
 1. **上下文激增率 (Context Spike Rate)**：在同一个 `sessionTitle` 下，如果 `promptTokens[n] > promptTokens[n-1] * 5` 且 `completionTokens[n]` 极短（< 200），则触发惩罚。激增率高说明用户正在盲目堆砌未经优化的海量文本。（越低越好）
 2. **流式中断率 (Stream Abort Rate)**：中断请求与总请求的比例（`Aborted Requests / Total Requests`）。如果客户端在流自然结束前断开连接，则 `isAborted = true`。高流式中断率说明对提示词意图的把控较差。（越低越好）
@@ -343,15 +343,15 @@ PromptGate 能够在不侵入用户业务代码的前提下，纯粹通过物理
 * 生成 Claude Code settings.json；
 * 生成适合大任务拆分的 CLAUDE.md 建议片段。
 
-Claude Code settings 默认不指定模型，模型由 PromptGate 路由决定。
+Claude Code settings 默认不指定模型，模型由 Yutrix 路由决定。
 
 ---
 
 ## 核心概念
 
-### PromptGate API Key
+### Yutrix API Key
 
-PromptGate API Key 是用户访问网关的凭证。
+Yutrix API Key 是用户访问网关的凭证。
 
 请求示例：
 
@@ -369,13 +369,13 @@ curl https://code.example.com/v1/messages \
   }'
 ```
 
-PromptGate 会校验 `pg_xxx`，识别用户身份，然后根据 Host + Path + 路由协议匹配路由。
+Yutrix 会校验 `pg_xxx`，识别用户身份，然后根据 Host + Path + 路由协议匹配路由。
 
 ---
 
 ### Host / 二级域名
 
-Host 是请求进入 PromptGate 的入口。
+Host 是请求进入 Yutrix 的入口。
 
 例如：
 
@@ -385,7 +385,7 @@ token.example.com
 claude.example.com
 ```
 
-PromptGate 根据 Host 匹配路由规则。
+Yutrix 根据 Host 匹配路由规则。
 
 如果开启 unknown host fallback，则未知 Host 只能命中显式配置的 wildcard/default 路由，不会随便命中具体 Host 的路由。
 
@@ -393,7 +393,7 @@ PromptGate 根据 Host 匹配路由规则。
 
 ### 路由协议
 
-路由协议表示客户端请求 PromptGate 的协议格式。
+路由协议表示客户端请求 Yutrix 的协议格式。
 
 当前支持：
 
@@ -426,7 +426,7 @@ Anthropic 出口
 
 也可以只有其中一个。
 
-PromptGate 根据入口协议和供应商出口能力决定最终转发方式。
+Yutrix 根据入口协议和供应商出口能力决定最终转发方式。
 
 #### Anthropic 路由规则
 
@@ -478,7 +478,7 @@ Internet
   ↓ HTTPS
 Caddy
   ↓ HTTP
-PromptGate 127.0.0.1:3001
+Yutrix 127.0.0.1:3001
   ↓
 上游供应商
 ```
@@ -487,8 +487,8 @@ PromptGate 127.0.0.1:3001
 
 ```text
 Caddy 负责 HTTPS
-PromptGate 只监听 127.0.0.1
-PromptGate 不直接暴露公网端口
+Yutrix 只监听 127.0.0.1
+Yutrix 不直接暴露公网端口
 ```
 
 ---
@@ -529,8 +529,10 @@ mkdir -p /opt/promptgate/data
 ```
 
 ```bash
+# 容器名建议使用 yutrix（新部署）。若沿用旧容器名 promptgate 也可。
+# 数据目录 /opt/promptgate/data 保持兼容，便于迁移旧数据。
 docker run -d \
-  --name promptgate \
+  --name yutrix \
   --restart unless-stopped \
   -p 3000:3000 \
   -v /opt/promptgate/data:/app/data \
@@ -545,7 +547,7 @@ docker run -d \
 ```
 
 ```bash
-docker logs -f promptgate
+docker logs -f yutrix
 ```
 
 首次启动会在日志中打印管理员用户名、密码和邀请码。
@@ -665,7 +667,7 @@ NODE_INTERPRETER=/home/user/.nvm/versions/node/v24.16.0/bin/node
 
 ## 反向代理与流式优化 (SSE Optimization)
 
-当 PromptGate 面向公网暴露时，强烈建议为 API 路由（`/v1/*`, `/v0/*`）**关闭代理缓冲（Proxy Buffering）与压缩**。这能确保大模型的流式响应（SSE）在产生时瞬间推给客户端，避免因为反向代理的缓存机制导致流式输出“一卡一卡”，或者因为长思考模型（如 o1, gemma）首字延迟过高触发 `499 Client Closed Request` 断连超时。
+当 Yutrix 面向公网暴露时，强烈建议为 API 路由（`/v1/*`, `/v0/*`）**关闭代理缓冲（Proxy Buffering）与压缩**。这能确保大模型的流式响应（SSE）在产生时瞬间推给客户端，避免因为反向代理的缓存机制导致流式输出“一卡一卡”，或者因为长思考模型（如 o1, gemma）首字延迟过高触发 `499 Client Closed Request` 断连超时。
 
 不需要拆成“前端域名”和“后端域名”。推荐域名规划：
 
@@ -743,7 +745,7 @@ server {
 
 ```text
 必须保留 Host header。
-PromptGate 强依赖 Host 做多租户与路由匹配。
+Yutrix 强依赖 Host 做多租户与路由匹配。
 ```
 
 （如果修改了 Caddyfile，请使用 `systemctl reload caddy` 柔性重载，不要 `restart` 以免中断当前连接。）
@@ -786,7 +788,7 @@ NODE_INTERPRETER=/home/user/.nvm/versions/node/v24.16.0/bin/node
 
 ### 数据库备份安全配置
 
-为了满足企业安全合规要求并实施**职责分离 (Separation of Duties, SoD)** 原则，PromptGate 将应用配置管理与原始敏感数据的所有权进行解耦：
+为了满足企业安全合规要求并实施**职责分离 (Separation of Duties, SoD)** 原则，Yutrix 将应用配置管理与原始敏感数据的所有权进行解耦：
 * 默认情况下，数据库备份下载功能是**禁用的**（控制台中的密码框与下载按钮将被隐藏，且直接请求 API 会返回 `403 Forbidden`）。
 * 要启用该功能，请配置 `DB_BACKUP_PASSWORD` 环境变量（或在 `.env` 文件中设置）。
 * 启用后，管理员必须在控制台界面中输入正确的验证密码才可以激活下载按钮并导出 SQLite 备份文件。
@@ -801,7 +803,7 @@ openssl rand -hex 32
 
 ## 首次启动
 
-首次启动时 PromptGate 会自动：
+首次启动时 Yutrix 会自动：
 
 1. 初始化数据库；
 2. 创建管理员账号；
@@ -841,8 +843,8 @@ Docker 部署升级时，拉取新镜像并用同一个数据卷重建容器：
 
 ```bash
 docker pull ghcr.io/yutrix-ai/yutrix:latest
-docker stop promptgate
-docker rm promptgate
+docker stop yutrix
+docker rm yutrix
 # 使用上文相同 docker run 命令，并保持同一个 /app/data 挂载
 ```
 
@@ -852,7 +854,7 @@ docker rm promptgate
 
 ## 路由管理
 
-路由管理是 PromptGate 的核心配置入口。
+路由管理是 Yutrix 的核心配置入口。
 
 一条路由包括：
 
@@ -941,7 +943,7 @@ Anthropic API Key
 
 ## API Key 管理
 
-PromptGate API Key 是访问网关的凭证。
+Yutrix API Key 是访问网关的凭证。
 
 ### 普通用户
 
@@ -983,7 +985,7 @@ userId
 
 ## 用户组与路由授权
 
-PromptGate 支持通过用户组进行细粒度的路由访问控制：
+Yutrix 支持通过用户组进行细粒度的路由访问控制：
 
 - **默认组**：首次启动时自动创建。所有现有用户和路由会自动分配给它，确保向下兼容。
 - **自定义组**：管理员可以创建额外的用户组，将用户分配到多个组，也可以从任意用户组移除成员，包括默认组。
@@ -997,13 +999,13 @@ PromptGate 支持通过用户组进行细粒度的路由访问控制：
 
 ## 用户/用户组输入 Token 限制
 
-PromptGate 可以在请求转发给上游模型之前执行最大输入 Token 限制：
+Yutrix 可以在请求转发给上游模型之前执行最大输入 Token 限制：
 
 - **用户组默认值**：每个用户组可以配置 `maxInputTokens`，用户未单独覆盖时继承所属用户组限制。
 - **用户覆盖值**：管理员可以为单个用户配置 `maxInputTokensOverride`。只要该值非空，就优先于所有用户组限制。
 - **不限制语义**：`0` 表示不限制。用户覆盖值为 `0` 时，表示该用户显式不受用户组限制。
 - **多用户组规则**：用户属于多个组且没有覆盖值时，系统会取所有正数限制里的最小值，即最严格限制。如果所有组都是 `0`，则不限制。
-- **请求处理策略**：如果实际请求超过有效限制，PromptGate 会优先丢弃最旧的对话轮次；如果最新一轮本身仍然过大，则对其中最长的文本块执行头尾保留截断。
+- **请求处理策略**：如果实际请求超过有效限制，Yutrix 会优先丢弃最旧的对话轮次；如果最新一轮本身仍然过大，则对其中最长的文本块执行头尾保留截断。
 - **保护上下文**：系统/开发者消息、请求体级 system 指令、tools/functions、最近的 tool call/tool result 链会尽量保留。如果这些固定结构本身已经超过预算，网关会返回结构化错误，而不是发送一个必然爆窗的请求给上游。
 - **Token 计数策略**：OpenAI 系模型优先使用 `tiktoken-node`；对于 GPT-4o/GPT-5/o 系等需要 `o200k_base` 的模型，使用 `tiktoken`。非 OpenAI 模型优先使用配置的 tokenizer repo，缺失时使用保守启发式估算。最终日志统计仍优先采用上游返回的 `usage`，避免本地估算覆盖真实账单口径。
 
@@ -1013,7 +1015,7 @@ PromptGate 可以在请求转发给上游模型之前执行最大输入 Token �
 
 ## 提示词策略
 
-PromptGate 支持提示词注入策略。
+Yutrix 支持提示词注入策略。
 
 原则：
 
@@ -1037,7 +1039,7 @@ Codex 风格策略
 
 ## 并发、限流与降级
 
-PromptGate 支持多层并发：
+Yutrix 支持多层并发：
 
 ```text
 全局并发
@@ -1108,7 +1110,7 @@ maxOutputTokens > 0
   仅当请求中已有 max_tokens / max_completion_tokens 且超过上限时裁剪
 ```
 
-PromptGate 默认不补 `max_tokens`。
+Yutrix 默认不补 `max_tokens`。
 
 这对 Claude Code 和代码生成场景很重要，因为大任务可能需要长输出。默认 0 能最大程度保持客户端行为。
 
@@ -1128,7 +1130,7 @@ max_tokens_to_sample → max_tokens
 
 ## 实时日志
 
-PromptGate 的 action log 是中文单行日志。
+Yutrix 的 action log 是中文单行日志。
 
 同一条日志会同时进入：
 
@@ -1199,7 +1201,7 @@ Claude Code 通常走 Anthropic 协议，即：
 /v1/messages
 ```
 
-建议在 PromptGate 中创建：
+建议在 Yutrix 中创建：
 
 ```text
 Host: code.example.com
@@ -1207,7 +1209,7 @@ Path: /v1/messages
 路由协议: Anthropic
 ```
 
-如果供应商没有 Anthropic 出口，但有 OpenAI-compatible 出口，PromptGate 会执行 Anthropic → OpenAI-compatible 非流式适配。
+如果供应商没有 Anthropic 出口，但有 OpenAI-compatible 出口，Yutrix 会执行 Anthropic → OpenAI-compatible 非流式适配。
 
 ### 推荐 settings.json
 
@@ -1242,11 +1244,11 @@ Authorization: Bearer pg_xxx
 }
 ```
 
-原因是 PromptGate 的真实模型由路由规则决定。Claude Code 的模型字段可能导致它在客户端侧认为模型不存在或无权限。
+原因是 Yutrix 的真实模型由路由规则决定。Claude Code 的模型字段可能导致它在客户端侧认为模型不存在或无权限。
 
 ### 大任务建议
 
-对于大规模代码任务，建议通过 `CLAUDE.md` 指导 Claude Code 分阶段执行，而不是用 PromptGate 裁剪 `max_tokens`。
+对于大规模代码任务，建议通过 `CLAUDE.md` 指导 Claude Code 分阶段执行，而不是用 Yutrix 裁剪 `max_tokens`。
 
 推荐片段：
 
@@ -1268,11 +1270,11 @@ Authorization: Bearer pg_xxx
 
 ## 安全说明
 
-PromptGate 的安全边界包括：
+Yutrix 的安全边界包括：
 
 ```text
 用户密码使用 hash 存储
-PromptGate API Key 使用 hash 存储
+Yutrix API Key 使用 hash 存储
 完整 API Key 只显示一次
 供应商上游 API Key 加密存储
 日志不输出完整 API Key
@@ -1285,13 +1287,13 @@ PromptGate API Key 使用 hash 存储
 生产部署建议：
 
 ```text
-PromptGate 监听 127.0.0.1
+Yutrix 监听 127.0.0.1
 Caddy 提供 HTTPS
 Caddy 保留 Host header
-不要直接暴露 PromptGate 端口
+不要直接暴露 Yutrix 端口
 定期备份 SQLite 数据库
 妥善保存 PROMPTGATE_SECRET
-建议使用非特权用户（如 promptgate）运行服务，不要使用 root 用户
+建议使用非特权用户（如 yutrix）运行服务，不要使用 root 用户
 ```
 
 ---
@@ -1335,7 +1337,7 @@ Anthropic → OpenAI-compatible 非流式适配
 ## 项目结构
 
 ```text
-PromptGate/
+Yutrix/
 ├── apps/
 │   ├── server/                 # Fastify 后端、网关、API、SSE 日志
 │   └── web/                    # React + Vite 前端
@@ -1358,7 +1360,7 @@ PromptGate/
 
 不需要。
 
-PromptGate 是单服务应用，前端页面、后台 API、网关 API 都由同一服务承载。
+Yutrix 是单服务应用，前端页面、后台 API、网关 API 都由同一服务承载。
 
 推荐：
 
@@ -1376,7 +1378,7 @@ token.example.com
 
 ---
 
-### 为什么 Claude Code 配了 PromptGate 但不能用？
+### 为什么 Claude Code 配了 Yutrix 但不能用？
 
 首先确认 Claude Code 实际走的是 Anthropic 协议：
 
@@ -1416,7 +1418,7 @@ ANTHROPIC_API_KEY 通常发送 X-Api-Key
 ANTHROPIC_AUTH_TOKEN 通常发送 Authorization: Bearer
 ```
 
-PromptGate 推荐使用：
+Yutrix 推荐使用：
 
 ```text
 ANTHROPIC_AUTH_TOKEN=pg_xxx
@@ -1454,7 +1456,7 @@ ANTHROPIC_AUTH_TOKEN=pg_xxx
 供应商有 OpenAI-compatible 出口
 ```
 
-如果供应商配置了 Anthropic 出口，PromptGate 会直接转发 Anthropic 协议请求。
+如果供应商配置了 Anthropic 出口，Yutrix 会直接转发 Anthropic 协议请求。
 
 ---
 
@@ -1462,7 +1464,7 @@ ANTHROPIC_AUTH_TOKEN=pg_xxx
 
 不会。
 
-PromptGate 是协议网关。模型只是写入请求体 `model` 字段的字符串。
+Yutrix 是协议网关。模型只是写入请求体 `model` 字段的字符串。
 
 路由协议由入口协议和供应商出口能力决定，不由模型类型决定。
 
@@ -1487,8 +1489,6 @@ data/action.log
 
 ## License
 
-本项目基于 MIT License 开源。
+Yutrix is released under the [MIT License](./LICENSE).
 
-授权信息：Copyright (c) 2026 Tom Wu
-
-完整授权条款请查看 [LICENSE](./LICENSE)。
+Copyright (c) 2026 Tom Wu.
