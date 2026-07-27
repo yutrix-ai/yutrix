@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="pgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#22d3ee" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#09090b" />
+  
+  <!-- The Gate/Arch -->
+  <path d="M 160 370 L 160 256 C 160 180, 352 180, 352 256 L 352 370" stroke="url(#pgGrad)" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  
+  <!-- The Prompt / Spark (Inner Node) -->
+  <circle cx="256" cy="286" r="32" fill="#ffffff" />
+</svg>

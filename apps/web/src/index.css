@@ -1,0 +1,252 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "PingFang SC", "Microsoft YaHei", monospace;
+
+  --color-background: #fafafb;
+  --color-foreground: #09090b;
+  --color-card: #ffffff;
+  --color-card-foreground: #09090b;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #09090b;
+  --color-primary: #4f46e5;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f4f4f5;
+  --color-secondary-foreground: #09090b;
+  --color-muted: #f4f4f5;
+  --color-muted-foreground: #71717a;
+  --color-accent: #f4f4f5;
+  --color-accent-foreground: #09090b;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #e4e4e7;
+  --color-input: #e4e4e7;
+  --color-ring: #4f46e5;
+
+  --radius-lg: 0.5rem;
+  --radius-md: 0.375rem;
+  --radius-sm: 0.25rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    height: 100dvh;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    margin: 0;
+    overflow: hidden;
+  }
+  pre, code, kbd, samp {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Dark mode theme */
+.dark {
+  --color-background: #030303;
+  --color-foreground: #fafafa;
+  --color-card: #09090c;
+  --color-card-foreground: #fafafa;
+  --color-popover: #09090c;
+  --color-popover-foreground: #fafafa;
+  --color-primary: #6366f1;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #18181b;
+  --color-secondary-foreground: #fafafa;
+  --color-muted: #18181b;
+  --color-muted-foreground: #a1a1aa;
+  --color-accent: #18181b;
+  --color-accent-foreground: #fafafa;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #1e1e24;
+  --color-input: #1e1e24;
+  --color-ring: #6366f1;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb,
+.bg-zinc-950 ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover,
+.bg-zinc-950 ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Firefox support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+}
+
+.dark *,
+.bg-zinc-950 *,
+.bg-zinc-950 {
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+@keyframes slide-gradient {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.processing-gradient {
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 25%, #3b82f6 50%, #8b5cf6 75%, #3b82f6 100%);
+  background-size: 200% auto;
+  animation: slide-gradient 2s linear infinite;
+  color: transparent !important;
+}
+
+.dark .processing-gradient {
+  background: linear-gradient(90deg, #1d4ed8 0%, #6d28d9 25%, #1d4ed8 50%, #6d28d9 75%, #1d4ed8 100%);
+  background-size: 200% auto;
+  animation: slide-gradient 2s linear infinite;
+  color: transparent !important;
+}
+
+/* --- Left Sidebar Logo & Title Animations (Tesla Light Show, Glitch, Neon, Aurora) --- */
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tesla Light Show - energetic, flashing multi-color glows, strobe and pulse scaling */
+@keyframes tesla-logo-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px var(--color-primary)) drop-shadow(0 0 6px #6366f1);
+    transform: scale(1) rotate(0deg);
+  }
+  20% {
+    filter: drop-shadow(0 0 10px #ec4899) drop-shadow(0 0 15px #f43f5e);
+    transform: scale(1.12) rotate(8deg);
+  }
+  40% {
+    filter: drop-shadow(0 0 6px #06b6d4) drop-shadow(0 0 12px #3b82f6);
+    transform: scale(0.9) rotate(-8deg);
+  }
+  60% {
+    filter: drop-shadow(0 0 12px #eab308) drop-shadow(0 0 20px #f97316);
+    transform: scale(1.08) rotate(4deg);
+  }
+  80% {
+    filter: drop-shadow(0 0 8px #10b981) drop-shadow(0 0 14px #059669);
+    transform: scale(0.95) rotate(-4deg);
+  }
+}
+
+@keyframes tesla-text-strobe {
+  0%, 100% {
+    text-shadow: 0 0 4px rgba(99, 102, 241, 0.4);
+    background-position: 0% center;
+  }
+  50% {
+    text-shadow: 0 0 14px rgba(236, 72, 153, 0.8), 0 0 25px rgba(6, 182, 212, 0.7);
+    background-position: 100% center;
+  }
+}
+
+/* Cyber Glitch - retro-futuristic digital breakdown, shifts and horizontal wiggles */
+@keyframes cyber-logo-glitch {
+  0%, 100% {
+    transform: translate(0) skew(0deg);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  10% {
+    transform: translate(-2px, 1px) skew(-2deg);
+    filter: drop-shadow(2px -1px 0 #ef4444) drop-shadow(-2px 1px 0 #06b6d4);
+  }
+  20% {
+    transform: translate(1px, -1px) skew(1deg);
+    filter: drop-shadow(-1px 2px 0 #ef4444) drop-shadow(2px -1px 0 #06b6d4);
+  }
+  30% {
+    transform: translate(-1px, 2px) skew(0deg);
+  }
+  40% {
+    transform: translate(2px, -2px) skew(3deg);
+    filter: drop-shadow(2px 2px 0 #ef4444) drop-shadow(-2px -2px 0 #06b6d4);
+  }
+  50% {
+    transform: translate(-2px, 1px) skew(-1deg);
+  }
+  60% {
+    transform: translate(1px, 1px) skew(2deg);
+    filter: drop-shadow(-1px -1px 0 #ef4444) drop-shadow(1px 1px 0 #06b6d4);
+  }
+  70% {
+    transform: translate(-1px, -2px) skew(0deg);
+  }
+  80% {
+    transform: translate(2px, 1px) skew(-2deg);
+  }
+  90% {
+    transform: translate(-1px, 1px) skew(1deg);
+  }
+}
+
+/* Neon Breath - living, expanding colorful energy core */
+@keyframes neon-breath-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgba(99, 102, 241, 0.5)) drop-shadow(0 0 6px rgba(6, 182, 212, 0.3));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.8)) drop-shadow(0 0 24px rgba(6, 182, 212, 0.6)) drop-shadow(0 0 32px rgba(168, 85, 247, 0.4));
+    transform: scale(1.06);
+  }
+}
+
+/* Cosmic Aurora - elegant slow-flowing gradient sweep */
+@keyframes cosmic-aurora-sweep {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}

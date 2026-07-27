@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS `endpoint_unique_idx` ON `endpoints` (`name`,`path`,`incomingProtocol`);

@@ -1,0 +1,1640 @@
+{
+  "login": {
+    "success": "登录成功",
+    "failed": "登录失败，请重试",
+    "subtitle": "轻量级 LLM 网关控制台",
+    "username": "用户名",
+    "usernamePlaceholder": "请输入用户名",
+    "password": "密码",
+    "passwordPlaceholder": "请输入密码",
+    "rememberMe": "保持登录状态",
+    "loggingIn": "登录中...",
+    "loginButton": "登录",
+    "contactAdmin": "如需注册账号，请联系管理员获取邀请码"
+  },
+  "logs": {
+    "code": {
+      "legacy": {
+        "log": "{{action}}"
+      },
+      "system": {
+        "started": "系统启动 host={{host}} port={{port}} env={{env}}"
+      },
+      "auth": {
+        "login": {
+          "success": "登录成功 user={{username}}",
+          "failed": "登录失败 user={{username}} reason={{reason}}"
+        }
+      },
+      "request": {
+        "started": "请求进入 requestId={{requestId}} path={{path}} route={{routeName}}",
+        "queued": "请求入队 provider={{providerName}} model={{modelId}} fallback={{fallback}}",
+        "dequeued": "请求出队 queueMs={{queueMs}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
+        "completed": "请求完成 requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
+        "empty_stream": "上游返回空数据流 requestId={{requestId}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
+        "failed": "请求失败 requestId={{requestId}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
+        "fallback": "触发降级 primary={{primaryProviderName}}/{{primaryModelId}} fallback={{fallbackProviderName}}/{{fallbackModelId}} reason={{reasonText}}",
+        "protocol_adapted": "协议适配 (Anthropic -> OpenAI) provider={{providerName}} model={{modelId}}",
+        "protocol_adapted_failed": "协议适配失败 reason={{reasonText}}",
+        "timeout": "请求超时 provider={{providerName}} model={{modelId}}",
+        "error": "请求报错 msg={{message}}",
+        "override_ignored": "请求覆盖被忽略 msg=用户自选模型 '{{overrideModelId}}' 不属于当前路由供应商配置，已忽略并回退使用路由默认模型。",
+        "cache_hit": "命中缓存 requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms cacheId={{cacheId}}",
+        "strategy_routing": {
+          "applied": "策略路由生效 requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}}",
+          "skipped": "策略路由跳过 requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}} skip={{skipReason}}",
+          "error": "策略路由错误 requestId={{requestId}} error={{error}}"
+        }
+      },
+      "route": {
+        "model_override": {
+          "set": "设置路由模型覆盖 用户={{username}} 路由={{routeName}} 路由ID={{routeId}} 覆盖为模型={{overrideModel}}"
+        }
+      },
+      "token": {
+        "max_output": {
+          "clamped": "输出Token上限已裁剪 original={{originalValue}} clamped={{clampedValue}}"
+        }
+      },
+      "tokenizer": {
+        "error": "分词器获取失败 model={{modelId}} repo={{tokenizerRepo}} source={{tokenizerSource}} reason={{fallbackReason}} msg={{message}}",
+        "loaded": "分词器加载成功并缓存 model={{modelId}} repo={{tokenizerRepo}} source={{tokenizerSource}}"
+      },
+      "api_key": {
+        "created": "API Key 创建成功 user={{username}} name={{keyName}} prefix={{apiKeyPrefix}}",
+        "status_changed": "API Key 状态变更 user={{username}} prefix={{apiKeyPrefix}} status={{status}}",
+        "revoked": "API Key 被吊销 user={{username}} prefix={{apiKeyPrefix}}"
+      },
+      "log": {
+        "test": "测试日志 {{message}}"
+      }
+    },
+    "title": "系统日志",
+    "actions": {
+      "pause": "暂停滚动",
+      "resume": "恢复滚动",
+      "clear": "清空日志",
+      "test": "生成测试日志",
+      "stop": "停止",
+      "start": "开始",
+      "copy": "复制当前筛选日志",
+      "download": "下载当前筛选日志",
+      "copySuccess": "已复制当前筛选日志",
+      "downloadSuccess": "日志已下载",
+      "pausedToast": "已暂停实时日志",
+      "streamFailed": "实时日志连接失败，请检查服务是否运行或重新登录。",
+      "streamDisabled": "实时日志已关闭",
+      "noLogsText": "暂无实时日志。触发一次请求后，这里会显示系统动作。"
+    },
+    "viewMode": {
+      "label": "显示模式",
+      "localized": "本地化日志",
+      "raw": "服务器原始日志"
+    },
+    "filters": {
+      "search": "搜索 Request ID / 关键字...",
+      "level": "级别",
+      "allLevels": "全部级别",
+      "keywordPlaceholder": "关键词过滤",
+      "requestIdPlaceholder": "requestId 搜索",
+      "autoScroll": "自动滚动",
+      "serverLogs": "服务器日志",
+      "keep": "保留",
+      "info": "信息",
+      "warn": "警告",
+      "error": "错误",
+      "moreFilters": "筛选",
+      "hideFilters": "收起"
+    },
+    "emptyState": {
+      "title": "等待日志...",
+      "description": "系统正在连接日志流",
+      "noResults": "未找到匹配的日志",
+      "noResultsDesc": "请尝试调整搜索关键词或级别过滤"
+    }
+  },
+  "fallbackReasons": {
+    "primary_concurrency_full": "主供应商并发已满",
+    "upstream_rate_limited": "上游限流",
+    "upstream_unavailable": "上游服务不可用",
+    "upstream_overloaded": "上游过载"
+  },
+  "settings": {
+    "language": {
+      "label": "语言 (Language)",
+      "system": "跟随系统",
+      "zh": "简体中文",
+      "en": "English"
+    },
+    "title": "系统设置",
+    "subtitle": "配置 PromptGate 的全局设置和参数",
+    "toasts": {
+      "loadFailed": "加载设置失败",
+      "saveSuccess": "设置保存成功",
+      "saveFailed": "保存失败"
+    },
+    "sections": {
+      "appearance": {
+        "title": "外观与主题",
+        "desc": "自定义控制台的外观和主题设置",
+        "theme": "主题",
+        "themeSystem": "跟随系统",
+        "themeLight": "浅色",
+        "themeDark": "深色",
+        "accentColor": "主色调",
+        "accentColorHint": "输入十六进制颜色代码，如 #3b82f6"
+      },
+      "branding": {
+        "title": "品牌与系统标识",
+        "desc": "自定义系统的名称、口号和Logo图标",
+        "systemName": "系统名称",
+        "systemSlogan": "系统口号 (Slogan)",
+        "systemLogo": "系统Logo",
+        "logoAnimation": "边栏 Logo & 标题动画",
+        "uploadBtn": "上传新图标",
+        "resetBtn": "恢复默认",
+        "removeBgBtn": "去背景",
+        "bgRemoved": "背景已成功去除",
+        "bgRemoveFailed": "背景去除失败，请确认图像格式",
+        "removeBgModalTitle": "去除Logo背景",
+        "removeBgModalDesc": "选择要去除的背景颜色，并微调容差以获得最佳透明效果",
+        "selectBgColor": "选择背景颜色",
+        "colorWhite": "白色",
+        "colorBlack": "黑色",
+        "colorCustom": "自定义",
+        "customColorHex": "自定义颜色 Hex 代码",
+        "colorTolerance": "颜色容差",
+        "toleranceHint": "提示：建议设定 15-40。值越大，去除邻近相似颜色的范围越宽，可轻松平滑抠除白边。",
+        "cancelBtn": "取消",
+        "confirmRemoveBg": "确认去除",
+        "pngOnly": "仅支持 PNG 格式",
+        "animNone": "无动画",
+        "animSpin": "经典旋转 (悬停)",
+        "animTesla": "⚡ 特斯拉灯光秀 (炫目)",
+        "animGlitch": "👾 赛博朋克故障 (悬停)",
+        "animBreath": "🌟 霓虹呼吸 (常驻)",
+        "animAurora": "🌌 极光晕染 (常驻)",
+        "appendSlogan": "在浏览器标签页追加口号",
+        "appendSloganDesc": "开启后，浏览器标签页标题将显示为：系统名称 - 系统口号",
+        "hideSystemName": "仅显示系统口号 (隐藏系统名称)"
+      },
+      "basic": {
+        "title": "基础设置",
+        "desc": "配置域名和网络相关的基础参数",
+        "mainDomain": "主域名",
+        "mainDomainHint": "用于生成二级域名的基础域名",
+        "queueTimeout": "默认队列超时时间 (ms)",
+        "queueTimeoutHint": "请求在队列中等待的最大时间"
+      },
+      "analytics": {
+        "title": "数据统计设置",
+        "desc": "配置系统全局统计数据的聚合边界，例如每日的起始时间与每周的起始日",
+        "startOfDay": "每日起始时间",
+        "startOfDayHint": "例如 08:00 代表每天的 8 点作为新的一天的开始",
+        "startOfWeek": "每周起始日",
+        "weekStartMonday": "周一",
+        "weekStartSunday": "周日",
+        "tokenDisplayUnit": "Token 统计单位",
+        "unitRaw": "原始值"
+      },
+      "gateway": {
+        "title": "会话与网关设置",
+        "desc": "配置会话管理和网关行为参数",
+        "conversationHeader": "默认会话 Header 名称",
+        "conversationHeaderHint": "用于识别会话的 HTTP Header",
+        "ttl": "提示词注入记录 TTL (天)",
+        "ttlHint": "会话注入记录的保留时间",
+        "strictUsage": "开启严格用量计算",
+        "strictUsageDesc": "启用后，所有请求都将精确计算 token 用量",
+        "unknownHostFallback": "允许未知域名回退处理",
+        "unknownHostFallbackDesc": "当请求来自未配置的域名时，使用默认路由处理"
+      },
+      "logging": {
+        "title": "日志与运维",
+        "desc": "配置日志记录和运维相关的参数",
+        "level": "日志级别",
+        "retention": "日志保留天数",
+        "retentionHint": "超过此天数的日志将被自动清理",
+        "realtimeLogs": "启用实时请求日志",
+        "realtimeLogsDesc": "开启后可以在实时日志页面查看请求流",
+        "sessionSummaryEnabled": "启用 LLM 审计日志会话标题总结",
+        "sessionSummaryEnabledDesc": "开启后，系统将在新会话的首轮对话后，自动调用指定路由进行标题概括，方便在 LLM 审计日志中浏览",
+        "sessionSummaryRoute": "总结路由",
+        "sessionSummaryRoutePlaceholder": "选择用于总结的路由"
+      },
+      "security": {
+        "title": "安全与网络",
+        "desc": "配置安全和网络相关的参数",
+        "cors": "CORS 允许白名单",
+        "corsHint": "JSON 数组格式。生产环境下包含凭证时不允许使用 [\"*\"]，请填写真实域名",
+        "trustProxy": "信任代理 (Trust Proxy)",
+        "trustProxyDesc": "启用后可以正确获取通过代理服务器访问的真实客户端 IP"
+      },
+      "dingtalk": {
+        "title": "钉钉通知推送",
+        "desc": "配置钉钉群定时推送报表",
+        "enable": "启用定时推送",
+        "enableDesc": "自动向钉钉群发送每日统计数据报表",
+        "cron": "Cron 表达式",
+        "cronHint": "例如：0 7 * * * 表示每天早上 7 点触发",
+        "webhook": "Webhook 地址",
+        "webhookPlaceholder": "https://oapi.dingtalk.com/robot/send?access_token=...",
+        "secret": "安全设置 Secret",
+        "secretPlaceholder": "SEC...",
+        "testPush": "手动触发",
+        "testingPush": "发送中...",
+        "language": "推送文案语言",
+        "languageHint": "设置推送到钉钉的报表语言",
+        "excludeUsers": "不推送名单",
+        "excludeUsersHint": "选择在报表中隐藏（不参与用量统计和排行）的用户",
+        "skipEmpty": "仅在有使用量时推送",
+        "skipEmptyDesc": "开启后，当报告周期内非排除名单用户未产生任何 Token 消耗时，将自动跳过本次推送"
+      },
+      "database": {
+        "title": "数据库",
+        "desc": "查看当前数据库文件信息并下载备份",
+        "filePath": "文件路径",
+        "fileSize": "文件大小",
+        "downloadLabel": "下载数据库文件",
+        "downloadHint": "下载 SQLite 数据库文件到本机，可用于数据分析或备份",
+        "download": "下载",
+        "downloading": "下载中...",
+        "downloadSuccess": "数据库文件下载成功",
+        "downloadFailed": "下载失败",
+        "unavailable": "数据库信息不可用"
+      },
+      "systemInfo": {
+        "title": "系统信息",
+        "desc": "查看宿主机与 PromptGate 运行环境信息",
+        "appInfo": "应用信息",
+        "version": "版本",
+        "nodeVersion": "Node.js 版本",
+        "environment": "运行环境",
+        "uptime": "运行时间",
+        "pid": "进程 ID",
+        "memoryUsage": "内存使用",
+        "rss": "常驻内存 (RSS)",
+        "heapTotal": "堆内存总量",
+        "heapUsed": "堆内存已用",
+        "external": "外部内存",
+        "hostInfo": "宿主机信息",
+        "platform": "操作系统",
+        "arch": "系统架构",
+        "hostname": "主机名",
+        "osRelease": "系统内核版本",
+        "totalMemory": "总内存",
+        "freeMemory": "空闲内存",
+        "cpuModel": "CPU 型号",
+        "cpuCores": "CPU 核心数",
+        "loadAverage": "平均负载 (1/5/15 min)",
+        "unavailable": "系统信息不可用",
+        "loading": "加载系统信息...",
+        "days": "天",
+        "hours": "小时",
+        "minutes": "分钟",
+        "seconds": "秒",
+        "cpu": "处理器 (CPU)",
+        "utilization": "利用率",
+        "memory": "内存 (Memory)",
+        "usedMemory": "已用内存",
+        "used": "已使用",
+        "free": "空闲量",
+        "usedTotal": "已用: {{used}} / 总量: {{total}}",
+        "disk": "磁盘 (Disk)",
+        "usedDisk": "已用磁盘",
+        "freeDisk": "空闲磁盘",
+        "network": "网络 (Network)",
+        "selectInterface": "选择网卡",
+        "networkTotal": "发送: {{sent}} • 接收: {{received}}",
+        "noNetworkData": "暂无网卡数据",
+        "downloadSpeed": "下载速率",
+        "uploadSpeed": "上传速率",
+        "waitingForData": "等待数据收集...",
+        "softwareEnv": "软件环境 (Software Env)",
+        "softwareEnvDesc": "运行系统及 Runtime 属性",
+        "os": "操作系统",
+        "runMode": "运行模式",
+        "runUser": "当前运行用户",
+        "dbInfo": "数据库信息 (Database Info)",
+        "dbInfoDesc": "本地 SQLite 数据库状态",
+        "dbSize": "数据库容量",
+        "dbPath": "物理存储路径",
+        "downloading": "正在下载...",
+        "downloadBackup": "下载数据库备份",
+        "dbUnavailable": "数据库信息不可用",
+        "dbBackupPassword": "备份验证密码",
+        "dbBackupPasswordPlaceholder": "输入验证密码以激活下载",
+        "dbBackupPasswordInvalid": "密码验证失败，请重新输入",
+        "dbBackupDisabled": "数据库备份下载已禁用。",
+        "dbBackupDisabledDesc": "若要启用数据库备份下载，请设置 DB_BACKUP_PASSWORD 环境变量。详细步骤请参考 README。"
+      }
+    },
+    "actions": {
+      "saving": "保存中...",
+      "saveAll": "保存所有设置"
+    }
+  },
+  "common": {
+    "cancel": "取消",
+    "confirm": "确定",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "创建",
+    "save": "保存",
+    "add": "添加",
+    "configured": "已配置",
+    "search": "搜索...",
+    "loading": "加载中...",
+    "yes": "是",
+    "no": "否",
+    "cost": "费用",
+    "clickToCollapse": "点击收起",
+    "clickToExpand": "点击查看完整错误信息",
+    "copy": "复制",
+    "copySuccess": "已复制到剪贴板",
+    "close": "关闭",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "loadingMore": "加载更多...",
+    "refresh": "刷新",
+    "actions": "操作",
+    "error": "操作失败",
+    "collapse": "收起"
+  },
+  "layout": {
+    "dashboard": "仪表盘",
+    "overview": "概览",
+    "users": "用户管理",
+    "groups": "用户组",
+    "invite-codes": "邀请码管理",
+    "apikeys": "API Keys",
+    "providers": "供应商管理",
+    "routes": "路由配置",
+    "endpoints": "端点映射",
+    "subdomains": "子域名映射",
+    "policies": "访问策略",
+    "logs": "Action Logs",
+    "chatLogs": "LLM 审计日志",
+    "analytics": "数据统计",
+    "settings": "系统设置",
+    "systemInfo": "系统状态",
+    "my-stats": "我的统计",
+    "change-password": "修改密码",
+    "playground": "Playground",
+    "user-routes": "路由配置",
+    "logout": "退出登录",
+    "openapi": "开放接口",
+    "responseCache": "响应缓存",
+    "group": {
+      "dashboard": "仪表盘",
+      "playground": "Playground",
+      "gateway": "网关配置",
+      "access": "接入与密钥",
+      "identity": "用户与组织",
+      "audit": "审计"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "登录",
+      "username": "用户名",
+      "usernamePlaceholder": "请输入用户名",
+      "password": "密码",
+      "passwordPlaceholder": "请输入密码",
+      "submit": "登录"
+    }
+  },
+  "changePassword": {
+    "title": "修改密码",
+    "subtitle": "更新您的账户密码",
+    "cardTitle": "密码设置",
+    "cardDesc": "请输入当前密码和新密码。新密码至少需要 8 个字符，且必须包含大小写字母、数字及特殊字符。",
+    "currentPassword": "当前密码",
+    "currentPasswordPlaceholder": "请输入当前密码",
+    "newPassword": "新密码",
+    "newPasswordHint": "至少8位，含大小写字母、数字及特殊字符",
+    "newPasswordPlaceholder": "请输入符合要求的新密码",
+    "confirmPassword": "确认新密码",
+    "confirmPasswordPlaceholder": "请再次输入新密码",
+    "resetBtn": "重置",
+    "saveBtn": "保存密码",
+    "savingBtn": "保存中...",
+    "errorEmptyCurrent": "请输入当前密码",
+    "errorMismatch": "两次输入的新密码不一致",
+    "errorLength": "新密码至少需要 8 个字符",
+    "success": "密码修改成功，请重新登录",
+    "failed": "修改密码失败"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "quickAccess": {
+      "title": "快捷入口",
+      "routesDesc": "管理域名、路径与模型转发规则",
+      "providersDesc": "维护上游模型供应商与并发配置",
+      "apikeysDesc": "管理用户接入密钥",
+      "usersDesc": "管理账号、角色与用户状态",
+      "chatLogsDesc": "查看请求、响应与会话审计",
+      "settingsDesc": "配置系统参数与运行日志"
+    },
+    "stats": {
+      "totalRequests": "总请求数",
+      "successRate": "成功率",
+      "avgLatency": "平均延迟",
+      "totalTokens": "总Tokens",
+      "todayRequests": "今日请求数",
+      "todayTokens": "今日 Token",
+      "activeApiKeys": "活跃 API Key",
+      "enabledProviders": "启用供应商",
+      "totalSubdomains": "二级域名",
+      "totalEndpoints": "端点总数",
+      "totalTokensConsumed": "总消耗 Tokens",
+      "tokenBreakdown": "输入: {{input}} / 输出: {{output}}",
+      "todayCost": "今日费用",
+      "todayCostDesc": "今日消耗总金额 (USD)",
+      "totalCost": "总费用",
+      "totalCostDesc": "所有请求产生的总费用 (USD)"
+    },
+    "charts": {
+      "requestTrend": "请求趋势",
+      "modelUsage": "模型使用分布",
+      "activeUsers": "活跃用户请求",
+      "past24hTokenCurve": "Token 变化曲线",
+      "past24hTokenCurveDesc": "按时间段聚合 Token 消耗，辅助观察调用峰值。",
+      "noTokenCurveData": "暂无 Token 曲线数据",
+      "requestsCount": "{{count}} 次请求",
+      "requests": "请求",
+      "tokenUsageRank": "Token 使用用户排行",
+      "tokenUsageRankDesc": "按用户汇总，展示 Token 消耗最高的账号。",
+      "noRankingData": "暂无用户排行数据",
+      "activeUsersLabel": "活跃用户",
+      "tokenCurve": "Token 曲线",
+      "inputTokens": "输入 Token",
+      "outputTokens": "输出 Token",
+      "totalTokens": "总 Token",
+      "table": {
+        "rank": "排名",
+        "user": "用户",
+        "totalTokens": "总 Tokens",
+        "requests": "请求",
+        "ratio": "占比",
+        "inputOutput": "入: {{input}} / 出: {{output}}"
+      }
+    },
+    "apiKeyUsage": {
+      "title": "API Key 用量统计",
+      "noData": "暂无使用数据",
+      "unknownKey": "未知 Key",
+      "statusActive": "活跃",
+      "table": {
+        "name": "API Key 名称",
+        "requests": "请求数",
+        "promptTokens": "Prompt Tokens",
+        "completionTokens": "Completion Tokens",
+        "totalTokens": "总 Tokens",
+        "status": "状态"
+      }
+    },
+    "welcome": {
+      "title": "欢迎使用 PromptGate",
+      "description": "开始配置您的 AI 网关。按照以下步骤完成初始设置："
+    },
+    "user": {
+      "modelBreakdown": "模型用量分布",
+      "modelBreakdownDesc": "按模型维度统计 Token 消耗和请求次数。",
+      "activeModels": "活跃模型",
+      "noModelData": "暂无模型用量数据",
+      "recentRequests": "最近请求",
+      "recentRequestsDesc": "最近 10 次 API 调用记录。",
+      "latestRecords": "条记录",
+      "noRecentData": "暂无请求记录",
+      "table": {
+        "model": "模型",
+        "requests": "请求",
+        "tokens": "Token",
+        "time": "时间",
+        "status": "状态",
+        "latency": "延迟"
+      }
+    },
+    "emptyState": {
+      "title": "暂无数据",
+      "description": "目前还没有足够的请求数据来显示图表"
+    }
+  },
+  "theme": {
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "current": "当前：{{theme}}"
+  },
+  "providers": {
+    "title": "供应商管理",
+    "actions": {
+      "add": "添加供应商",
+      "save": "保存供应商",
+      "manageKeys": "管理密钥",
+      "keysInactive": ", {{count}} 停用",
+      "viewModels": "查看模型"
+    },
+    "status": {
+      "configured": "已配置",
+      "notConfigured": "未配置"
+    },
+    "apiKeys": {
+      "description": "管理该供应商的 API 密钥。支持添加多个密钥，系统将自动进行轮询负载均衡。如果某个密钥配额耗尽，将自动被标记为“已停用”。",
+      "placeholder": "输入新的 API Key (sk-...)",
+      "empty": "暂无配置密钥",
+      "neverUsed": "从未使用",
+      "table": {
+        "apiKey": "API Key",
+        "status": "状态",
+        "lastUsed": "最后使用",
+        "actions": "操作"
+      },
+      "status": {
+        "active": "正常",
+        "exhausted": "已停用 (耗尽)"
+      },
+      "actions": {
+        "disable": "手动停用",
+        "enable": "重新启用"
+      },
+      "toasts": {
+        "addSuccess": "添加密钥成功",
+        "addFailed": "添加密钥失败",
+        "requestFailed": "请求失败"
+      }
+    },
+    "dialog": {
+      "addTitle": "添加新供应商",
+      "editTitle": "编辑供应商",
+      "addDesc": "配置 OpenAI 兼容或 Anthropic 协议的供应商信息",
+      "editDesc": "更新供应商配置。如果不修改 API Key 请留空。",
+      "prevStep": "上一步",
+      "nextStep": "下一步：连通测试"
+    },
+    "fields": {
+      "name": "供应商名称",
+      "apiKey": "API Key",
+      "openaiUrl": "OpenAI 协议 URL",
+      "anthropicUrl": "Anthropic 协议 URL",
+      "timeout": "超时时间 (ms)",
+      "streamTimeout": "流式空闲超时 (ms)",
+      "concurrency": "并发限制",
+      "maxOutputTokens": "最大输出 Token 裁剪",
+      "upstreamProxyUrl": "上游请求代理 URL",
+      "weightProxyUrl": "权重下载代理 URL"
+    },
+    "placeholders": {
+      "name": "例如: OpenAI 官方",
+      "apiKeyEdit": "留空表示不修改"
+    },
+    "hints": {
+      "timeout": "填 0 表示不限制",
+      "maxOutputTokens": "填 0 表示完全透传不干预。大于 0 时，若请求中的 max_tokens 超过此值，会被强制改写为此值。"
+    },
+    "test": {
+      "title": "连通性测试 (必须通过)",
+      "description": "测试将尝试从您配置的 OpenAI 接口拉取模型列表。拉取成功后才能保存供应商。",
+      "start": "开始测试",
+      "testing": "测试中...",
+      "success": "成功发现 {{count}} 个模型",
+      "failHint": "如果该接口不支持自动拉取模型列表，您可以手动录入支持的模型。",
+      "forceSave": "强制保存测试结果",
+      "manualPlaceholder": "输入模型名称，多个模型可用逗号或换行分隔\n例如:\nqwen-coder\nqwen-max"
+    },
+    "empty": {
+      "title": "暂无供应商",
+      "description": "添加您的第一个 AI 供应商以开始使用 PromptGate"
+    },
+    "table": {
+      "name": "名称",
+      "apiKeys": "API Keys",
+      "openaiProtocol": "OpenAI 协议",
+      "anthropicProtocol": "Anthropic 协议",
+      "models": "模型列表",
+      "proxy": "代理",
+      "lastTest": "最近测试",
+      "control": "控制",
+      "status": "状态",
+      "actions": "操作",
+      "testSuccess": "成功",
+      "testFailed": "失败",
+      "notTested": "未测试",
+      "timeout": "超时时间",
+      "concurrency": "并发:",
+      "concurrencyLimit": "并发限制",
+      "maxOutputTokens": "输出裁剪:"
+    },
+    "toasts": {
+      "loadFailed": "加载供应商失败",
+      "fillOpenaiUrl": "请填写 OpenAI 协议 URL",
+      "fillName": "请先填写供应商名称",
+      "testPassed": "连接测试通过",
+      "testFailed": "连接测试失败",
+      "testException": "连接测试发生异常",
+      "saveSuccess": "供应商保存成功",
+      "saveFailed": "保存失败",
+      "enabled": "已启用供应商",
+      "disabled": "已禁用供应商",
+      "actionFailed": "操作失败",
+      "deleted": "供应商已删除",
+      "deleteFailed": "删除失败",
+      "fillModels": "请输入至少一个模型",
+      "manualSuccess": "已手动录入模型并标记为测试通过"
+    },
+    "deleteConfirm": {
+      "title": "确认删除供应商",
+      "description": "确定要删除 \"{{name}}\" 吗？此操作不可恢复，相关的模型配置也将被删除。"
+    },
+    "modelList": {
+      "title": "模型列表",
+      "description": "该供应商下可用的模型，系统会自动与此数据同步。设置输出限额会覆盖并限制 API 请求中的 max_tokens 参数。",
+      "refresh": "刷新模型",
+      "refreshing": "正在刷新...",
+      "empty": "暂无模型数据，请点击刷新",
+      "refreshSuccess": "刷新成功，已入库 {{count}} 个模型",
+      "refreshFailed": "刷新失败",
+      "table": {
+        "model": "模型 ID",
+        "enabled": "启用",
+        "tokenizerRepo": "分词器词表 (HF 仓库)",
+        "maxOutput": "输出限额",
+        "inputPrice": "输入 $/1M",
+        "outputPrice": "输出 $/1M"
+      },
+      "placeholders": {
+        "uncapped": "不限",
+        "tokenizerRepo": "自动/通用规则"
+      },
+      "toasts": {
+        "saveSuccess": "模型配置已保存",
+        "saveFailed": "模型配置保存失败"
+      }
+    }
+  },
+  "users": {
+    "title": "用户管理",
+    "searchPlaceholder": "搜索用户名...",
+    "create": "创建用户",
+    "createTitle": "创建新用户",
+    "createDesc": "创建一个新的用户账户",
+    "username": "用户名",
+    "usernamePlaceholder": "请输入用户名",
+    "password": "密码",
+    "passwordPlaceholder": "至少8位，含大小写字母、数字及特殊字符",
+    "hidePassword": "隐藏密码",
+    "showPassword": "显示密码",
+    "generatePassword": "自动生成强密码",
+    "role": "角色",
+    "roleUser": "普通用户",
+    "roleAdmin": "管理员",
+    "status": "状态",
+    "statusActive": "启用",
+    "statusDisabled": "禁用",
+    "apiKeys": "API Keys",
+    "totalRequests": "总请求数",
+    "totalTokens": "总 Tokens",
+    "tokenBreakdownShort": "入: {{input}} / 出: {{output}}",
+    "lastLogin": "最后登录",
+    "actions": "操作",
+    "neverLoggedIn": "从未登录",
+    "resetPassword": "重置密码",
+    "resetPasswordConfirmDesc": "确定要重置用户 \"{{username}}\" 的密码吗？",
+    "resetPasswordSuccessDesc": "用户 \"{{username}}\" 的新密码已生成",
+    "resetPasswordSuccessLabel": "新密码",
+    "resetPasswordSuccessWarning": "请立即保存此密码。关闭对话框后将无法再次查看！",
+    "deleteTitle": "确认删除用户",
+    "deleteDesc": "确定要删除用户 \"{{username}}\" 吗？此操作将删除该用户及其所有 API Key，且不可恢复。",
+    "toasts": {
+      "loadFailed": "加载用户列表失败",
+      "createSuccess": "用户创建成功",
+      "createFailed": "创建失败",
+      "deleteSuccess": "用户已删除",
+      "deleteFailed": "删除失败",
+      "resetSuccess": "密码已重置",
+      "resetFailed": "重置密码失败"
+    },
+    "empty": {
+      "title": "暂无用户",
+      "desc": "创建第一个用户账户",
+      "noResultsTitle": "未找到匹配的用户",
+      "noResultsDesc": "尝试使用其他关键词搜索"
+    }
+  },
+  "routes": {
+    "title": "路由配置",
+    "actions": {
+      "create": "新建路由",
+      "save": "保存",
+      "configureStrategy": "配置策略",
+      "addTarget": "添加目标层"
+    },
+    "dialog": {
+      "addTitle": "新建路由规则",
+      "editTitle": "编辑路由规则",
+      "description": "配置网关的请求转发规则"
+    },
+    "badges": {
+      "bestEffort": "尽力而为"
+    },
+    "sections": {
+      "basic": "基本信息",
+      "target": "服务配置",
+      "fallback": "单级降级 (Fallback)",
+      "runtime": "运行时配置",
+      "routingTarget": "请求路由转发目标 (漏斗模型)"
+    },
+    "fields": {
+      "name": "规则名称",
+      "host": "Host / 二级域名 *",
+      "path": "请求路径 *",
+      "protocol": "路由协议 *",
+      "targetProvider": "目标供应商 *",
+      "targetModel": "目标模型 *",
+      "policy": "提示词策略 (可选)",
+      "allowClientModel": "允许客户端指定模型",
+      "authorization": "授权访问",
+      "authorizedGroups": "授权用户组",
+      "enableFallback": "启用 429/503 降级",
+      "fallbackProvider": "降级供应商 *",
+      "fallbackModel": "降级模型 *",
+      "fallbackMatchTarget": "尽力而为 (优先使用降级供应商提供的同名请求模型)",
+      "fallbackMatchTargetDesc": "开启此项后，降级时系统会尝试匹配目标供应商中同名的模型。即便该模型在该供应商的开启列表中未勾选，只要同步的模型列表中存在（即使为禁用状态），网关也会通过此模型尽力发送请求。",
+      "fallbackPolicy": "降级提示词策略 (可选)",
+      "timeout": "请求超时 (ms)",
+      "retryCount": "重试次数",
+      "queueTimeout": "排队超时 (ms)",
+      "maxBody": "最大请求体 (MB)",
+      "routingMode": "路由模式",
+      "bestEffort": "尽力而为 (逐级降级时优先使用同名模型)"
+    },
+    "targets": {
+      "description": "根据漏斗顺序逐级转发请求，每一行可为各类任务配置特定的执行目标。",
+      "priority": "优先级",
+      "actions": "操作",
+      "emptyTitle": "暂无路由目标",
+      "emptyDescription": "点击右上角 \"添加目标层\" 开始构建多级漏斗转发目标规则。",
+      "configureTarget": "配置目标",
+      "searchPlaceholder": "搜索供应商或模型名称...",
+      "noResults": "未找到匹配的供应商或模型",
+      "clearSelection": "清空所选目标"
+    },
+    "placeholders": {
+      "name": "例如：默认 OpenAI 路由",
+      "host": "例如：api.yourdomain.com 或 sub",
+      "path": "例如：/v1/chat/completions",
+      "selectProvider": "选择供应商",
+      "selectModel": "选择模型",
+      "noPolicy": "无策略",
+      "select": "请选择",
+      "addGroup": "添加用户组",
+      "addUser": "添加用户"
+    },
+    "hints": {
+      "openaiProtocol": "OpenAI 格式",
+      "anthropicProtocol": "Anthropic 格式",
+      "noPolicyOption": "无策略",
+      "allowClientModel": "开启后，普通用户可以在他们专属的路由配置页面中选择当前路由供应商下的其它模型覆盖此路由。",
+      "authorization": "选择可以访问此路由的用户和用户组。未选择则默认授权给默认组。",
+      "defaultAuth": "默认授权给默认组",
+      "primaryAdapter": "该供应商未配置 Anthropic 协议 URL，当前路由将使用 Anthropic → OpenAI-compatible 协议适配。",
+      "fallbackAdapter": "降级供应商未配置 Anthropic 协议 URL，fallback 将使用 Anthropic → OpenAI-compatible 协议适配。",
+      "clickToRemove": "点击移除"
+    },
+    "readiness": {
+      "ready": "正常",
+      "incomplete": "配置缺失",
+      "disabled": "已停用",
+      "error": "异常",
+      "unknown": "未知"
+    },
+    "toasts": {
+      "loadFailed": "加载失败",
+      "loadModelsFailed": "加载模型失败",
+      "loadFallbackModelsFailed": "加载降级模型失败",
+      "modelLoadError": "模型加载失败，请稍后重试",
+      "fallbackModelLoadError": "降级模型加载失败，请稍后重试",
+      "fillRequired": "请填写所有必填项",
+      "modelUnavailable": "当前模型不再可用，请重新选择模型",
+      "fallbackRequired": "启用降级时必须选择降级供应商和降级模型",
+      "fallbackModelUnavailable": "当前降级模型不再可用，请重新选择模型",
+      "saveSuccess": "路由创建成功",
+      "updateSuccess": "路由更新成功",
+      "saveFailed": "保存失败",
+      "deleteSuccess": "路由已删除",
+      "deleteFailed": "删除失败",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "actionFailed": "操作失败"
+    },
+    "empty": {
+      "title": "暂无路由",
+      "desc": "创建一条路由规则，将外部请求转发到供应商。",
+      "userDescription": "您当前没有可访问的路由。"
+    },
+    "table": {
+      "status": "状态",
+      "name": "名称",
+      "protocol": "协议",
+      "trigger": "触发条件 (Host + Path)",
+      "target": "目标 (Provider + Model)",
+      "targetAndRouting": "目标与路由配置",
+      "currentModel": "当前使用模型",
+      "fallback": "降级",
+      "enable": "启用",
+      "actions": "操作",
+      "strategyRouting": "策略路由",
+      "unknownProvider": "未知"
+    },
+    "deleteConfirm": {
+      "title": "确认删除路由规则",
+      "description": "确定要删除 \"{{name}}\" 吗？"
+    },
+    "userRoutes": {
+      "description": "查看您可以访问的路由规则。若路由允许，您可以选择专属的模型覆盖默认配置。",
+      "dialogTitle": "选择自定义模型",
+      "dialogDesc": "为 \"{{name}}\" 选择一个不同的模型。这将仅对您生效，覆盖该路由的默认配置。",
+      "modelLabel": "模型",
+      "selectModel": "选择模型",
+      "defaultModel": "默认模型 ({{name}})",
+      "defaultBadge": "(默认)",
+      "unknownModel": "未知模型",
+      "overridden": "已覆盖默认模型",
+      "supportsCustom": "支持自定义",
+      "customize": "自定义",
+      "notConfigurable": "不可配置"
+    },
+    "schedule": {
+      "title": "计划任务",
+      "dialogTitle": "管理路由计划 - {{name}}",
+      "addTitle": "新建路由计划",
+      "editTitle": "编辑路由计划",
+      "name": "计划名称",
+      "namePlaceholder": "例如：工作日晚间降级",
+      "daysOfWeek": "执行周期",
+      "startTime": "开始时间",
+      "endTime": "结束时间",
+      "endNextDay": "次日",
+      "useDailyStartAsEnd": "至次日每日起始时间",
+      "activeIndicator": "计划生效中",
+      "disabledFallback": "停用降级",
+      "addButton": "添加计划",
+      "emptyText": "暂无路由计划任务，默认配置将全天生效。",
+      "timeSummary": "周期: {{days}}，时间: {{timeRange}}",
+      "targetSection": "主要配置 (计划生效时生效)",
+      "fallbackSection": "降级配置 (计划生效时生效)",
+      "saveSuccess": "保存计划成功",
+      "deleteConfirm": "确认删除此计划吗？",
+      "enableTimeRange": "指定具体时间段",
+      "enableTimeRangeDesc": "关闭时默认为选中日期的全天时间段",
+      "useDailyStartAsEndWithTime": "至次日每日起始时间 ({{time}})",
+      "allDay": "全天",
+      "dailyStartTimeLabel": "次日起始时间",
+      "helpTitle": "时间段规则说明",
+      "helpDesc1": "系统以全局“每日起始时间”（当前设置为 {{time}}）作为一天的分界线。",
+      "helpExample1Title": "全天模式",
+      "helpExample1Desc": "若选择周六周日，时间将从周六 {{time}} 连续执行至下周一 {{time}}。",
+      "helpExample2Title": "当天时段",
+      "helpExample2Desc": "如开始于 09:00，结束于 18:00，仅在该时间范围内生效。",
+      "helpExample3Title": "跨子夜时段",
+      "helpExample3Desc": "如开始于 20:00，结束于次日 03:00。自定义结束时间必须小于等于次日每日起始时间 ({{time}})。",
+      "toasts": {
+        "invalidEndTime": "结束时间必须小于等于每日起始时间 ({{time}}) 且晚于开始时间"
+      }
+    },
+    "strategy": {
+      "fixedMode": "固定模型",
+      "strategyMode": "策略路由",
+      "editorTitle": "策略路由配置",
+      "editorDesc": "本地规则识别任务类型，毫秒级选择目标模型。",
+      "tasks": {
+        "vision": "图片 / 视觉",
+        "debug": "报错排查",
+        "code": "代码任务",
+        "long_context": "长上下文",
+        "writing": "写作润色",
+        "general": "通用兜底"
+      },
+      "taskDescriptions": {
+        "vision": "当前输入包含图片、截图、视觉识别或图片位置调整时使用。",
+        "debug": "包含异常、超时、失败、堆栈或修复意图时使用。",
+        "code": "代码生成、重构、接口、组件、编译或工程实现任务。",
+        "long_context": "长日志、审计记录、文档、迁移或大段上下文。",
+        "writing": "文章、文案、邮件、翻译、改写或润色任务。",
+        "general": "未命中其他任务类型时的默认模型。"
+      }
+    }
+  },
+  "analytics": {
+    "title": "统计分析",
+    "subtitle": "查看系统使用情况和性能指标",
+    "groups": {
+      "defaultGroupName": "默认组",
+      "defaultGroupDesc": "系统默认用户组，包含所有普通用户",
+      "create": "创建用户组",
+      "createTitle": "创建新用户组",
+      "createDesc": "创建一个新的用户组来管理路由权限",
+      "editTitle": "编辑用户组",
+      "editDesc": "修改用户组信息",
+      "name": "组名",
+      "description": "描述",
+      "defaultBadge": "默认组",
+      "customBadge": "自定义",
+      "manageMembers": "管理成员",
+      "membersTitle": "管理成员",
+      "membersDesc": "添加或移除该组的成员",
+      "addMember": "添加成员",
+      "addMemberTitle": "添加成员",
+      "addMemberDesc": "选择要添加到该组的用户",
+      "selectUser": "选择用户",
+      "selectUserPlaceholder": "请选择用户",
+      "noMembers": "该组暂无成员",
+      "noAvailableUsers": "没有可添加的用户",
+      "deleteTitle": "确认删除用户组",
+      "deleteDesc": "确定要删除用户组 \"{{name}}\" 吗？关联的授权配置也将被清除。",
+      "toasts": {
+        "loadFailed": "加载用户组失败",
+        "createSuccess": "用户组创建成功",
+        "createFailed": "创建失败",
+        "updateSuccess": "用户组更新成功",
+        "updateFailed": "更新失败",
+        "deleteSuccess": "用户组已删除",
+        "deleteFailed": "删除失败",
+        "loadMembersFailed": "加载成员失败",
+        "addMemberSuccess": "成员已添加",
+        "addMemberFailed": "添加成员失败",
+        "removeMemberSuccess": "成员已移除",
+        "removeMemberFailed": "移除成员失败"
+      },
+      "table": {
+        "name": "组名",
+        "description": "描述",
+        "members": "成员数",
+        "type": "类型",
+        "actions": "操作"
+      },
+      "empty": {
+        "title": "暂无用户组",
+        "desc": "创建一个用户组来管理用户权限"
+      }
+    },
+    "timeRange": {
+      "7days": "最近 7 天",
+      "30days": "最近 30 天",
+      "90days": "最近 90 天"
+    },
+    "stats": {
+      "totalRequests": "总请求数",
+      "totalTokens": "总 Tokens",
+      "successRate": "成功率",
+      "avgLatency": "平均延迟",
+      "tokenBreakdown": "输入: {{input}} / 输出: {{output}}",
+      "totalCost": "总费用",
+      "totalCostDesc": "全部请求消耗总金额 (USD)"
+    },
+    "empty": {
+      "title": "暂无统计数据",
+      "description": "当有 API 请求后，这里将显示详细的统计分析"
+    },
+    "tabs": {
+      "user": "用户",
+      "provider": "供应商",
+      "model": "模型",
+      "endpoint": "端点",
+      "subdomain": "子域名",
+      "apiKey": "API Key",
+      "providerKey": "供应商密钥"
+    },
+    "breakdown": {
+      "userTitle": "按用户统计",
+      "providerTitle": "按供应商统计",
+      "modelTitle": "按模型统计",
+      "endpointTitle": "按端点统计",
+      "subdomainTitle": "按子域名统计",
+      "apiKeyTitle": "按 API Key 统计",
+      "noUserData": "暂无用户数据",
+      "noUserDesc": "还没有用户使用记录",
+      "noProviderData": "暂无供应商数据",
+      "noProviderDesc": "还没有供应商使用记录",
+      "noModelData": "暂无模型数据",
+      "noModelDesc": "还没有模型使用记录",
+      "noEndpointData": "暂无端点数据",
+      "noEndpointDesc": "还没有端点使用记录",
+      "noSubdomainData": "暂无子域名数据",
+      "noSubdomainDesc": "还没有子域名使用记录",
+      "noApiKeyData": "暂无 API Key 数据",
+      "noApiKeyDesc": "还没有 API Key 使用记录",
+      "providerKeyTitle": "按供应商密钥统计",
+      "noProviderKeyData": "暂无密钥数据",
+      "noProviderKeyDesc": "还没有带有密钥记录的请求"
+    },
+    "table": {
+      "username": "用户名",
+      "providerName": "供应商名称",
+      "modelName": "模型名称",
+      "endpointName": "端点名称",
+      "path": "路径",
+      "subdomain": "子域名",
+      "hostname": "主机名",
+      "apiKeyName": "API Key 名称",
+      "requests": "请求数",
+      "tokens": "Tokens",
+      "tokenBreakdownShort": "入: {{input}} / 出: {{output}}",
+      "avgLatency": "平均延迟",
+      "successRate": "成功率",
+      "unknown": "未知",
+      "unknownKey": "未知 / 遗留密钥"
+    },
+    "detail": {
+      "userTitle": "用户使用详情",
+      "providerTitle": "供应商使用详情",
+      "modelTitle": "模型使用详情",
+      "endpointTitle": "端点使用详情",
+      "subdomainTitle": "子域名使用详情",
+      "apiKeyTitle": "API Key 使用详情",
+      "trend": "使用趋势",
+      "breakdown": "详细数据",
+      "time": "时间段",
+      "loading": "正在加载详情数据...",
+      "tuqs": {
+        "title": "Token 使用质量评分 (TUQS 2.0)",
+        "optimal": "100 = 最优",
+        "contextSpike": "上下文突增",
+        "streamAbort": "流式中断",
+        "cacheEfficiency": "缓存效率",
+        "thrashing": "抖动重试",
+        "ttftPenalty": "TTFT 惩罚",
+        "desc1": "1. 上下文突增率：检测同一会话中 promptTokens[n] > promptTokens[n-1] * 5 且 completionTokens[n] 极短 (< 200) 的情况。高比率表示用户在盲目灌入大量未优化文本。(越低越好)",
+        "desc2": "2. 流式中断率：中断请求与总请求的比值 (Aborted / Total)，由 isAborted = true 判定（客户端在流式输出自然结束前断开连接）。高比率表示提示词意图控制不佳。(越低越好)",
+        "desc3": "3. 前缀缓存效率：缓存命中 Token 的占比 (SUM(cachedTokens) / SUM(promptTokens))。cachedTokens 从上游 usage 中提取（如 OpenAI 的 cached_tokens 或 Anthropic 的 cache_read_input_tokens）。(越高越好)",
+        "desc4": "4. 抖动与重试循环：惩罚同一 sessionTitle 下 5 分钟滚动窗口内 > 4 次请求且 promptTokens 方差 < 5%、但输出被中断或极短的行为。此模式表示对 AI 模型的「赌博式」调用。(越低越好)",
+        "desc5": "5. TTFT 惩罚：将用户平均首字延迟 (ttftMs) 与团队基准对比。显著高于团队平均值将扣分，表明上下文过于臃肿。(越低越好)"
+      }
+    }
+  },
+  "inviteCodes": {
+    "toasts": {
+      "loadFailed": "加载邀请码失败",
+      "createSuccess": "邀请码创建成功",
+      "createFailed": "创建失败",
+      "enabled": "邀请码已启用",
+      "disabled": "邀请码已禁用",
+      "actionFailed": "操作失败",
+      "deleted": "邀请码已删除",
+      "deleteFailed": "删除失败"
+    },
+    "actions": {
+      "create": "创建邀请码",
+      "done": "完成"
+    },
+    "dialog": {
+      "description": "生成一个新的邀请码用于注册",
+      "inviteCodeLabel": "邀请码",
+      "warning": "请立即复制并保存此邀请码。关闭对话框后将无法再次查看！"
+    },
+    "fields": {
+      "maxUses": "最大使用次数",
+      "expiresAt": "过期时间"
+    },
+    "hints": {
+      "expiresAt": "留空表示永不过期"
+    },
+    "empty": {
+      "title": "暂无邀请码",
+      "description": "创建第一个邀请码以允许新用户注册"
+    },
+    "table": {
+      "prefix": "邀请码前缀",
+      "usage": "使用情况",
+      "maxUses": "最大次数",
+      "expiresAt": "过期时间",
+      "status": "状态",
+      "createdAt": "创建时间",
+      "actions": "操作",
+      "neverExpire": "永不过期"
+    },
+    "status": {
+      "active": "启用",
+      "disabled": "禁用"
+    },
+    "deleteConfirm": {
+      "title": "确认删除邀请码",
+      "description": "确定要删除邀请码 \"{{prefix}}...\" 吗？此操作不可恢复。"
+    }
+  },
+  "apiKeys": {
+    "status": {
+      "revoked": "已删除",
+      "disabled": "已禁用",
+      "expired": "已过期",
+      "active": "启用中"
+    },
+    "defaultName": "默认 API Key",
+    "toasts": {
+      "loadFailed": "加载数据失败",
+      "createSuccess": "API Key 已生成，请立即保存",
+      "actionFailed": "操作失败",
+      "enabled": "API Key 已启用",
+      "disabled": "API Key 已禁用",
+      "updateFailed": "更新失败",
+      "deleted": "API Key 已删除",
+      "deleteFailed": "删除失败"
+    },
+    "userTitle": "我的 API Key",
+    "userDescription": "每个用户只有一个当前可用的 API Key。完整密钥只在生成或重置成功后展示一次，请立即复制并保存。",
+    "actions": {
+      "generate": "生成 API Key",
+      "reset": "重置 API Key",
+      "processing": "处理中...",
+      "done": "完成",
+      "disable": "禁用",
+      "enable": "启用",
+      "delete": "删除"
+    },
+    "userCard": {
+      "title": "当前可用凭证",
+      "prefix": "Key 前缀",
+      "warning": "出于安全原因，完整 API Key 不会再次展示。需要完整密钥时请使用重置。",
+      "createdAt": "创建时间",
+      "lastUsed": "最近使用",
+      "neverUsed": "从未使用",
+      "noKeyTitle": "还没有 API Key",
+      "noKeyDesc": "生成后即可在 Playground、curl 或第三方客户端中调用 PromptGate。"
+    },
+    "userSidebar": {
+      "resetTitle": "重置会发生什么",
+      "resetDesc": "重置会立即作废旧 Key。使用旧 Key 的脚本、客户端或集成配置会停止工作，需要替换为新生成的完整密钥。",
+      "flowTitle": "建议流程",
+      "flowStep1": "1. 重置后立刻复制完整 API Key。",
+      "flowStep2": "2. 打开 Playground 粘贴完整 Key，生成 cURL 或 Claude Code 配置。",
+      "flowStep3": "3. 更新调用方后再清理旧配置。"
+    },
+    "dialog": {
+      "title": "请立即保存新的 API Key",
+      "description": "出于安全原因，完整 API Key 关闭后不会再次展示。",
+      "label": "新的 API Key",
+      "warning": "请立即复制并保存。旧 Key 已失效，请同步更新所有调用方。"
+    },
+    "resetConfirm": {
+      "title": "确认重置 API Key",
+      "description": "重置后旧 API Key 会立即失效，正在使用旧 Key 的客户端将无法继续调用。确定要继续吗？"
+    },
+    "admin": {
+      "title": "管理员视图用于审计、禁用、启用或删除用户 API Key。默认仅显示启用中的 Key。",
+      "summary": "当前启用中 {{activeCount}} 个，全部记录 {{totalCount}} 个。",
+      "filterPlaceholder": "状态筛选",
+      "filterActive": "启用中",
+      "filterDisabled": "已禁用/过期",
+      "filterRevoked": "已删除",
+      "filterAll": "全部状态"
+    },
+    "empty": {
+      "title": "暂无 API Key",
+      "descriptionActive": "当前没有启用中的 API Key",
+      "descriptionFiltered": "当前筛选条件下没有 API Key 数据"
+    },
+    "table": {
+      "user": "所属用户",
+      "name": "名称",
+      "prefix": "前缀",
+      "concurrencyLimit": "并发限制",
+      "expiresAt": "过期时间",
+      "status": "状态",
+      "lastUsedAt": "最近使用时间",
+      "createdAt": "创建时间",
+      "actions": "操作",
+      "neverExpire": "永久有效"
+    },
+    "deleteConfirm": {
+      "title": "确认删除 API Key",
+      "description": "确定要删除 \"{{name}}\" 吗？删除后该 Key 将立即失效，且无法恢复。"
+    }
+  },
+  "policies": {
+    "toasts": {
+      "loadFailed": "加载策略失败",
+      "createSuccess": "策略创建成功",
+      "createFailed": "创建失败",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "actionFailed": "操作失败",
+      "deleted": "策略已删除",
+      "deleteFailed": "删除失败"
+    },
+    "injectMode": {
+      "oncePerConversation": "防重复",
+      "everyRequest": "每次请求"
+    },
+    "injectPosition": {
+      "messagesUnshift": "头部插入",
+      "appendSystem": "追加 System",
+      "replaceSystem": "替换 System",
+      "system": "覆盖"
+    },
+    "filters": {
+      "searchPlaceholder": "搜索策略名称或描述..."
+    },
+    "actions": {
+      "add": "添加策略"
+    },
+    "dialog": {
+      "addTitle": "添加提示词策略",
+      "addDesc": "创建新的提示词注入策略"
+    },
+    "fields": {
+      "name": "策略名称",
+      "description": "描述说明",
+      "protocol": "协议类型",
+      "injectPosition": "注入位置",
+      "injectMode": "注入模式",
+      "content": "注入内容",
+      "enabled": "创建后立即启用"
+    },
+    "placeholders": {
+      "name": "例如: 安全防护策略",
+      "description": "可选，用于说明此策略的用途",
+      "content": "输入要注入的提示词内容..."
+    },
+    "options": {
+      "openai": "OpenAI 格式",
+      "anthropic": "Anthropic 格式",
+      "everyRequest": "每次请求注入",
+      "oncePerConversation": "防重复注入",
+      "appendSystem": "追加到 System Prompt 末尾",
+      "messagesUnshift": "插入到 Messages 头部",
+      "replaceSystem": "替换原有 System Prompt",
+      "system": "覆盖系统提示词",
+      "fallbackTreatAsNew": "视为新请求直接注入",
+      "fallbackSkip": "跳过注入",
+      "fallbackError": "抛出错误并拦截"
+    },
+    "conversation": {
+      "title": "防重复注入设置",
+      "keySource": "会话 ID 来源",
+      "sourceHeader": "从 Header 获取会话 ID",
+      "sourceBody": "从 Body 获取会话 ID",
+      "keyName": "会话 ID Key 名称",
+      "fallbackMode": "无 ID 时的处理模式"
+    },
+    "hints": {
+      "content": "支持文本或 JSON 格式"
+    },
+    "empty": {
+      "title": "暂无提示词策略",
+      "description": "添加您的第一个提示词策略以开始配置",
+      "noResultsTitle": "未找到匹配的策略",
+      "noResultsDesc": "尝试使用其他关键词搜索"
+    },
+    "table": {
+      "name": "名称",
+      "protocol": "协议",
+      "injectPosition": "注入位置",
+      "injectMode": "注入模式",
+      "version": "版本",
+      "status": "状态",
+      "enabled": "启用",
+      "actions": "操作"
+    },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "view": {
+      "noDescription": "无描述",
+      "protocol": "协议",
+      "injectMode": "注入模式",
+      "injectPosition": "注入位置",
+      "version": "版本",
+      "content": "注入内容"
+    },
+    "deleteConfirm": {
+      "title": "确认删除策略",
+      "description": "确定要删除 \"{{name}}\" 吗？此操作不可恢复。"
+    }
+  },
+  "myStats": {
+    "toasts": {
+      "loadFailed": "加载统计失败",
+      "exampleInfo": "调用示例：Authorization 使用 Bearer <API Key>，请求 /v1/chat/completions。"
+    },
+    "title": "我的统计",
+    "subtitle": "查看您的 API 使用情况",
+    "empty": {
+      "title": "暂无调用数据",
+      "description": "当你使用 API Key 发起请求后，这里会展示请求量、Token 用量和错误统计。"
+    },
+    "actions": {
+      "createKey": "去创建 API Key",
+      "viewExample": "查看调用示例"
+    },
+    "stats": {
+      "totalRequests": "总请求数",
+      "totalTokens": "总 Token",
+      "tokenBreakdown": "输入: {{input}} / 输出: {{output}}",
+      "successRate": "成功率",
+      "errorCount": "错误数",
+      "totalCost": "总费用",
+      "totalCostDesc": "全部请求消耗总金额 (USD)"
+    },
+    "apiKeyUsage": {
+      "title": "按 API Key 的用量",
+      "unknownKey": "未知 Key",
+      "table": {
+        "prefix": "API Key 前缀",
+        "name": "名称",
+        "requests": "请求数",
+        "tokens": "Token",
+        "errors": "错误数",
+        "lastUsedAt": "最近请求时间"
+      }
+    },
+    "recentRequests": {
+      "title": "最近请求",
+      "count": "{{count}} 条",
+      "noLogsTitle": "暂无请求记录",
+      "noLogsDesc": "您还没有发起任何 API 请求",
+      "noMore": "没有更多记录了",
+      "errorDetail": "错误详情",
+      "table": {
+        "time": "时间",
+        "prefix": "API Key 前缀",
+        "model": "模型",
+        "status": "状态码",
+        "tokens": "Token",
+        "tokenBreakdownShort": "入: {{input}} / 出: {{output}}",
+        "latency": "延迟",
+        "errorMessage": "错误信息"
+      }
+    }
+  },
+  "chatLogs": {
+    "title": "LLM 审计日志",
+    "autoScroll": "自动滚动",
+    "loadSessionFailed": "加载会话列表失败",
+    "loadDetailsFailed": "加载会话详情失败",
+    "user": "用户:",
+    "model": "模型:",
+    "allUsers": "所有用户",
+    "allModels": "所有模型",
+    "applyFilters": "应用过滤",
+    "pauseStream": "暂停日志",
+    "resumeStream": "恢复日志",
+    "sessions": "会话列表",
+    "liveStreamAll": "实时请求流",
+    "watchingGlobalStream": "正在监听全局请求流，离开页面即丢失",
+    "noHistoricalSessions": "未找到历史会话",
+    "sessionTurns": "会话轮次",
+    "allTurnsLive": "实时请求流",
+    "timeJustNow": "刚刚",
+    "timeSecondsAgo": "{{count}}秒前",
+    "timeMinutesAgo": "{{count}}分钟前",
+    "timeHoursAgo": "{{count}}小时前",
+    "timeDaysAgo": "{{count}}天前",
+    "waitingForTurns": "等待日志...",
+    "turnDetails": "轮次详情",
+    "selectTurn": "请从中间列选择一个轮次以查看详情。",
+    "thoughtProcess": "思维过程 (点击展开)",
+    "routingTrace": "LLM 交接链路",
+    "routingHop": "跳数",
+    "latency": "耗时",
+    "tokens": "Token",
+    "reason": "原因",
+    "unknownError": "请求失败，发生未知错误。",
+    "turnsCount": "{{count}} 轮",
+    "itemsCount": "{{count}} 项",
+    "userInput": "用户输入",
+    "assistantOutput": "助手输出",
+    "showRaw": "显示 JSON",
+    "showRendered": "显示渲染",
+    "conversationReplay": "会话回放",
+    "copySession": "复制会话"
+  },
+  "endpoints": {
+    "toasts": {
+      "loadFailed": "加载数据失败",
+      "detailsFailed": "加载详情失败",
+      "updateSuccess": "端点更新成功",
+      "createSuccess": "端点创建成功",
+      "saveFailed": "保存失败",
+      "deleted": "端点已删除",
+      "deleteFailed": "删除失败"
+    },
+    "title": "端点管理",
+    "subtitle": "配置 API 端点和路由规则",
+    "actions": {
+      "add": "添加端点"
+    },
+    "dialog": {
+      "editTitle": "编辑端点",
+      "addTitle": "添加监听端点",
+      "editDesc": "修改端点及路由配置",
+      "addDesc": "创建新的 API 监听端点"
+    },
+    "fields": {
+      "name": "端点名称",
+      "path": "监听路径",
+      "provider": "供应商",
+      "protocol": "协议类型",
+      "model": "模型",
+      "policy": "提示词策略",
+      "timeout": "超时时间 (ms, 0为不限制)",
+      "queueTimeout": "队列超时 (ms, 0为不限制)",
+      "maxBody": "最大 Body (MB, 0为不限制)"
+    },
+    "placeholders": {
+      "name": "例如: 默认对话",
+      "provider": "选择供应商",
+      "model": "选择模型 (将同时作为此端点的别名)"
+    },
+    "options": {
+      "none": "无"
+    },
+    "tableCard": {
+      "title": "端点列表",
+      "subtitle": "管理所有的 API 端点"
+    },
+    "empty": {
+      "title": "暂无端点",
+      "description": "添加您的第一个 API 端点"
+    },
+    "table": {
+      "name": "名称",
+      "path": "监听路径",
+      "protocol": "协议",
+      "alias": "别名",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "启用",
+      "disabled": "禁用"
+    },
+    "deleteConfirm": {
+      "title": "确认删除端点",
+      "description": "确定要删除 \"{{name}}\" 及其所有路由吗？此操作不可恢复。"
+    }
+  },
+  "subdomains": {
+    "toasts": {
+      "loadFailed": "加载二级域名失败",
+      "createSuccess": "二级域名创建成功",
+      "createFailed": "创建失败",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "actionFailed": "操作失败",
+      "deleted": "二级域名已删除",
+      "deleteFailed": "删除失败"
+    },
+    "filters": {
+      "searchPlaceholder": "搜索域名、名称或描述..."
+    },
+    "actions": {
+      "add": "添加二级域名"
+    },
+    "dialog": {
+      "title": "添加二级域名",
+      "description": "创建新的二级域名用于流量分流"
+    },
+    "fields": {
+      "prefix": "子域名前缀",
+      "description": "描述说明",
+      "enabled": "创建后立即启用"
+    },
+    "hints": {
+      "prefix": "完整域名将由前缀 + 系统设置中的「主域名 (mainDomain)」自动拼接"
+    },
+    "placeholders": {
+      "prefix": "例如: code",
+      "description": "可选，用于说明此域名的用途"
+    },
+    "empty": {
+      "title": "暂无二级域名",
+      "description": "添加您的第一个二级域名以开始配置流量分流",
+      "noResultsTitle": "未找到匹配的域名",
+      "noResultsDesc": "尝试使用其他关键词搜索"
+    },
+    "table": {
+      "hostname": "域名",
+      "prefix": "前缀",
+      "description": "描述",
+      "status": "状态",
+      "enabled": "启用",
+      "actions": "操作",
+      "noDescription": "无描述"
+    },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "deleteConfirm": {
+      "title": "确认删除二级域名",
+      "description": "确定要删除 \"{{name}}\" 吗？关联的端点路由也将被清除，此操作不可恢复。"
+    }
+  },
+  "playground": {
+    "title": "Playground",
+    "cUrlTest": "cURL 快速测试",
+    "subtitle": "快速测试您的路由配置，生成集成代码。",
+    "actions": {
+      "generateClaudeConfig": "生成 Claude Code 配置",
+      "generateConfig": "生成配置",
+      "copyCode": "复制代码"
+    },
+    "dialog": {
+      "title": "客户端集成配置",
+      "description": "选择您使用的客户端工具，获取对应的集成配置。",
+      "claudeDesc": "将以下配置添加到您的 ~/.claude/settings.json 或 Cursor 的自定义模型配置中。",
+      "opencodeDesc": "将以下配置保存为 ~/.config/opencode/opencode.json。详见",
+      "opencodeDocs": "官方文档",
+      "hermesDesc": "将以下配置保存为 ~/.hermes/config.yaml (本地) 或 /opt/data/config.yaml (Docker)。详见",
+      "hermesDocs": "Hermes 文档",
+      "copy": "复制",
+      "virtualModelHint": "auto 是 PromptGate 的虚拟模型。客户端始终请求 auto，真实供应商和模型由 PromptGate 根据当前域名、API Key 与统一路由动态选择。Opencode 需要显式声明 auto 支持图片输入，否则可能不会发送图片附件。"
+    },
+    "fields": {
+      "selectRoute": "选择路由",
+      "apiKey": "API Key",
+      "prompt": "提示词"
+    },
+    "placeholders": {
+      "noRoute": "无可用路由",
+      "apiKey": "粘贴完整 API Key，将自动嵌入右侧代码",
+      "prompt": "输入您想测试的对话内容..."
+    },
+    "hints": {
+      "apiKey": "仅用于当前页面生成代码，不会保存；留空时使用 <YOUR_API_KEY> 占位符。",
+      "codeTips": "提示：左侧输入完整 API Key 后会自动嵌入代码；留空时显示 <YOUR_API_KEY> 占位符。",
+      "defaultPrompt": "请介绍自己"
+    },
+    "toasts": {
+      "loadFailed": "加载数据失败",
+      "copied": "已复制到剪贴板"
+    },
+    "errors": {
+      "selectRouteFirst": "请先选择路由"
+    }
+  },
+  "timeRange": {
+    "label": "统计周期",
+    "tooltip": "全局数据统计周期",
+    "day": "本日",
+    "week": "本周",
+    "month": "本月",
+    "year": "本年",
+    "all": "全部"
+  },
+  "openapi": {
+    "title": "开放接口 (OpenAPI)",
+    "description": "管理 OpenAPI 访问密钥，调用系统级统计数据与状态接口。",
+    "empty": {
+      "title": "暂无 OpenAPI 密钥",
+      "description": "生成一个密钥以通过 API 访问系统统计信息"
+    },
+    "actions": {
+      "generate": "生成 API 密钥",
+      "createSuccess": "创建成功",
+      "deleteSuccess": "删除成功"
+    },
+    "status": {
+      "active": "启用中",
+      "revoked": "已作废"
+    },
+    "delete": {
+      "title": "删除 OpenAPI 密钥",
+      "description": "您确定要删除此 OpenAPI 密钥吗？删除后相关的 API 访问将立即失效。"
+    },
+    "doc": {
+      "title": "接口文档与测试 (API Reference & Playground)",
+      "description": "通过 API 获取系统统计数据。你需要将生成的 API 密钥放在请求头的 Authorization 字段中。",
+      "testBtn": "免密测试获取最近24小时数据 (Admin Bypass)",
+      "testResult": "测试结果：",
+      "apiKey": "API 密钥 (API Key)",
+      "startTime": "开始时间",
+      "endTime": "结束时间",
+      "runBtn": "发送测试请求 (Run Test)",
+      "errorNoKey": "请先填写 API 密钥"
+    }
+  },
+  "responseCache": {
+    "title": "响应缓存",
+    "inputText": "用户输入",
+    "responseText": "缓存回复",
+    "model": "模型",
+    "hitCount": "命中次数",
+    "lastHitAt": "最后命中",
+    "createdAt": "创建时间",
+    "actions": "操作",
+    "delete": "删除",
+    "confirmDelete": "确定要删除此缓存条目吗？",
+    "deleteSuccess": "删除成功",
+    "empty": "暂无缓存条目",
+    "emptyDesc": "在审计日志中点击缓存按钮来添加条目",
+    "cacheThis": "缓存此回复",
+    "cacheSuccess": "已添加到缓存",
+    "cacheExists": "该输入已存在缓存，是否覆盖？",
+    "overwriteSuccess": "缓存已覆盖",
+    "cacheHit": "缓存命中",
+    "total": "共 {{count}} 条缓存"
+  }
+}

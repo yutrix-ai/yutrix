@@ -1,0 +1,1665 @@
+{
+  "login": {
+    "success": "Login successful",
+    "failed": "Login failed, please try again",
+    "subtitle": "Lightweight LLM Gateway Console",
+    "username": "Username",
+    "usernamePlaceholder": "Enter username",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "rememberMe": "Keep me logged in",
+    "loggingIn": "Logging in...",
+    "loginButton": "Log In",
+    "contactAdmin": "To register an account, please contact the administrator for an invite code"
+  },
+  "logs": {
+    "code": {
+      "legacy": {
+        "log": "{{action}}"
+      },
+      "system": {
+        "started": "System started host={{host}} port={{port}} env={{env}}"
+      },
+      "auth": {
+        "login": {
+          "success": "Login succeeded user={{username}}",
+          "failed": "Login failed user={{username}} reason={{reason}}"
+        }
+      },
+      "request": {
+        "started": "Request started requestId={{requestId}} path={{path}} route={{routeName}}",
+        "queued": "Request queued provider={{providerName}} model={{modelId}} fallback={{fallback}}",
+        "dequeued": "Request dequeued queueMs={{queueMs}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
+        "completed": "Request completed requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
+        "empty_stream": "Empty upstream stream requestId={{requestId}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
+        "failed": "Request failed requestId={{requestId}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
+        "fallback": "Fallback triggered primary={{primaryProviderName}}/{{primaryModelId}} fallback={{fallbackProviderName}}/{{fallbackModelId}} reason={{reasonText}}",
+        "protocol_adapted": "Protocol adapted (Anthropic -> OpenAI) provider={{providerName}} model={{modelId}}",
+        "protocol_adapted_failed": "Protocol adaptation failed reason={{reasonText}}",
+        "timeout": "Request timeout provider={{providerName}} model={{modelId}}",
+        "error": "Request error msg={{message}}",
+        "override_ignored": "Request override ignored msg=Custom model '{{overrideModelId}}' is not configured for current route provider, ignored and fallback to default model.",
+        "cache_hit": "Cache hit requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms cacheId={{cacheId}}",
+        "strategy_routing": {
+          "applied": "Strategy routing applied requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}}",
+          "skipped": "Strategy routing skipped requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}} skip={{skipReason}}",
+          "error": "Strategy routing error requestId={{requestId}} error={{error}}"
+        }
+      },
+      "route": {
+        "model_override": {
+          "set": "Route model override set user={{username}} route={{routeName}} routeId={{routeId}} overrideModel={{overrideModel}}"
+        }
+      },
+      "token": {
+        "max_output": {
+          "clamped": "Max output tokens clamped original={{originalValue}} clamped={{clampedValue}}"
+        }
+      },
+      "tokenizer": {
+        "error": "Tokenizer failed model={{modelId}} repo={{tokenizerRepo}} source={{tokenizerSource}} reason={{fallbackReason}} msg={{message}}",
+        "loaded": "Tokenizer loaded and cached successfully model={{modelId}} repo={{tokenizerRepo}} source={{tokenizerSource}}"
+      },
+      "api_key": {
+        "created": "API Key created user={{username}} name={{keyName}} prefix={{apiKeyPrefix}}",
+        "status_changed": "API Key status changed user={{username}} prefix={{apiKeyPrefix}} status={{status}}",
+        "revoked": "API Key revoked user={{username}} prefix={{apiKeyPrefix}}"
+      },
+      "log": {
+        "test": "Test log {{message}}"
+      }
+    },
+    "title": "Action Logs",
+    "actions": {
+      "pause": "Pause Scrolling",
+      "resume": "Resume Scrolling",
+      "clear": "Clear Logs",
+      "test": "Generate Test Log",
+      "stop": "Stop",
+      "start": "Start",
+      "copy": "Copy filtered logs",
+      "download": "Download filtered logs",
+      "copySuccess": "Copied filtered logs to clipboard",
+      "downloadSuccess": "Logs downloaded",
+      "pausedToast": "Paused live logs",
+      "streamFailed": "Failed to connect to live logs. Please check if the service is running or log in again.",
+      "streamDisabled": "Live logs disabled",
+      "noLogsText": "No live logs. System actions will appear here after you trigger a request."
+    },
+    "viewMode": {
+      "label": "View Mode",
+      "localized": "Localized Logs",
+      "raw": "Server Raw Logs"
+    },
+    "filters": {
+      "search": "Search Request ID / Keyword...",
+      "level": "Level",
+      "allLevels": "All Levels",
+      "keywordPlaceholder": "Filter keyword",
+      "requestIdPlaceholder": "Search requestId",
+      "autoScroll": "Auto Scroll",
+      "serverLogs": "Server Logs",
+      "keep": "Keep",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error",
+      "moreFilters": "Filter",
+      "hideFilters": "Collapse"
+    },
+    "emptyState": {
+      "title": "Waiting for logs...",
+      "description": "Connecting to the log stream",
+      "noResults": "No matching logs found",
+      "noResultsDesc": "Try adjusting your search keywords or level filter."
+    }
+  },
+  "fallbackReasons": {
+    "primary_concurrency_full": "primary provider concurrency is full",
+    "upstream_rate_limited": "upstream rate limited",
+    "upstream_unavailable": "upstream unavailable",
+    "upstream_overloaded": "upstream overloaded"
+  },
+  "settings": {
+    "language": {
+      "label": "Language",
+      "system": "System Default",
+      "zh": "简体中文",
+      "en": "English"
+    },
+    "title": "Settings",
+    "subtitle": "Configure PromptGate's global settings and parameters",
+    "toasts": {
+      "loadFailed": "Failed to load settings",
+      "saveSuccess": "Settings saved successfully",
+      "saveFailed": "Failed to save"
+    },
+    "sections": {
+      "appearance": {
+        "title": "Appearance & Theme",
+        "desc": "Customize console appearance and theme settings",
+        "theme": "Theme",
+        "themeSystem": "Follow System",
+        "themeLight": "Light",
+        "themeDark": "Dark",
+        "accentColor": "Accent Color",
+        "accentColorHint": "Enter hexadecimal color code, e.g., #3b82f6"
+      },
+      "branding": {
+        "title": "Branding & System Identity",
+        "desc": "Customize system name, slogan, and logo",
+        "systemName": "System Name",
+        "systemSlogan": "System Slogan",
+        "systemLogo": "System Logo",
+        "logoAnimation": "Sidebar Logo & Title Animation",
+        "uploadBtn": "Upload New Icon",
+        "resetBtn": "Reset to Default",
+        "removeBgBtn": "Remove Background",
+        "bgRemoved": "Background removed successfully",
+        "bgRemoveFailed": "Failed to remove background, check image format",
+        "removeBgModalTitle": "Remove Logo Background",
+        "removeBgModalDesc": "Select the background color to remove, and fine-tune tolerance for the best transparency result",
+        "selectBgColor": "Select Background Color",
+        "colorWhite": "White",
+        "colorBlack": "Black",
+        "colorCustom": "Custom",
+        "customColorHex": "Custom Color Hex Code",
+        "colorTolerance": "Color Tolerance",
+        "toleranceHint": "Tip: Recommended values are 15-40. Higher values clear a wider range of similar colors, easily smoothing borders.",
+        "cancelBtn": "Cancel",
+        "confirmRemoveBg": "Confirm Remove",
+        "pngOnly": "Only PNG is supported.",
+        "animNone": "No Animation",
+        "animSpin": "Classic Spin (Hover)",
+        "animTesla": "⚡ Tesla Light Show (Dazzling)",
+        "animGlitch": "👾 Cyberpunk Glitch (Hover)",
+        "animBreath": "🌟 Neon Breath (Always)",
+        "animAurora": "🌌 Cosmic Aurora (Always)",
+        "appendSlogan": "Append Slogan to Browser Tab Title",
+        "appendSloganDesc": "When enabled, the browser tab title will be displayed as: System Name - System Slogan",
+        "hideSystemName": "Only Display Slogan (Hide System Name)"
+      },
+      "basic": {
+        "title": "Basic Settings",
+        "desc": "Configure domain and network-related basic parameters",
+        "mainDomain": "Main Domain",
+        "mainDomainHint": "Base domain used to generate subdomains",
+        "queueTimeout": "Default Queue Timeout (ms)",
+        "queueTimeoutHint": "Maximum time a request waits in the queue"
+      },
+      "analytics": {
+        "title": "Analytics Settings",
+        "desc": "Configure global statistics aggregation boundaries, such as the start of a day and the first day of a week.",
+        "startOfDay": "Start of Day",
+        "startOfDayHint": "e.g., 08:00 represents 8:00 AM as the start of a new day",
+        "startOfWeek": "Start of Week",
+        "weekStartMonday": "Monday",
+        "weekStartSunday": "Sunday",
+        "tokenDisplayUnit": "Token Display Unit",
+        "unitRaw": "Raw Value"
+      },
+      "gateway": {
+        "title": "Session & Gateway Settings",
+        "desc": "Configure session management and gateway behavior parameters",
+        "conversationHeader": "Default Session Header Name",
+        "conversationHeaderHint": "HTTP Header used to identify sessions",
+        "ttl": "Prompt Injection Record TTL (Days)",
+        "ttlHint": "Retention period of session injection records",
+        "strictUsage": "Enable Strict Usage Calculation",
+        "strictUsageDesc": "When enabled, token usage is calculated precisely for all requests",
+        "unknownHostFallback": "Allow Unknown Host Fallback",
+        "unknownHostFallbackDesc": "Process requests with default route when host is unconfigured"
+      },
+      "logging": {
+        "title": "Logging & Operations",
+        "desc": "Configure log records and operational parameters",
+        "level": "Log Level",
+        "retention": "Log Retention (Days)",
+        "retentionHint": "Logs older than this will be cleaned up automatically",
+        "realtimeLogs": "Enable Realtime Request Logs",
+        "realtimeLogsDesc": "When enabled, request streams can be viewed on the Live Logs page",
+        "sessionSummaryEnabled": "Enable Session Title Summarization for LLM Audit Logs",
+        "sessionSummaryEnabledDesc": "When enabled, the system will automatically call the specified route to generate a summary title after the first turn of a new session, making it easier to browse on the LLM Audit Logs page",
+        "sessionSummaryRoute": "Summary Route",
+        "sessionSummaryRoutePlaceholder": "Select route for summarization",
+        "auditExemptUsers": "Audit Exempt Users",
+        "auditExemptUsersHint": "Users selected here will have their conversations exempted from LLM audit logs and Live Stream records"
+      },
+      "security": {
+        "title": "Security & Network",
+        "desc": "Configure security and network related parameters",
+        "cors": "CORS Allowlist",
+        "corsHint": "JSON array format. Cannot use [\"*\"] in production with credentials, use real domains",
+        "trustProxy": "Trust Proxy",
+        "trustProxyDesc": "Enable to correctly get real client IP when behind a proxy"
+      },
+      "dingtalk": {
+        "title": "DingTalk Notifications",
+        "desc": "Configure scheduled DingTalk push notifications",
+        "enable": "Enable Scheduled Push",
+        "enableDesc": "Send daily summary reports to a DingTalk group automatically",
+        "cron": "Cron Expression",
+        "cronHint": "e.g., 0 7 * * * for every day at 7 AM",
+        "webhook": "Webhook URL",
+        "webhookPlaceholder": "https://oapi.dingtalk.com/robot/send?access_token=...",
+        "secret": "Secret Key",
+        "secretPlaceholder": "SEC...",
+        "testPush": "Test Push",
+        "testingPush": "Sending...",
+        "language": "Push Language",
+        "languageHint": "Set the language for DingTalk reports",
+        "excludeUsers": "Excluded Users",
+        "excludeUsersHint": "Select users to hide from statistics and rankings",
+        "skipEmpty": "Push on active usage only",
+        "skipEmptyDesc": "When enabled, scheduled reports will be skipped if no tokens were consumed by non-excluded users during the period."
+      },
+      "database": {
+        "title": "Database",
+        "desc": "View current database file information and download backups",
+        "filePath": "File Path",
+        "fileSize": "File Size",
+        "downloadLabel": "Download Database File",
+        "downloadHint": "Download the SQLite database file for local data analysis or backup",
+        "download": "Download",
+        "downloading": "Downloading...",
+        "downloadSuccess": "Database file downloaded successfully",
+        "downloadFailed": "Download failed",
+        "unavailable": "Database information unavailable"
+      },
+      "systemInfo": {
+        "title": "System Information",
+        "desc": "View host machine and PromptGate runtime environment details",
+        "appInfo": "Application",
+        "version": "Version",
+        "nodeVersion": "Node.js Version",
+        "environment": "Environment",
+        "uptime": "Uptime",
+        "pid": "Process ID",
+        "memoryUsage": "Memory Usage",
+        "rss": "Resident Memory (RSS)",
+        "heapTotal": "Heap Total",
+        "heapUsed": "Heap Used",
+        "external": "External Memory",
+        "hostInfo": "Host Information",
+        "platform": "Platform",
+        "arch": "Architecture",
+        "hostname": "Hostname",
+        "osRelease": "OS Release",
+        "totalMemory": "Total Memory",
+        "freeMemory": "Free Memory",
+        "cpuModel": "CPU Model",
+        "cpuCores": "CPU Cores",
+        "loadAverage": "Load Average (1/5/15 min)",
+        "unavailable": "System information unavailable",
+        "loading": "Loading system info...",
+        "days": "d",
+        "hours": "h",
+        "minutes": "m",
+        "seconds": "s",
+        "cpu": "CPU",
+        "utilization": "Utilization",
+        "memory": "Memory",
+        "usedMemory": "Used Memory",
+        "used": "Used",
+        "free": "Free",
+        "usedTotal": "Used: {{used}} / Total: {{total}}",
+        "disk": "Disk",
+        "usedDisk": "Used Disk",
+        "freeDisk": "Free Disk",
+        "network": "Network",
+        "selectInterface": "Select Interface",
+        "networkTotal": "Sent: {{sent}} • Received: {{received}}",
+        "noNetworkData": "No interface data",
+        "downloadSpeed": "Download Speed",
+        "uploadSpeed": "Upload Speed",
+        "waitingForData": "Waiting for data...",
+        "softwareEnv": "Software Environment",
+        "softwareEnvDesc": "System and runtime specifications",
+        "os": "Operating System",
+        "runMode": "Run Mode",
+        "runUser": "Running User",
+        "dbInfo": "Database Information",
+        "dbInfoDesc": "Local SQLite database status",
+        "dbSize": "Database Size",
+        "dbPath": "Storage Path",
+        "downloading": "Downloading...",
+        "downloadBackup": "Download Backup",
+        "dbUnavailable": "Database info unavailable",
+        "dbBackupPassword": "Backup Verification Password",
+        "dbBackupPasswordPlaceholder": "Enter backup password to download",
+        "dbBackupPasswordInvalid": "Incorrect backup password",
+        "dbBackupDisabled": "Database backup downloading is disabled.",
+        "dbBackupDisabledDesc": "To enable downloading database backups, please set the DB_BACKUP_PASSWORD environment variable. Refer to the README for details."
+      }
+    },
+    "actions": {
+      "saving": "Saving...",
+      "saveAll": "Save All Settings"
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "save": "Save",
+    "add": "Add",
+    "configured": "Configured",
+    "search": "Search...",
+    "loading": "Loading...",
+    "yes": "Yes",
+    "no": "No",
+    "cost": "Cost",
+    "clickToCollapse": "Click to collapse",
+    "clickToExpand": "Click to expand error message",
+    "copy": "Copy",
+    "copySuccess": "Copied to clipboard",
+    "close": "Close",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "loadingMore": "Loading more...",
+    "refresh": "Refresh",
+    "actions": "Actions",
+    "error": "Error",
+    "collapse": "Collapse"
+  },
+  "layout": {
+    "dashboard": "Dashboard",
+    "overview": "Overview",
+    "users": "Users",
+    "groups": "User Groups",
+    "invite-codes": "Invite Codes",
+    "apikeys": "API Keys",
+    "providers": "Providers",
+    "routes": "Routes",
+    "endpoints": "Endpoints",
+    "subdomains": "Subdomains",
+    "policies": "Policies",
+    "logs": "Action Logs",
+    "chatLogs": "LLM Audit Logs",
+    "analytics": "Analytics",
+    "settings": "Settings",
+    "systemInfo": "System Status",
+    "my-stats": "My Stats",
+    "change-password": "Change Password",
+    "playground": "Playground",
+    "user-routes": "Routes Config",
+    "logout": "Logout",
+    "openapi": "OpenAPI",
+    "responseCache": "Response Cache",
+    "group": {
+      "dashboard": "Dashboard",
+      "playground": "Playground",
+      "gateway": "Gateway Config",
+      "access": "Access & Keys",
+      "identity": "User & Org",
+      "audit": "Audit"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "Login",
+      "username": "Username",
+      "usernamePlaceholder": "Enter username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "submit": "Sign In"
+    }
+  },
+  "changePassword": {
+    "title": "Change Password",
+    "subtitle": "Update your account password",
+    "cardTitle": "Password Settings",
+    "cardDesc": "Please enter your current password and a new password. The new password must be at least 8 characters long and contain uppercase and lowercase letters, numbers, and special characters.",
+    "currentPassword": "Current Password",
+    "currentPasswordPlaceholder": "Enter current password",
+    "newPassword": "New Password",
+    "newPasswordHint": "At least 8 chars, with upper/lower case, numbers and special chars",
+    "newPasswordPlaceholder": "Enter new password meeting requirements",
+    "confirmPassword": "Confirm New Password",
+    "confirmPasswordPlaceholder": "Enter new password again",
+    "resetBtn": "Reset",
+    "saveBtn": "Save Password",
+    "savingBtn": "Saving...",
+    "errorEmptyCurrent": "Please enter your current password",
+    "errorMismatch": "The two new passwords do not match",
+    "errorLength": "New password must be at least 8 characters",
+    "success": "Password changed successfully, please log in again",
+    "failed": "Failed to change password"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "quickAccess": {
+      "title": "Quick Access",
+      "routesDesc": "Manage domain, path and model routing rules",
+      "providersDesc": "Maintain upstream model providers and concurrency config",
+      "apikeysDesc": "Manage user access API keys",
+      "usersDesc": "Manage user accounts, roles and status",
+      "chatLogsDesc": "View requests, responses and session audit logs",
+      "settingsDesc": "Configure system parameters and operation logs"
+    },
+    "stats": {
+      "totalRequests": "Total Requests",
+      "successRate": "Success Rate",
+      "avgLatency": "Avg Latency",
+      "totalTokens": "Total Tokens",
+      "todayRequests": "Today Requests",
+      "todayTokens": "Today Tokens",
+      "activeApiKeys": "Active API Keys",
+      "enabledProviders": "Enabled Providers",
+      "totalSubdomains": "Subdomains",
+      "totalEndpoints": "Total Endpoints",
+      "totalTokensConsumed": "Total Tokens Consumed",
+      "tokenBreakdown": "Input: {{input}} / Output: {{output}}",
+      "todayCost": "Today Cost",
+      "todayCostDesc": "Today cost (USD)",
+      "totalCost": "Total Cost",
+      "totalCostDesc": "Total cost of all requests (USD)",
+      "tpm": "Tokens / Min (TPM)"
+    },
+    "charts": {
+      "requestTrend": "Request Trend",
+      "modelUsage": "Model Usage",
+      "activeUsers": "Active Users",
+      "past24hTokenCurve": "Token Usage Curve",
+      "past24hTokenCurveDesc": "Token consumption trend to observe usage peaks.",
+      "noTokenCurveData": "No Token curve data yet",
+      "requestsCount": "{{count}} requests",
+      "requests": "Requests",
+      "tokenUsageRank": "Token Usage Ranking",
+      "tokenUsageRankDesc": "Summarized by user for the selected time range.",
+      "noRankingData": "No ranking data yet",
+      "activeUsersLabel": "Active Users",
+      "tokenCurve": "Token Curve",
+      "inputTokens": "Input Tokens",
+      "outputTokens": "Output Tokens",
+      "totalTokens": "Total Tokens",
+      "table": {
+        "rank": "Rank",
+        "user": "User",
+        "totalTokens": "Total Tokens",
+        "requests": "Requests",
+        "ratio": "Ratio",
+        "inputOutput": "In: {{input}} / Out: {{output}}"
+      }
+    },
+    "apiKeyUsage": {
+      "title": "API Key Usage Statistics",
+      "noData": "No usage data yet",
+      "unknownKey": "Unknown Key",
+      "statusActive": "Active",
+      "table": {
+        "name": "API Key Name",
+        "requests": "Requests",
+        "promptTokens": "Prompt Tokens",
+        "completionTokens": "Completion Tokens",
+        "totalTokens": "Total Tokens",
+        "status": "Status"
+      }
+    },
+    "welcome": {
+      "title": "Welcome to PromptGate",
+      "description": "Start configuring your AI gateway by following these initial setup steps:"
+    },
+    "user": {
+      "modelBreakdown": "Model Usage Breakdown",
+      "modelBreakdownDesc": "Token consumption and request count by model.",
+      "activeModels": "Active Models",
+      "noModelData": "No model usage data yet",
+      "recentRequests": "Recent Requests",
+      "recentRequestsDesc": "Last 10 API call records.",
+      "latestRecords": "records",
+      "noRecentData": "No request records yet",
+      "table": {
+        "model": "Model",
+        "requests": "Requests",
+        "tokens": "Tokens",
+        "time": "Time",
+        "status": "Status",
+        "latency": "Latency"
+      }
+    },
+    "emptyState": {
+      "title": "No Data Yet",
+      "description": "There is not enough request data to display charts."
+    }
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "current": "Current: {{theme}}"
+  },
+  "providers": {
+    "title": "Providers",
+    "actions": {
+      "add": "Add Provider",
+      "save": "Save Provider",
+      "manageKeys": "Manage Keys",
+      "keysInactive": ", {{count}} inactive",
+      "viewModels": "View Models"
+    },
+    "status": {
+      "configured": "Configured",
+      "notConfigured": "Not Configured"
+    },
+    "apiKeys": {
+      "description": "Manage API keys for this provider. Supports multiple keys with automatic round-robin load balancing. If a key's quota is exhausted, it will be automatically marked as \"Disabled\".",
+      "placeholder": "Input new API Key (sk-...)",
+      "empty": "No configured keys",
+      "neverUsed": "Never Used",
+      "table": {
+        "apiKey": "API Key",
+        "status": "Status",
+        "lastUsed": "Last Used",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "exhausted": "Disabled (Exhausted)"
+      },
+      "actions": {
+        "disable": "Disable manually",
+        "enable": "Re-enable"
+      },
+      "toasts": {
+        "addSuccess": "Key added successfully",
+        "addFailed": "Failed to add key",
+        "requestFailed": "Request failed"
+      }
+    },
+    "dialog": {
+      "addTitle": "Add New Provider",
+      "editTitle": "Edit Provider",
+      "addDesc": "Configure provider settings for OpenAI-compatible or Anthropic protocol",
+      "editDesc": "Update provider settings. Leave API Key blank to keep current.",
+      "prevStep": "Previous Step",
+      "nextStep": "Next Step: Connectivity Test"
+    },
+    "fields": {
+      "name": "Provider Name",
+      "apiKey": "API Key",
+      "openaiUrl": "OpenAI Protocol URL",
+      "anthropicUrl": "Anthropic Protocol URL",
+      "timeout": "Timeout (ms)",
+      "streamTimeout": "Stream Idle Timeout (ms)",
+      "concurrency": "Concurrency Limit",
+      "maxOutputTokens": "Max Output Tokens",
+      "upstreamProxyUrl": "Upstream Proxy URL",
+      "weightProxyUrl": "Weight Proxy URL"
+    },
+    "placeholders": {
+      "name": "e.g., Official OpenAI",
+      "apiKeyEdit": "Leave blank to keep unchanged"
+    },
+    "hints": {
+      "timeout": "Enter 0 for no limit",
+      "maxOutputTokens": "Enter 0 for no intervention. If greater than 0, any request with max_tokens exceeding this value will be clamped."
+    },
+    "test": {
+      "title": "Connectivity Test (Required)",
+      "description": "Test will attempt to fetch models from the configured OpenAI endpoint. You can only save after a successful test.",
+      "start": "Start Test",
+      "testing": "Testing...",
+      "success": "Successfully discovered {{count}} models",
+      "failHint": "If the endpoint does not support fetching models, you can enter them manually.",
+      "forceSave": "Force Save Test Results",
+      "manualPlaceholder": "Enter model IDs, separated by commas or new lines\ne.g.:\nqwen-coder\nqwen-max"
+    },
+    "empty": {
+      "title": "No Providers",
+      "description": "Add your first AI provider to start using PromptGate"
+    },
+    "table": {
+      "name": "Name",
+      "apiKeys": "API Keys",
+      "openaiProtocol": "OpenAI Protocol",
+      "anthropicProtocol": "Anthropic Protocol",
+      "models": "Model List",
+      "proxy": "Proxy",
+      "lastTest": "Last Test",
+      "control": "Control",
+      "status": "Status",
+      "actions": "Actions",
+      "testSuccess": "Success",
+      "testFailed": "Failed",
+      "notTested": "Not Tested",
+      "timeout": "Timeout",
+      "concurrency": "Concurrency:",
+      "concurrencyLimit": "Concurrency Limit",
+      "maxOutputTokens": "Clamp:"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load providers",
+      "fillOpenaiUrl": "Please enter the OpenAI protocol URL",
+      "fillName": "Please enter a provider name",
+      "testPassed": "Connection test passed",
+      "testFailed": "Connection test failed",
+      "testException": "An error occurred during connectivity test",
+      "saveSuccess": "Provider saved successfully",
+      "saveFailed": "Failed to save",
+      "enabled": "Provider enabled",
+      "disabled": "Provider disabled",
+      "actionFailed": "Action failed",
+      "deleted": "Provider deleted",
+      "deleteFailed": "Failed to delete",
+      "fillModels": "Please enter at least one model ID",
+      "manualSuccess": "Manually saved models and marked test as passed"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete",
+      "description": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone and related model configurations will be removed."
+    },
+    "modelList": {
+      "title": "Model List",
+      "description": "Available models for this provider, synced automatically. Setting the Max Output Limit will override and clamp the request's max_tokens parameter.",
+      "refresh": "Refresh Models",
+      "refreshing": "Refreshing...",
+      "empty": "No model data, click Refresh",
+      "refreshSuccess": "Sync complete. Added {{count}} models",
+      "refreshFailed": "Sync failed",
+      "table": {
+        "model": "Model ID",
+        "enabled": "Enabled",
+        "tokenizerRepo": "Tokenizer (HF Repo)",
+        "maxOutput": "Max Output Limit",
+        "inputPrice": "Input $/1M",
+        "outputPrice": "Output $/1M"
+      },
+      "placeholders": {
+        "uncapped": "Uncapped",
+        "tokenizerRepo": "Auto/fallback"
+      },
+      "toasts": {
+        "saveSuccess": "Model configurations saved successfully",
+        "saveFailed": "Failed to save model configurations"
+      }
+    }
+  },
+  "users": {
+    "title": "Users",
+    "searchPlaceholder": "Search username...",
+    "create": "Create User",
+    "createTitle": "Create New User",
+    "createDesc": "Create a new user account",
+    "username": "Username",
+    "usernamePlaceholder": "Enter username",
+    "password": "Password",
+    "passwordPlaceholder": "At least 8 chars, uppercase, lowercase, numbers & special chars",
+    "hidePassword": "Hide Password",
+    "showPassword": "Show Password",
+    "generatePassword": "Auto generate strong password",
+    "role": "Role",
+    "roleUser": "User",
+    "roleAdmin": "Administrator",
+    "status": "Status",
+    "statusActive": "Active",
+    "statusDisabled": "Disabled",
+    "apiKeys": "API Keys",
+    "totalRequests": "Total Requests",
+    "totalTokens": "Total Tokens",
+    "tokenBreakdownShort": "In: {{input}} / Out: {{output}}",
+    "lastLogin": "Last Login",
+    "actions": "Actions",
+    "neverLoggedIn": "Never logged in",
+    "resetPassword": "Reset Password",
+    "resetPasswordConfirmDesc": "Are you sure you want to reset password for user \"{{username}}\"?",
+    "resetPasswordSuccessDesc": "New password generated for user \"{{username}}\"",
+    "resetPasswordSuccessLabel": "New Password",
+    "resetPasswordSuccessWarning": "Please copy this password now. You will not be able to view it again after closing this dialog!",
+    "deleteTitle": "Confirm Delete User",
+    "deleteDesc": "Are you sure you want to delete user \"{{username}}\"? This will delete the user and all their API Keys, and cannot be undone.",
+    "toasts": {
+      "loadFailed": "Failed to load user list",
+      "createSuccess": "User created successfully",
+      "createFailed": "Failed to create",
+      "deleteSuccess": "User deleted",
+      "deleteFailed": "Failed to delete",
+      "resetSuccess": "Password reset successfully",
+      "resetFailed": "Failed to reset password"
+    },
+    "empty": {
+      "title": "No Users",
+      "desc": "Create the first user account",
+      "noResultsTitle": "No matching users found",
+      "noResultsDesc": "Try searching with different keywords"
+    }
+  },
+  "routes": {
+    "title": "Routes",
+    "actions": {
+      "create": "New Route",
+      "save": "Save",
+      "configureStrategy": "Configure Strategy",
+      "addTarget": "Add Target Layer"
+    },
+    "dialog": {
+      "addTitle": "New Routing Rule",
+      "editTitle": "Edit Routing Rule",
+      "description": "Configure request routing rules for the gateway"
+    },
+    "badges": {
+      "bestEffort": "Best Effort"
+    },
+    "sections": {
+      "basic": "Basic Info",
+      "target": "Target Config",
+      "fallback": "Fallback Config",
+      "runtime": "Runtime Config",
+      "routingTarget": "Request Routing Targets (Funnel Model)"
+    },
+    "fields": {
+      "name": "Rule Name",
+      "host": "Host / Subdomain *",
+      "path": "Request Path *",
+      "protocol": "Routing Protocol *",
+      "targetProvider": "Target Provider *",
+      "targetModel": "Target Model *",
+      "policy": "Prompt Policy (Optional)",
+      "allowClientModel": "Allow Client Model Override",
+      "authorization": "Authorization",
+      "authorizedGroups": "Authorized Groups",
+      "enableFallback": "Enable 429/503 Fallback",
+      "fallbackProvider": "Fallback Provider *",
+      "fallbackModel": "Fallback Model *",
+      "fallbackMatchTarget": "Best Effort (Match requested model on fallback provider)",
+      "fallbackMatchTargetDesc": "When enabled, the system tries to match the requested model on the fallback provider. Even if the model is disabled/unchecked under that provider, it will still be routed to it as long as it exists in the synced model list.",
+      "fallbackPolicy": "Fallback Prompt Policy (Optional)",
+      "timeout": "Request Timeout (ms)",
+      "retryCount": "Retry Count",
+      "queueTimeout": "Queue Timeout (ms)",
+      "maxBody": "Max Request Body (MB)",
+      "routingMode": "Routing mode",
+      "bestEffort": "Best Effort (prefer same-name model on fallback)"
+    },
+    "targets": {
+      "description": "Forward requests through funnel layers in priority order. Each row can configure specific execution targets for various task types.",
+      "priority": "Priority",
+      "actions": "Actions",
+      "emptyTitle": "No Routing Targets",
+      "emptyDescription": "Click \"Add Target Layer\" to start building multi-level funnel routing rules.",
+      "configureTarget": "Configure Target",
+      "searchPlaceholder": "Search provider or model...",
+      "noResults": "No matching providers or models found",
+      "clearSelection": "Clear Selection"
+    },
+    "placeholders": {
+      "name": "e.g., Default OpenAI Route",
+      "host": "e.g., api.yourdomain.com or sub",
+      "path": "e.g., /v1/chat/completions",
+      "selectProvider": "Select provider",
+      "selectModel": "Select model",
+      "noPolicy": "No Policy",
+      "select": "Please select",
+      "addGroup": "Add group",
+      "addUser": "Add user"
+    },
+    "hints": {
+      "openaiProtocol": "OpenAI Format",
+      "anthropicProtocol": "Anthropic Format",
+      "noPolicyOption": "No Policy",
+      "allowClientModel": "When enabled, normal users can select a different model from the current route's provider to override this route in their own routes config page.",
+      "authorization": "Select which users and groups can access this route. If none selected, defaults to the default group.",
+      "defaultAuth": "Default authorized to default group",
+      "primaryAdapter": "This provider does not have Anthropic protocol URL configured. Protocol adaptation (Anthropic -> OpenAI-compatible) will be applied.",
+      "fallbackAdapter": "The fallback provider does not have Anthropic protocol URL configured. Fallback protocol adaptation (Anthropic -> OpenAI-compatible) will be applied.",
+      "clickToRemove": "Click to remove"
+    },
+    "readiness": {
+      "ready": "Ready",
+      "incomplete": "Incomplete",
+      "disabled": "Disabled",
+      "error": "Error",
+      "unknown": "Unknown"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load",
+      "loadModelsFailed": "Failed to load models",
+      "loadFallbackModelsFailed": "Failed to load fallback models",
+      "modelLoadError": "Failed to load models, please try again",
+      "fallbackModelLoadError": "Failed to load fallback models, please try again",
+      "fillRequired": "Please fill in all required fields",
+      "modelUnavailable": "Selected model is no longer available, please select another one",
+      "fallbackRequired": "Fallback provider and model must be selected when fallback is enabled",
+      "fallbackModelUnavailable": "Selected fallback model is no longer available, please select another one",
+      "saveSuccess": "Route created successfully",
+      "updateSuccess": "Route updated successfully",
+      "saveFailed": "Failed to save",
+      "deleteSuccess": "Route deleted",
+      "deleteFailed": "Failed to delete",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "actionFailed": "Action failed"
+    },
+    "empty": {
+      "title": "No Routes",
+      "desc": "Create a routing rule to forward external requests to providers.",
+      "userDescription": "You currently have no accessible routes."
+    },
+    "table": {
+      "status": "Status",
+      "name": "Name",
+      "protocol": "Protocol",
+      "trigger": "Trigger (Host + Path)",
+      "target": "Target (Provider + Model)",
+      "targetAndRouting": "Target & Routing",
+      "currentModel": "Current Model",
+      "fallback": "Fallback",
+      "enable": "Enable",
+      "actions": "Actions",
+      "strategyRouting": "Strategy Routing",
+      "unknownProvider": "Unknown"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete Route",
+      "description": "Are you sure you want to delete \"{{name}}\"?"
+    },
+    "userRoutes": {
+      "description": "View the routing rules you have access to. If allowed by the route, you can choose a specific model to override the default configuration.",
+      "dialogTitle": "Select Custom Model",
+      "dialogDesc": "Choose a different model for \"{{name}}\". This will only affect you and override the default configuration for this route.",
+      "modelLabel": "Model",
+      "selectModel": "Select model",
+      "defaultModel": "Default model ({{name}})",
+      "defaultBadge": "(Default)",
+      "unknownModel": "Unknown model",
+      "overridden": "Default model overridden",
+      "supportsCustom": "Customizable",
+      "customize": "Customize",
+      "notConfigurable": "Not configurable"
+    },
+    "schedule": {
+      "title": "Route Schedule",
+      "dialogTitle": "Manage Route Schedule - {{name}}",
+      "addTitle": "New Route Schedule",
+      "editTitle": "Edit Route Schedule",
+      "name": "Schedule Name",
+      "namePlaceholder": "e.g., Weekday night fallback",
+      "daysOfWeek": "Days of Week",
+      "startTime": "Start Time",
+      "endTime": "End Time",
+      "endNextDay": "Next Day",
+      "useDailyStartAsEnd": "To Daily Start Time of Next Day",
+      "activeIndicator": "Schedule Active",
+      "disabledFallback": "Fallback disabled",
+      "addButton": "Add Schedule",
+      "emptyText": "No schedules configured. The default configuration applies 24/7.",
+      "timeSummary": "Days: {{days}}, Time: {{timeRange}}",
+      "targetSection": "Target Configuration (Active during schedule)",
+      "fallbackSection": "Fallback Configuration (Active during schedule)",
+      "saveSuccess": "Schedule saved successfully",
+      "deleteConfirm": "Are you sure you want to delete this schedule?",
+      "enableTimeRange": "Specify custom time window",
+      "enableTimeRangeDesc": "Defaults to all-day when disabled.",
+      "useDailyStartAsEndWithTime": "To Daily Start Time of Next Day ({{time}})",
+      "allDay": "All Day",
+      "dailyStartTimeLabel": "Next Day Daily Start Time",
+      "helpTitle": "Time Window Rules",
+      "helpDesc1": "The system divides days based on the global \"Daily Start Time\" (currently set to {{time}}).",
+      "helpExample1Title": "All Day Mode",
+      "helpExample1Desc": "If Saturday and Sunday are selected, it runs continuously from Sat {{time}} to Mon {{time}}.",
+      "helpExample2Title": "Same Day Window",
+      "helpExample2Desc": "e.g., Start at 09:00, End at 18:00. Active only within this range on selected days.",
+      "helpExample3Title": "Cross-Midnight Window",
+      "helpExample3Desc": "e.g., Start at 20:00, End at 03:00 next day. Custom end time must be <= next day daily start time ({{time}}).",
+      "toasts": {
+        "invalidEndTime": "End time must be <= daily start time ({{time}}) and after start time"
+      }
+    },
+    "strategy": {
+      "fixedMode": "Fixed model",
+      "strategyMode": "Strategy routing",
+      "editorTitle": "Strategy Routing Configuration",
+      "editorDesc": "Local rules classify task types and choose models in milliseconds.",
+      "tasks": {
+        "vision": "Image / Vision",
+        "debug": "Debugging",
+        "code": "Code",
+        "long_context": "Long Context",
+        "writing": "Writing",
+        "general": "General"
+      },
+      "taskDescriptions": {
+        "vision": "Use when the current input contains images, screenshots, visual recognition, or image-position tasks.",
+        "debug": "Use for errors, timeouts, failures, stack traces, or repair intent.",
+        "code": "Use for code generation, refactoring, APIs, components, builds, or implementation tasks.",
+        "long_context": "Use for long logs, audit records, documents, migrations, or large context.",
+        "writing": "Use for articles, copy, email, translation, rewriting, or polishing.",
+        "general": "Default model when no other task type matches."
+      }
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "View system usage and performance metrics",
+    "timeRange": {
+      "7days": "Last 7 Days",
+      "30days": "Last 30 Days",
+      "90days": "Last 90 Days"
+    },
+    "stats": {
+      "totalRequests": "Total Requests",
+      "totalTokens": "Total Tokens",
+      "successRate": "Success Rate",
+      "avgLatency": "Avg Latency",
+      "tokenBreakdown": "Input: {{input}} / Output: {{output}}",
+      "totalCost": "Total Cost",
+      "totalCostDesc": "Total cost of all requests (USD)"
+    },
+    "empty": {
+      "title": "No Stats Data Yet",
+      "description": "Detailed statistics will be shown here after API requests are made."
+    },
+    "tabs": {
+      "user": "User",
+      "provider": "Provider",
+      "model": "Model",
+      "endpoint": "Endpoint",
+      "subdomain": "Subdomain",
+      "apiKey": "API Key",
+      "providerKey": "Provider Key"
+    },
+    "breakdown": {
+      "userTitle": "Stats by User",
+      "providerTitle": "Stats by Provider",
+      "modelTitle": "Stats by Model",
+      "endpointTitle": "Stats by Endpoint",
+      "subdomainTitle": "Stats by Subdomain",
+      "apiKeyTitle": "Stats by API Key",
+      "noUserData": "No user data yet",
+      "noUserDesc": "No user usage records found.",
+      "noProviderData": "No provider data yet",
+      "noProviderDesc": "No provider usage records found.",
+      "noModelData": "No model data yet",
+      "noModelDesc": "No model usage records found.",
+      "noEndpointData": "No endpoint data yet",
+      "noEndpointDesc": "No endpoint usage records found.",
+      "noSubdomainData": "No subdomain data yet",
+      "noSubdomainDesc": "No subdomain usage records found.",
+      "noApiKeyData": "No API Key data yet",
+      "noApiKeyDesc": "No API Key usage records found.",
+      "providerKeyTitle": "Stats by Provider Key",
+      "noProviderKeyData": "No provider key data yet",
+      "noProviderKeyDesc": "No provider key usage records found."
+    },
+    "table": {
+      "username": "Username",
+      "providerName": "Provider Name",
+      "modelName": "Model Name",
+      "endpointName": "Endpoint Name",
+      "path": "Path",
+      "subdomain": "Subdomain",
+      "hostname": "Hostname",
+      "apiKeyName": "API Key Name",
+      "requests": "Requests",
+      "tokens": "Tokens",
+      "tokenBreakdownShort": "In: {{input}} / Out: {{output}}",
+      "avgLatency": "Avg Latency",
+      "successRate": "Success Rate",
+      "unknown": "Unknown",
+      "unknownKey": "Unknown / Legacy Key"
+    },
+    "detail": {
+      "userTitle": "User Usage Details",
+      "providerTitle": "Provider Usage Details",
+      "modelTitle": "Model Usage Details",
+      "endpointTitle": "Endpoint Usage Details",
+      "subdomainTitle": "Subdomain Usage Details",
+      "apiKeyTitle": "API Key Usage Details",
+      "trend": "Usage Trend",
+      "breakdown": "Detailed Breakdown",
+      "time": "Time Period",
+      "loading": "Loading detail data...",
+      "tuqs": {
+        "title": "Token Usage Quality Score (TUQS 2.0)",
+        "optimal": "100 = Optimal",
+        "contextSpike": "Context Spike",
+        "streamAbort": "Stream Abort",
+        "cacheEfficiency": "Cache Efficiency",
+        "thrashing": "Thrashing",
+        "ttftPenalty": "TTFT Penalty",
+        "desc1": "1. Context Spike Rate: Detects when promptTokens[n] > promptTokens[n-1] * 5 within the same sessionTitle, and completionTokens[n] is very short (< 200). A high rate indicates the user is blindly dumping huge, unoptimized text. (Lower is better)",
+        "desc2": "2. Stream Abort Rate: The ratio of aborted requests to total requests (Aborted Requests / Total Requests), determined by isAborted = true when the client disconnects before the stream naturally ends. A high rate indicates poor prompt intent control. (Lower is better)",
+        "desc3": "3. Prefix Cache Efficiency: Calculates the ratio of cached tokens (SUM(cachedTokens) / SUM(promptTokens)). cachedTokens is extracted from the upstream usage payload (e.g., cached_tokens for OpenAI or cache_read_input_tokens for Anthropic). (Higher is better)",
+        "desc4": "4. Thrashing & Retry Loops: Penalizes > 4 requests within a 5-minute rolling window under the same sessionTitle, where the promptTokens variance is < 5% between calls, but output is aborted or very short. This pattern indicates \"gambling\" with the AI model. (Lower is better)",
+        "desc5": "5. TTFT Penalty: Compares the user's average Time To First Token (ttftMs) against the team baseline. A significantly higher average TTFT penalizes the score, indicating bloated context. (Lower is better)"
+      }
+    }
+  },
+  "inviteCodes": {
+    "toasts": {
+      "loadFailed": "Failed to load invite codes",
+      "createSuccess": "Invite code created successfully",
+      "createFailed": "Failed to create",
+      "enabled": "Invite code enabled",
+      "disabled": "Invite code disabled",
+      "actionFailed": "Action failed",
+      "deleted": "Invite code deleted",
+      "deleteFailed": "Failed to delete"
+    },
+    "actions": {
+      "create": "Create Invite Code",
+      "done": "Done"
+    },
+    "dialog": {
+      "description": "Generate a new invite code for registration",
+      "inviteCodeLabel": "Invite CodePrefix",
+      "warning": "Please copy and save this invite code now. You will not be able to view it again after closing this dialog!"
+    },
+    "fields": {
+      "maxUses": "Max Uses",
+      "expiresAt": "Expiration Time"
+    },
+    "hints": {
+      "expiresAt": "Leave blank for never expire"
+    },
+    "empty": {
+      "title": "No Invite Codes",
+      "description": "Create the first invite code to allow new users to register."
+    },
+    "table": {
+      "prefix": "Invite Code Prefix",
+      "usage": "Usage",
+      "maxUses": "Max Uses",
+      "expiresAt": "Expires At",
+      "status": "Status",
+      "createdAt": "Created At",
+      "actions": "Actions",
+      "neverExpire": "Never Expire"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete Invite Code",
+      "description": "Are you sure you want to delete invite code \"{{prefix}}...\"? This action cannot be undone."
+    }
+  },
+  "apiKeys": {
+    "status": {
+      "revoked": "Deleted",
+      "disabled": "Disabled",
+      "expired": "Expired",
+      "active": "Active"
+    },
+    "defaultName": "Default API Key",
+    "toasts": {
+      "loadFailed": "Failed to load data",
+      "createSuccess": "API Key generated, please copy and save it now",
+      "actionFailed": "Action failed",
+      "enabled": "API Key enabled",
+      "disabled": "API Key disabled",
+      "updateFailed": "Failed to update",
+      "deleted": "API Key deleted",
+      "deleteFailed": "Failed to delete"
+    },
+    "userTitle": "My API Keys",
+    "userDescription": "Each user has only one currently active API Key. The full key is only shown once upon creation/reset. Please save it immediately.",
+    "actions": {
+      "generate": "Generate API Key",
+      "reset": "Reset API Key",
+      "processing": "Processing...",
+      "done": "Done",
+      "disable": "Disable",
+      "enable": "Enable",
+      "delete": "Delete"
+    },
+    "userCard": {
+      "title": "Active Credentials",
+      "prefix": "Key Prefix",
+      "warning": "For security reasons, the full API Key will not be shown again. Perform a reset if you need a new key.",
+      "createdAt": "Created At",
+      "lastUsed": "Last Used",
+      "neverUsed": "Never Used",
+      "noKeyTitle": "No API Keys",
+      "noKeyDesc": "Generate an API Key to start making calls via Playground, curl, or other third-party clients."
+    },
+    "userSidebar": {
+      "resetTitle": "What happens after reset?",
+      "resetDesc": "Resetting will immediately invalidate the old key. Any scripts, clients, or integrations using the old key will stop working and must be updated.",
+      "flowTitle": "Recommended Flow",
+      "flowStep1": "1. Reset and copy the new full API Key immediately.",
+      "flowStep2": "2. Paste it in Playground or update your clients.",
+      "flowStep3": "3. Safely discard the old key configuration."
+    },
+    "dialog": {
+      "title": "Save Your New API Key Now",
+      "description": "For security reasons, the full API Key will not be shown again after closing.",
+      "label": "New API Key",
+      "warning": "Please copy and save it now. The old key has been invalidated."
+    },
+    "resetConfirm": {
+      "title": "Confirm API Key Reset",
+      "description": "Resetting will immediately invalidate your current API Key. Are you sure you want to proceed?"
+    },
+    "admin": {
+      "title": "Admin View for auditing, disabling, enabling, or deleting users' API Keys. Only showing active keys by default.",
+      "summary": "Currently active: {{activeCount}}, Total records: {{totalCount}}.",
+      "filterPlaceholder": "Filter Status",
+      "filterActive": "Active",
+      "filterDisabled": "Disabled/Expired",
+      "filterRevoked": "Deleted",
+      "filterAll": "All Statuses"
+    },
+    "empty": {
+      "title": "No API Keys",
+      "descriptionActive": "No active API Keys found.",
+      "descriptionFiltered": "No API Keys match the current filter."
+    },
+    "table": {
+      "user": "Owner",
+      "name": "Name",
+      "prefix": "Prefix",
+      "concurrencyLimit": "Concurrency Limit",
+      "expiresAt": "Expires At",
+      "status": "Status",
+      "lastUsedAt": "Last Used",
+      "createdAt": "Created At",
+      "actions": "Actions",
+      "neverExpire": "Forever Active"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete API Key",
+      "description": "Are you sure you want to delete \"{{name}}\"? The key will become invalid immediately and cannot be recovered."
+    }
+  },
+  "policies": {
+    "toasts": {
+      "loadFailed": "Failed to load policies",
+      "createSuccess": "Policy created successfully",
+      "createFailed": "Failed to create",
+      "enabled": "Policy enabled",
+      "disabled": "Policy disabled",
+      "actionFailed": "Action failed",
+      "deleted": "Policy deleted",
+      "deleteFailed": "Failed to delete"
+    },
+    "injectMode": {
+      "oncePerConversation": "Deduplicate",
+      "everyRequest": "Every Request"
+    },
+    "injectPosition": {
+      "messagesUnshift": "Prepend Messages",
+      "appendSystem": "Append System",
+      "replaceSystem": "Replace System",
+      "system": "Overwrite"
+    },
+    "filters": {
+      "searchPlaceholder": "Search policy name or description..."
+    },
+    "actions": {
+      "add": "Add Policy"
+    },
+    "dialog": {
+      "addTitle": "Add Prompt Policy",
+      "addDesc": "Create a new prompt injection policy"
+    },
+    "fields": {
+      "name": "Policy Name",
+      "description": "Description",
+      "protocol": "Protocol Type",
+      "injectPosition": "Injection Position",
+      "injectMode": "Injection Mode",
+      "content": "Injection Content",
+      "enabled": "Enable Immediately"
+    },
+    "placeholders": {
+      "name": "e.g., Safety Guard Policy",
+      "description": "Optional, describe the purpose of this policy",
+      "content": "Enter prompt content to inject..."
+    },
+    "options": {
+      "openai": "OpenAI Format",
+      "anthropic": "Anthropic Format",
+      "everyRequest": "Inject on Every Request",
+      "oncePerConversation": "Once Per Conversation (Deduplicate)",
+      "appendSystem": "Append to the end of System Prompt",
+      "messagesUnshift": "Prepend to Messages array",
+      "replaceSystem": "Replace original System Prompt",
+      "system": "Overwrite System Prompt",
+      "fallbackTreatAsNew": "Treat as new session and inject",
+      "fallbackSkip": "Skip injection",
+      "fallbackError": "Throw error and block request"
+    },
+    "conversation": {
+      "title": "Deduplication Settings",
+      "keySource": "Session ID Source",
+      "sourceHeader": "Get Session ID from Header",
+      "sourceBody": "Get Session ID from Body",
+      "keyName": "Session ID Key Name",
+      "fallbackMode": "Fallback if Session ID Missing"
+    },
+    "hints": {
+      "content": "Supports plain text or JSON format"
+    },
+    "empty": {
+      "title": "No Prompt Policies",
+      "description": "Add your first prompt policy to begin configuring custom rules.",
+      "noResultsTitle": "No matching policies found",
+      "noResultsDesc": "Try adjusting your search keywords."
+    },
+    "table": {
+      "name": "Name",
+      "protocol": "Protocol",
+      "injectPosition": "Position",
+      "injectMode": "Mode",
+      "version": "Version",
+      "status": "Status",
+      "enabled": "Enabled",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "view": {
+      "noDescription": "No description",
+      "protocol": "Protocol",
+      "injectMode": "Injection Mode",
+      "injectPosition": "Injection Position",
+      "version": "Version",
+      "content": "Injection Content"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete Policy",
+      "description": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone."
+    }
+  },
+  "myStats": {
+    "toasts": {
+      "loadFailed": "Failed to load stats",
+      "exampleInfo": "Usage Example: Set 'Authorization' to 'Bearer <API Key>' and POST to '/v1/chat/completions'."
+    },
+    "title": "My Stats",
+    "subtitle": "View your API usage overview",
+    "empty": {
+      "title": "No Usage Data Yet",
+      "description": "Once you make requests using your API Key, your request counts, Token usage, and error stats will show up here."
+    },
+    "actions": {
+      "createKey": "Create API Key",
+      "viewExample": "View Usage Example"
+    },
+    "stats": {
+      "totalRequests": "Total Requests",
+      "totalTokens": "Total Tokens",
+      "tokenBreakdown": "Input: {{input}} / Output: {{output}}",
+      "successRate": "Success Rate",
+      "errorCount": "Error Count",
+      "totalCost": "Total Cost",
+      "totalCostDesc": "Total cost of all requests (USD)"
+    },
+    "apiKeyUsage": {
+      "title": "Usage by API Key",
+      "unknownKey": "Unknown Key",
+      "table": {
+        "prefix": "API Key Prefix",
+        "name": "Name",
+        "requests": "Requests",
+        "tokens": "Tokens",
+        "errors": "Errors",
+        "lastUsedAt": "Last Request Time"
+      }
+    },
+    "recentRequests": {
+      "title": "Recent Requests",
+      "count": "{{count}} items",
+      "noLogsTitle": "No requests found",
+      "noLogsDesc": "You haven't made any API requests yet.",
+      "noMore": "No more records",
+      "errorDetail": "Error Detail",
+      "table": {
+        "time": "Time",
+        "prefix": "API Key Prefix",
+        "model": "Model",
+        "status": "Status Code",
+        "tokens": "Tokens",
+        "tokenBreakdownShort": "In: {{input}} / Out: {{output}}",
+        "latency": "Latency",
+        "errorMessage": "Error Message"
+      }
+    }
+  },
+  "chatLogs": {
+    "title": "LLM Audit Logs",
+    "autoScroll": "Auto Scroll",
+    "loadSessionFailed": "Failed to load session list",
+    "loadDetailsFailed": "Failed to load session details",
+    "user": "User:",
+    "model": "Model:",
+    "allUsers": "All Users",
+    "allModels": "All Models",
+    "applyFilters": "Apply Filters",
+    "pauseStream": "Pause Stream",
+    "resumeStream": "Resume Stream",
+    "sessions": "Sessions",
+    "liveStreamAll": "Live Stream",
+    "watchingGlobalStream": "Watching global stream, data is lost when leaving page",
+    "noHistoricalSessions": "No historical sessions found",
+    "sessionTurns": "Session Turns",
+    "allTurnsLive": "Live Stream",
+    "timeJustNow": "just now",
+    "timeSecondsAgo": "{{count}}s ago",
+    "timeMinutesAgo": "{{count}}m ago",
+    "timeHoursAgo": "{{count}}h ago",
+    "timeDaysAgo": "{{count}}d ago",
+    "waitingForTurns": "Waiting for turns...",
+    "turnDetails": "Turn Details",
+    "selectTurn": "Please select a turn from the middle column to view details.",
+    "thoughtProcess": "Thought Process (Click to expand)",
+    "routingTrace": "LLM Handoff",
+    "routingHop": "Hop",
+    "latency": "Latency",
+    "tokens": "Tokens",
+    "reason": "Reason",
+    "unknownError": "Request failed with unknown error.",
+    "turnsCount": "{{count}} turns",
+    "itemsCount": "{{count}} items",
+    "userInput": "User Input",
+    "assistantOutput": "Assistant Output",
+    "showRaw": "Show JSON",
+    "showRendered": "Show Rendered",
+    "conversationReplay": "Conversation Replay",
+    "copySession": "Copy Session"
+  },
+  "endpoints": {
+    "toasts": {
+      "loadFailed": "Failed to load data",
+      "detailsFailed": "Failed to load details",
+      "updateSuccess": "Endpoint updated successfully",
+      "createSuccess": "Endpoint created successfully",
+      "saveFailed": "Failed to save",
+      "deleted": "Endpoint deleted",
+      "deleteFailed": "Failed to delete"
+    },
+    "title": "Endpoints",
+    "subtitle": "Configure API endpoints and routing rules",
+    "actions": {
+      "add": "Add Endpoint"
+    },
+    "dialog": {
+      "editTitle": "Edit Endpoint",
+      "addTitle": "Add Listening Endpoint",
+      "editDesc": "Modify endpoint and routing configuration",
+      "addDesc": "Create a new API listening endpoint"
+    },
+    "fields": {
+      "name": "Endpoint Name",
+      "path": "Listening Path",
+      "provider": "Provider",
+      "protocol": "Protocol Type",
+      "model": "Model",
+      "policy": "Prompt Policy",
+      "timeout": "Timeout (ms, 0 for unlimited)",
+      "queueTimeout": "Queue Timeout (ms, 0 for unlimited)",
+      "maxBody": "Max Request Body (MB, 0 for unlimited)"
+    },
+    "placeholders": {
+      "name": "e.g., Default Chat",
+      "provider": "Select Provider",
+      "model": "Select model (will also serve as alias)"
+    },
+    "options": {
+      "none": "None"
+    },
+    "tableCard": {
+      "title": "Endpoint List",
+      "subtitle": "Manage all API endpoints"
+    },
+    "empty": {
+      "title": "No Endpoints",
+      "description": "Add your first API endpoint to begin."
+    },
+    "table": {
+      "name": "Name",
+      "path": "Listening Path",
+      "protocol": "Protocol",
+      "alias": "Alias",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete Endpoint",
+      "description": "Are you sure you want to delete \"{{name}}\" and all its routes? This action cannot be undone."
+    }
+  },
+  "subdomains": {
+    "toasts": {
+      "loadFailed": "Failed to load subdomains",
+      "createSuccess": "Subdomain created successfully",
+      "createFailed": "Failed to create",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "actionFailed": "Action failed",
+      "deleted": "Subdomain deleted",
+      "deleteFailed": "Failed to delete"
+    },
+    "filters": {
+      "searchPlaceholder": "Search domain, name, or description..."
+    },
+    "actions": {
+      "add": "Add Subdomain"
+    },
+    "dialog": {
+      "title": "Add Subdomain",
+      "description": "Create a new subdomain for routing"
+    },
+    "fields": {
+      "prefix": "Subdomain Prefix",
+      "description": "Description",
+      "enabled": "Enable Immediately"
+    },
+    "hints": {
+      "prefix": "The full domain will be automatically concatenated as prefix + mainDomain."
+    },
+    "placeholders": {
+      "prefix": "e.g., code",
+      "description": "Optional, describe the purpose of this subdomain"
+    },
+    "empty": {
+      "title": "No Subdomains",
+      "description": "Add your first subdomain to start configuring subdomain-based routing.",
+      "noResultsTitle": "No matching domains found",
+      "noResultsDesc": "Try adjusting your search keywords."
+    },
+    "table": {
+      "hostname": "Domain",
+      "prefix": "Prefix",
+      "description": "Description",
+      "status": "Status",
+      "enabled": "Enabled",
+      "actions": "Actions",
+      "noDescription": "No description"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "deleteConfirm": {
+      "title": "Confirm Delete Subdomain",
+      "description": "Are you sure you want to delete \"{{name}}\"? Associated endpoint routes will also be cleared. This action cannot be undone."
+    }
+  },
+  "playground": {
+    "title": "Playground",
+    "cUrlTest": "cURL Quick Test",
+    "subtitle": "Quickly test your routing configuration and generate integration code.",
+    "actions": {
+      "generateClaudeConfig": "Generate Claude Code Config",
+      "generateConfig": "Generate Config",
+      "copyCode": "Copy Code"
+    },
+    "dialog": {
+      "title": "Client Integration Config",
+      "description": "Select your client tool to get the corresponding integration configuration.",
+      "claudeDesc": "Add the following configuration to your ~/.claude/settings.json or Cursor's custom model configuration.",
+      "opencodeDesc": "Save the following configuration as ~/.config/opencode/opencode.json. See ",
+      "opencodeDocs": "Official Documentation",
+      "hermesDesc": "Save the following configuration as ~/.hermes/config.yaml (Local) or /opt/data/config.yaml (Docker). See ",
+      "hermesDocs": "Hermes Documentation",
+      "copy": "Copy",
+      "virtualModelHint": "auto is PromptGate's virtual model. The client always requests auto, and the real provider and model are dynamically selected by PromptGate based on the current domain, API Key, and unified routing. Opencode needs to explicitly declare that auto supports image input; otherwise, image attachments may not be sent."
+    },
+    "fields": {
+      "selectRoute": "Select Route",
+      "apiKey": "API Key",
+      "prompt": "Prompt"
+    },
+    "placeholders": {
+      "noRoute": "No available routes",
+      "apiKey": "Paste full API Key to automatically embed in code",
+      "prompt": "Enter the prompt content you want to test..."
+    },
+    "hints": {
+      "apiKey": "Only used to generate code on the current page, will not be saved; defaults to <YOUR_API_KEY> when empty.",
+      "codeTips": "Note: Entering a full API Key on the left will automatically embed it; defaults to <YOUR_API_KEY> when empty.",
+      "defaultPrompt": "Please introduce yourself"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load data",
+      "copied": "Copied to clipboard"
+    },
+    "errors": {
+      "selectRouteFirst": "Please select a route first"
+    }
+  },
+  "groups": {
+    "defaultGroupName": "Default",
+    "defaultGroupDesc": "System default group for all regular users",
+    "create": "Create Group",
+    "createTitle": "Create New Group",
+    "createDesc": "Create a new user group to manage route permissions",
+    "editTitle": "Edit Group",
+    "editDesc": "Modify group information",
+    "name": "Group Name",
+    "description": "Description",
+    "defaultBadge": "Default",
+    "customBadge": "Custom",
+    "manageMembers": "Manage Members",
+    "membersTitle": "Manage Members",
+    "membersDesc": "Add or remove members from this group",
+    "addMember": "Add Member",
+    "addMemberTitle": "Add Member",
+    "addMemberDesc": "Select a user to add to this group",
+    "selectUser": "Select User",
+    "selectUserPlaceholder": "Select a user",
+    "noMembers": "No members in this group",
+    "noAvailableUsers": "No users available to add",
+    "deleteTitle": "Confirm Delete Group",
+    "deleteDesc": "Are you sure you want to delete group \"{{name}}\"? Related authorizations will also be removed.",
+    "toasts": {
+      "loadFailed": "Failed to load groups",
+      "createSuccess": "Group created successfully",
+      "createFailed": "Failed to create",
+      "updateSuccess": "Group updated successfully",
+      "updateFailed": "Failed to update",
+      "deleteSuccess": "Group deleted",
+      "deleteFailed": "Failed to delete",
+      "loadMembersFailed": "Failed to load members",
+      "addMemberSuccess": "Member added",
+      "addMemberFailed": "Failed to add member",
+      "removeMemberSuccess": "Member removed",
+      "removeMemberFailed": "Failed to remove member"
+    },
+    "table": {
+      "name": "Name",
+      "description": "Description",
+      "members": "Members",
+      "type": "Type",
+      "actions": "Actions"
+    },
+    "empty": {
+      "title": "No Groups",
+      "desc": "Create a user group to manage permissions"
+    }
+  },
+  "timeRange": {
+    "label": "Reporting Period",
+    "tooltip": "Global data reporting period",
+    "day": "Today",
+    "week": "This Week",
+    "month": "This Month",
+    "year": "This Year",
+    "all": "All Time",
+    "custom": {
+      "title": "Custom Time Range",
+      "desc": "Accurately select the start and end time of the data to be queried.",
+      "presets": "Common Ranges",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "last24h": "Last 24 Hours",
+      "last3d": "Last 3 Days",
+      "last7d": "Last 7 Days",
+      "last30d": "Last 30 Days",
+      "start": "Start Time",
+      "end": "End Time",
+      "errorRange": "Start time cannot be later than end time",
+      "trigger": "Custom Range..."
+    },
+    "duration": {
+      "days": "days",
+      "hours": "hours",
+      "minutes": "mins",
+      "seconds": "secs",
+      "selected": "Selected duration: "
+    }
+  },
+  "openapi": {
+    "title": "OpenAPI",
+    "description": "Manage OpenAPI keys to access system-level statistics and status endpoints.",
+    "empty": {
+      "title": "No OpenAPI Keys",
+      "description": "Generate a key to access system statistics via API"
+    },
+    "actions": {
+      "generate": "Generate API Key",
+      "createSuccess": "Created successfully",
+      "deleteSuccess": "Deleted successfully"
+    },
+    "status": {
+      "active": "Active",
+      "revoked": "Revoked"
+    },
+    "delete": {
+      "title": "Delete OpenAPI Key",
+      "description": "Are you sure you want to delete this OpenAPI key? Associated API access will be revoked immediately."
+    },
+    "doc": {
+      "title": "API Reference & Playground",
+      "description": "Fetch system statistics via API. You need to include the generated API Key in the Authorization header.",
+      "testBtn": "Test Fetch Last 24 Hours (Admin Bypass)",
+      "testResult": "Test Result:",
+      "apiKey": "API Key",
+      "startTime": "Start Time",
+      "endTime": "End Time",
+      "runBtn": "Send Request (Run Test)",
+      "errorNoKey": "Please enter an API Key first"
+    }
+  },
+  "responseCache": {
+    "title": "Response Cache",
+    "inputText": "User Input",
+    "responseText": "Cached Response",
+    "model": "Model",
+    "hitCount": "Hit Count",
+    "lastHitAt": "Last Hit",
+    "createdAt": "Created",
+    "actions": "Actions",
+    "delete": "Delete",
+    "confirmDelete": "Are you sure you want to delete this cache entry?",
+    "deleteSuccess": "Deleted successfully",
+    "empty": "No cache entries",
+    "emptyDesc": "Click the cache button in audit logs to add entries",
+    "cacheThis": "Cache this response",
+    "cacheSuccess": "Added to cache",
+    "cacheExists": "A cache entry already exists for this input. Overwrite?",
+    "overwriteSuccess": "Cache overwritten",
+    "cacheHit": "Cache Hit",
+    "total": "{{count}} entries"
+  }
+}

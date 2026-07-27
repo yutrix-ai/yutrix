@@ -1,0 +1,237 @@
+{
+  "version": "5",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1779953200723,
+      "tag": "0000_colossal_nuke",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1779955709457,
+      "tag": "0001_supreme_mother_askani",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1779979852568,
+      "tag": "0002_shocking_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1780037562079,
+      "tag": "0003_married_the_enforcers",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1780365312698,
+      "tag": "0004_bizarre_lightspeed",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1780367524405,
+      "tag": "0005_plain_logan",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1780391372827,
+      "tag": "0006_route_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1780546327475,
+      "tag": "0007_wide_firebrand",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1780630933563,
+      "tag": "0008_empty_exiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1780634314042,
+      "tag": "0009_yellow_cerise",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1780841103185,
+      "tag": "0010_unique_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1780842999265,
+      "tag": "0011_lively_miracleman",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1780900000000,
+      "tag": "0012_user_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1780978847264,
+      "tag": "0013_stiff_starbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1781058861460,
+      "tag": "0014_ancient_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1781060962624,
+      "tag": "0015_tired_lenny_balinger",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1781067581521,
+      "tag": "0016_smooth_archangel",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1781337600000,
+      "tag": "0017_session_merge_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1781337600001,
+      "tag": "0018_conversation_root",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1781255050227,
+      "tag": "0019_careful_grim_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1781363027942,
+      "tag": "0020_bouncy_phalanx",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1781390847545,
+      "tag": "0021_cheerful_marrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1781413374494,
+      "tag": "0022_perfect_solo",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1781500000000,
+      "tag": "0023_agentic_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1781738128537,
+      "tag": "0024_blushing_maestro",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1781970367760,
+      "tag": "0025_narrow_vance_astro",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1782139200000,
+      "tag": "0026_token_input_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1782142800000,
+      "tag": "0027_agentic_routing_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1782229200000,
+      "tag": "0028_strategy_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1782744858459,
+      "tag": "0029_drop_auto_drive_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1782748656099,
+      "tag": "0030_broken_blonde_phantom",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1783049377086,
+      "tag": "0031_dashing_boomer",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1783414073373,
+      "tag": "0032_request_log_analytics_indexes",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,1138 @@
+import { and, eq } from "drizzle-orm";
+import { db } from "../db";
+import { providerModels, providers } from "../db/schema";
+import {
+  getMessagesFromParsedRequest,
+  selectCurrentInputMessages,
+  serializeContentForLog,
+  serializeMessagesForLog,
+} from "../utils/chatTurns";
+import { resolveRouteProviderProtocol, type RouteProtocol } from "../utils/routeProtocol";
+import type { AttemptState, RoutingRequirements } from "../routes/gateway/types";
+import { estimateMultimodalInputUsage, inspectOutboundCapabilities } from "../routes/gateway/inputTokenLimit";
+import { resolveModelContextWindow } from "../routes/gateway/gatewayExecutorUtils";
+import { hasImageInput, isImageNode } from "../utils/multimodal";
+export { hasImageInput };
+
+
+export const STRATEGY_TASK_TYPES = [
+  "vision",
+  "debug",
+  "code",
+  "long_context",
+  "writing",
+  "general",
+] as const;
+
+export type StrategyTaskType = typeof STRATEGY_TASK_TYPES[number];
+
+export interface StrategyRoutingRule {
+  taskType: StrategyTaskType;
+  providerId: string;
+  providerProtocol: RouteProtocol;
+  modelId: string;
+  enabled: boolean;
+}
+
+export interface StrategyTaskClassification {
+  taskType: StrategyTaskType;
+  reasons: string[];
+  inputText: string;
+  hasImageInput: boolean;
+}
+
+export interface StrategyRoutingDecision {
+  applied: boolean;
+  taskType: StrategyTaskType;
+  reasons: string[];
+  rule: StrategyRoutingRule | null;
+  newAttempt?: AttemptState;
+  skipReason?: string;
+}
+
+const TASK_TYPE_SET = new Set<string>(STRATEGY_TASK_TYPES);
+
+export function isStrategyTaskType(value: unknown): value is StrategyTaskType {
+  return typeof value === "string" && TASK_TYPE_SET.has(value);
+}
+
+export function extractCurrentUserInputForRouting(body: any): string {
+  const messages = getMessagesFromParsedRequest(body);
+  if (messages.length > 0) {
+    const currentInput = selectCurrentInputMessages(messages);
+    const serialized = serializeMessagesForLog(currentInput.messages);
+    if (serialized?.trim()) return serialized.trim();
+  }
+
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    if (body.prompt !== undefined) {
+      return serializeContentForLog(body.prompt)?.trim() || "";
+    }
+    if (body.input !== undefined) {
+      return serializeContentForLog(body.input)?.trim() || "";
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Unwraps agentic protocol wrappers (JSON message arrays, system-reminder tags)
+ * to extract the real user intent, then normalizes whitespace and casing.
+ * Production data shows ~49% of inputs arrive wrapped in these structures.
+ */
+export function normalizeStrategyInput(text: string) {
+  return (text || "")
+    .replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, " [image] ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+import { Jieba } from "@node-rs/jieba";
+import { dict } from "@node-rs/jieba/dict";
+
+const jieba = Jieba.withDict(dict);
+
+/**
+ * Jieba-based supplementary weight dictionary.
+ * These weights are only consulted when no primary regex guard fires,
+ * providing a second chance to classify borderline inputs.
+ * Weights were tuned against production data from chat_logs.
+ *
+ * IMPORTANT: Do NOT add ambiguous English words here (let, var, return, class, etc.)
+ * — those are handled by the regex layer with proper \b word boundaries and
+ * surrounding context. Jieba tokenizes English by whitespace, so single common
+ * English words would cause massive false positives.
+ */
+export const ROUTING_WEIGHTS: Record<string, Record<string, number>> = {
+  debug: {
+    "报错": 10,
+    "error": 10,
+    "bug": 8,
+    "失败": 5,
+    "异常": 8,
+    "exception": 10,
+    "崩溃": 8,
+    "排查": 8,
+    "无效": 10,
+    "crash": 8,
+    "failed": 5,
+    "failure": 5,
+    "timeout": 8,
+    "panic": 8,
+    // Production data: negative user feedback (chat_logs analysis)
+    "不行": 5,
+    "不对": 5,
+    "不能": 3,
+  },
+  code: {
+    "代码": 10,
+    "组件": 8,
+    "接口": 8,
+    "函数": 8,
+    "前端": 5,
+    "后端": 5,
+    "页面": 5,
+    "样式": 5,
+    "数据库": 5,
+    "重构": 5,
+    "路由": 5,
+    "筛选": 5,
+    "分页": 5,
+    "跳转": 5,
+    "参数": 5,
+    "调用": 5,
+    "按钮": 5,
+    "排序功能": 5,
+    "配置": 3,
+    "修改": 3,
+    // Production data: high-frequency dev terms from chat_logs
+    "列表": 5,
+    "返回": 3,
+    "状态": 3,
+    "数据": 3,
+    "格式": 3,
+    "菜单": 5,
+    "输入框": 5,
+    "内边距": 5,
+    "播放": 3,
+    "刷新": 5,
+    "功能": 3,
+    "居中": 5,
+    "传入": 3,
+    "字符串": 5,
+    "数组": 5,
+    "对象": 3,
+    // Production data round 4
+    "驼峰": 5,
+    "负数": 5,
+    "下拉": 5,
+    "弹层": 5,
+  },
+  writing: {
+    "文章": 8,
+    "润色": 8,
+    "文案": 8,
+    "翻译": 8,
+    "总结": 8,
+    "邮件": 8,
+    "故事": 8,
+    "起草": 10,
+    "方案": 5,
+    "polish": 8,
+    "translate": 8,
+    "email": 8,
+    "rewrite": 8,
+    "article": 8,
+    "story": 8,
+    "changelog": 5,
+    "draft": 5,
+    // Production data: content generation terms
+    "总结一下": 8,
+    "生成": 5,
+    "文档": 5,
+  },
+};
+
+export function classifyStrategyTask(
+  text: string,
+  hasCurrentImageInput: boolean,
+): StrategyTaskClassification {
+  const truncatedText = (text || "").slice(0, 8000);
+  const normalized = normalizeStrategyInput(truncatedText);
+  const reasons: string[] = [];
+
+  // --- 1. Vision: image input or vision-related keywords (O(1) pre-check, HIGHEST PRIORITY) ---
+  // Must be first! "宁可错杀也不要放过" — vision misrouting crashes non-vision models
+  if (
+    hasCurrentImageInput ||
+    /\b(image|screenshot|vision|picture|photo|jpg|jpeg|png|webp|gif|ocr)\b|截图|图片|图像|视觉|照片|图中|图里|原图|大图|识别图|海报|头像|logo|二维码|attached media from tool result/.test(normalized) ||
+    /"type"\s*:\s*"(?:image_url|image|input_image)"|"image_url"\s*:|"image"\s*:/i.test(truncatedText)
+  ) {
+    reasons.push(hasCurrentImageInput ? "image_input" : "vision_keyword");
+    return { taskType: "vision", reasons, inputText: text, hasImageInput: hasCurrentImageInput };
+  }
+
+  // --- 1b. Debug Protocol: Tool errors & System crash indicators (O(1) pre-check) ---
+  if (
+    (/tool_result|role["\s]*:["\s]*tool|system-reminder|system_reminder/.test(normalized)) &&
+    (/error|exception|fail|timeout|crash|panic|reject|invalid|undefined|not defined|is null|is empty|not found|not registered/.test(normalized) ||
+     /zsh:.*not found|enoent:/.test(normalized) ||
+     /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱/.test(normalized))
+  ) {
+    reasons.push("protocol_error");
+    return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 1c. Code Protocol: Agentic actions, Tool calls, File paths (O(1) pre-check) ---
+  if (
+    /qqrrrrqqquuuuqqq|vvxxxxvvvddddvvv|<system-reminder>|<system_reminder>|<task-notification>|<transcript>/.test(truncatedText) ||
+    /\[\{"role":"tool"/.test(truncatedText) ||
+    /\[\{"tool_use_id"/.test(truncatedText) ||
+    /"type":\s*"tool_result"/.test(truncatedText) ||
+    /\[Request interrupted/.test(truncatedText) ||
+    /<path>.*<\/path>|<content>/.test(normalized)
+  ) {
+    reasons.push("agentic_protocol_marker");
+    return { taskType: "code", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 2. Debug: errors, failures, and negative feedback indicating something is broken ---
+  if (
+    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|bug|crash|panic|repair)\b|exception\b/.test(normalized) ||
+    /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(normalized) ||
+    /is not defined|undefined|is null|is empty|not found|not registered/.test(normalized) ||
+    /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱|不好使|渲染层错误|不存在|无效/.test(normalized) ||
+    /没展示|没显示|没有显示|没有展示|没改好|没改完|没效果|没作用/.test(normalized) ||
+    // Production data: negative feedback patterns (100+ occurrences in chat_logs)
+    /还是不|还是没|不行$|不能用|没有变化|没有出现|为什么没/.test(normalized) ||
+    // Production data round 2: more negative feedback ("怎么...没/不" patterns)
+    /怎么没|怎么不|点不了|用不了|不见了/.test(normalized) ||
+    // Production data round 3: data-passing failures, state issues
+    /没带过来|没传过来|不一致|都不对/.test(normalized) ||
+    // Production data round 4: logic errors, element disappeared
+    /逻辑是错|逻辑不对/.test(normalized) ||
+    // Production data round 5 (MDP): UI bugs and layout failures
+    /滚动条|盖住|溢出|重叠|遮挡|错位/.test(normalized) ||
+    // Production data round 6 (MDP review): data-passing and state failures
+    /带不回数据|带不回|没有实现|对不齐/.test(normalized) ||
+    // Production data (MDP review 2): display blank / no response
+    /显示空白|还是空白/.test(normalized) ||
+    // UI action failures
+    /不能(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|无法(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|点不开|打不开/.test(normalized)
+  ) {
+    reasons.push("debug_keyword");
+    return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 3. Code: programming keywords, file references, CSS properties, dev terminology ---
+  if (
+    // Code blocks and language keywords
+    /```|\b(class|function|def|fn|const|async|await|interface|struct|enum|extends|implements|import|export|throw|catch|yield|private|public|protected)\b|\blet\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\bvar\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\breturn\s+(?!to\b)[a-zA-Z0-9_$'"[{(-]|return\s*;/.test(normalized) ||
+    // File extensions
+    /\.(tsx|ts|jsx|js|vue|java|py|go|rs|cpp|c|cs|php|rb|sql|swift|kt)\b/.test(normalized) ||
+    // File path references (src/xxx or src\xxx, pages/, views/, components/)
+    /\bsrc[/\\]|(?:^|[\s/\\])(?:pages|views|components|packages|package)[/\\]|\b[\w-]{1,50}packages\/[\w-]{1,50}\/|\b[\w-]{1,50}\/[\w-]{1,50}\/index\b/.test(normalized) ||
+    // CSS property names and measurement units (extremely strong code signal)
+    /\b(padding|margin|border-radius|opacity|font-size|background-color|z-index|flex|grid)\b|\d+r?px\b/.test(normalized) ||
+    // Chinese dev terminology — UI elements and dev concepts
+    /代码|接口|组件|函数|编译|重构|页面|样式|字段|参数|调用|分页|筛选|弹框|弹窗|跳转|路由|回显|排序|传参|分包|克隆|折线图/.test(normalized) ||
+    // Production data: Java/Spring class naming — suffix match (toLowerCase breaks \b for PascalCase)
+    /(?:controller|service|repository|entity|mapper|dto)\b/.test(normalized) ||
+    // Java type errors and generics
+    /\btype mismatch|\bgeneric|\bmono<|\bflux<|\bmap<|\blist</.test(normalized) ||
+    // Production data round 2: API path references and date/format specs
+    /\/api\/|yyyy|hh:mm|格式化|从底部弹出|底部弹/.test(normalized) ||
+    // Production data round 3: CSS selectors, code constructs
+    /\.[a-z][\w-]*\[|\bwindow\.|\bconsole\.|\bgap\b|\.then\(|\=\>/.test(truncatedText.replace(/\s+/g, ' ')) ||
+    /清空功能|垂直居中|水平居中|靠上|靠下|靠左|靠右/.test(normalized) ||
+    // Production data round 5 (MDP): UI styling terms (require dev-adjacent context to avoid false positives)
+    /自动撑开|写死|边距/.test(normalized) ||
+    /提交到远程仓库|新建.*md/.test(normalized) ||
+    /\b(font-weight|redisson|commonjs|gradlew|redis|mysql|docker|nginx)\b/.test(normalized) ||
+    // Production data round 6 (MDP review): git ops, HTML tags, hex colors, terminal commands
+    /合并到.*(main|master|dev)|提交到|推送到/.test(normalized) ||
+    /<script|<div|<span|<style|<link|<img|<form/.test(normalized) ||
+    /#[0-9a-f]{6}\b/.test(normalized) ||
+    /\b(nc|curl|wget|chmod|mkdir|npm|pnpm|yarn|pip|git|gradle)\b/.test(normalized) ||
+    // Production data round 7: camelCase method names (strong code signal)
+    /\b[a-z]+[A-Z]\w*\b/.test(truncatedText) ||
+    // Chinese dev verbs with tech context
+    /改为#|改为\d|改为0x|改为https?|引入|调试|部署/.test(normalized) ||
+    // Production data round 8-10 (MDP review): file refs, dev tools, UI actions
+    /\.tgz\b|\.png\b|\.jpg\b|\.svg\b|\.css\b|\.html\b|\.json\b|\.xml\b|\.yml\b|\.yaml\b|\.sh\b|\.md\b/.test(normalized) ||
+    /\bskill\.md\b|\bworktree\b|\bmcp\b|\boss\b|\bcdn\b|\bapi\b/.test(normalized) ||
+    /拖拽|滑动|虚化|卡片|弹屏|弧角|序号|导航|开关|显隐|注入|封装/.test(normalized) ||
+    /安装|运行|启动|构建|打包/.test(normalized) ||
+    // Production data round 11-15 (MDP review): UI layout, Java annotations, web search
+    /展示|平齐|竖向|横向|换行|一行展示|左右对.|上下对.|按label对齐|复选框|全选|批量/.test(normalized) ||
+    /\b@(?:post|get|put|delete|patch|request)mapping\b/.test(normalized) ||
+    /perform a web search|\bweb search for the query\b/.test(normalized) ||
+    /圆形|赋值|字符|数组|对象|列表|表头|表格|复用|返回上一|还原/.test(normalized) ||
+    // Production data round 16-20 (MDP review): UI micro-interactions, dev ops
+    /间距|去掉|增加.*间距|秒.*消失|消失|分支|映射|回调|充值|缴纳|退款|退住|打印/.test(normalized) ||
+    /search the codebase|find all files/.test(normalized) ||
+    /\{"[a-z]+":\s*[\d"\[{]/.test(normalized) ||
+    /提示.*成功|提示.*失败|下边框|上边框/.test(normalized) ||
+    // Production data round 20+ (MDP review): store/backend, placeholder, scanning
+    /\bstore\b|后端|占位图|扫码|二维码|校验|重名/.test(normalized) ||
+    // Production data (MDP review 2): UI interaction and specific layouts
+    /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized)
+  ) {
+    reasons.push("code_signal");
+    return { taskType: "code", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 4. Long context: long-content-specific keywords (O(1) pre-check) ---
+  if (text.length > 4000) {
+    reasons.push("large_input");
+    return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
+  }
+
+  if (/\b(log|audit|transcript|migration)\b|日志|审计|长文本|迁移/.test(normalized)) {
+    reasons.push("long_context_keyword");
+    return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 5. Writing: content creation and editing ---
+  if (/\b(write|rewrite|polish|story|copy|email|article|translate|release notes|changelog)\b|写作|润色|文案|文章|邮件|故事|翻译|发布说明|更新说明/.test(normalized)) {
+    reasons.push("writing_keyword");
+    return { taskType: "writing", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 6. Jieba supplementary scoring (catches borderline cases that slip through regex) ---
+  const words = jieba.cut(normalized, false);
+  let debugScore = 0;
+  let codeScore = 0;
+  let writingScore = 0;
+
+  for (const word of words) {
+    const w = word.toLowerCase();
+    if (w in ROUTING_WEIGHTS.debug) debugScore += ROUTING_WEIGHTS.debug[w];
+    if (w in ROUTING_WEIGHTS.code) codeScore += ROUTING_WEIGHTS.code[w];
+    if (w in ROUTING_WEIGHTS.writing) writingScore += ROUTING_WEIGHTS.writing[w];
+  }
+
+  const THRESHOLD = 5;
+
+  if (debugScore >= THRESHOLD && debugScore >= codeScore && debugScore >= writingScore) {
+    reasons.push(`jieba_debug_score_${debugScore}`);
+    return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
+  }
+  if (codeScore >= THRESHOLD && codeScore >= debugScore && codeScore >= writingScore) {
+    reasons.push(`jieba_code_score_${codeScore}`);
+    return { taskType: "code", reasons, inputText: text, hasImageInput: false };
+  }
+  if (writingScore >= THRESHOLD && writingScore >= debugScore && writingScore >= codeScore) {
+    reasons.push(`jieba_writing_score_${writingScore}`);
+    return { taskType: "writing", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 7. General: fallback ---
+  reasons.push("default");
+  return { taskType: "general", reasons, inputText: text, hasImageInput: false };
+}
+
+export function classifyIntentTaskType(
+  text: string,
+  isContinuation?: boolean,
+): "debug" | "code" | "long_context" | "writing" | "general" {
+  const truncatedText = (text || "").slice(0, 8000);
+  const normalized = normalizeStrategyInput(truncatedText);
+
+  // Skip vision checks. Go straight to protocol or keywords checks.
+
+  // Debug Protocol
+  if (
+    (/tool_result|role["\s]*:["\s]*tool|system-reminder|system_reminder/.test(normalized)) &&
+    (/error|exception|fail|timeout|crash|panic|reject|invalid|undefined|not defined|is null|is empty|not found|not registered/.test(normalized) ||
+     /zsh:.*not found|enoent:/.test(normalized) ||
+     /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱/.test(normalized))
+  ) {
+    return "debug";
+  }
+
+  // Code Protocol: skip if isContinuation is true
+  if (!isContinuation) {
+    if (
+      /qqrrrrqqquuuuqqq|vvxxxxvvvddddvvv|<system-reminder>|<system_reminder>|<task-notification>|<transcript>/.test(truncatedText) ||
+      /\[\{"role":"tool"/.test(truncatedText) ||
+      /\[\{"tool_use_id"/.test(truncatedText) ||
+      /"type":\s*"tool_result"/.test(truncatedText) ||
+      /\[Request interrupted/.test(truncatedText) ||
+      /<path>.*<\/path>|<content>/.test(normalized)
+    ) {
+      return "code";
+    }
+  }
+
+  // Debug keywords
+  if (
+    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|bug|crash|panic|repair)\b|exception\b/.test(normalized) ||
+    /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(normalized) ||
+    /is not defined|undefined|is null|is empty|not found|not registered/.test(normalized) ||
+    /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱|不好使|渲染层错误|不存在|无效/.test(normalized) ||
+    /没展示|没显示|没有显示|没有展示|没改好|没改完|没效果|没作用/.test(normalized) ||
+    /还是不|还是没|不行$|不能用|没有变化|没有出现|为什么没/.test(normalized) ||
+    /怎么没|怎么不|点不了|用不了|不见了/.test(normalized) ||
+    /没带过来|没传过来|不一致|都不对/.test(normalized) ||
+    /逻辑是错|逻辑不对/.test(normalized) ||
+    /滚动条|盖住|溢出|重叠|遮挡|错位/.test(normalized) ||
+    /带不回数据|带不回|没有实现|对不齐/.test(normalized) ||
+    /显示空白|还是空白/.test(normalized) ||
+    /不能(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|无法(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|点不开|打不开/.test(normalized)
+  ) {
+    return "debug";
+  }
+
+  // Code keywords
+  if (
+    /```|\b(class|function|def|fn|const|async|await|interface|struct|enum|extends|implements|import|export|throw|catch|yield|private|public|protected)\b|\blet\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\bvar\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\breturn\s+(?!to\b)[a-zA-Z0-9_$'"[{(-]|return\s*;/.test(normalized) ||
+    /\.(tsx|ts|jsx|js|vue|java|py|go|rs|cpp|c|cs|php|rb|sql|swift|kt)\b/.test(normalized) ||
+    /\bsrc[/\\]|(?:^|[\s/\\])(?:pages|views|components|packages|package)[/\\]|\b[\w-]{1,50}packages\/[\w-]{1,50}\/|\b[\w-]{1,50}\/[\w-]{1,50}\/index\b/.test(normalized) ||
+    /\b(padding|margin|border-radius|opacity|font-size|background-color|z-index|flex|grid)\b|\d+r?px\b/.test(normalized) ||
+    /代码|接口|组件|函数|编译|重构|页面|样式|字段|参数|调用|分页|筛选|弹框|弹窗|跳转|路由|回显|排序|传参|分包|克隆|折线图/.test(normalized) ||
+    /(?:controller|service|repository|entity|mapper|dto)\b/.test(normalized) ||
+    /\btype mismatch|\bgeneric|\bmono<|\bflux<|\bmap<|\blist</.test(normalized) ||
+    /\/api\/|yyyy|hh:mm|格式化|从底部弹出|底部弹/.test(normalized) ||
+    /\.[a-z][\w-]*\[|\bwindow\.|\bconsole\.|\bgap\b|\.then\(|\=\>/.test(truncatedText.replace(/\s+/g, ' ')) ||
+    /清空功能|垂直居中|水平居中|靠上|靠下|靠左|靠右/.test(normalized) ||
+    /自动撑开|写死|边距/.test(normalized) ||
+    /提交到远程仓库|新建.*md/.test(normalized) ||
+    /\b(font-weight|redisson|commonjs|gradlew|redis|mysql|docker|nginx)\b/.test(normalized) ||
+    /合并到.*(main|master|dev)|提交到|推送到/.test(normalized) ||
+    /<script|<div|<span|<style|<link|<img|<form/.test(normalized) ||
+    /#[0-9a-f]{6}\b/.test(normalized) ||
+    /\b(nc|curl|wget|chmod|mkdir|npm|pnpm|yarn|pip|git|gradle)\b/.test(normalized) ||
+    /\b[a-z]+[A-Z]\w*\b/.test(truncatedText) ||
+    /改为#|改为\d|改为0x|改为https?|引入|调试|部署/.test(normalized) ||
+    /\.tgz\b|\.png\b|\.jpg\b|\.svg\b|\.css\b|\.html\b|\.json\b|\.xml\b|\.yml\b|\.yaml\b|\.sh\b|\.md\b/.test(normalized) ||
+    /\bskill\.md\b|\bworktree\b|\bmcp\b|\boss\b|\bcdn\b|\bapi\b/.test(normalized) ||
+    /拖拽|滑动|虚化|卡片|弹屏|弧角|序号|导航|开关|显隐|注入|封装/.test(normalized) ||
+    /安装|运行|启动|构建|打包/.test(normalized) ||
+    /展示|平齐|竖向|横向|换行|一行展示|左右对.|上下对.|按label对齐|复选框|全选|批量/.test(normalized) ||
+    /\b@(?:post|get|put|delete|patch|request)mapping\b/.test(normalized) ||
+    /perform a web search|\bweb search for the query\b/.test(normalized) ||
+    /圆形|赋值|字符|数组|对象|列表|表头|表格|复用|返回上一|还原/.test(normalized) ||
+    /间距|去掉|增加.*间距|秒.*消失|消失|分支|映射|回调|充值|缴纳|退款|退住|打印/.test(normalized) ||
+    /search the codebase|find all files/.test(normalized) ||
+    /\{"[a-z]+":\s*[\d"\[{]/.test(normalized) ||
+    /提示.*成功|提示.*失败|下边框|上边框/.test(normalized) ||
+    /\bstore\b|后端|占位图|扫码|二维码|校验|重名/.test(normalized) ||
+    /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized)
+  ) {
+    return "code";
+  }
+
+  // Large input / long context
+  if (text.length > 4000) {
+    return "long_context";
+  }
+  if (/\b(log|audit|transcript|migration)\b|日志|审计|长文本|迁移/.test(normalized)) {
+    return "long_context";
+  }
+
+  // Writing
+  if (/\b(write|rewrite|polish|story|copy|email|article|translate|release notes|changelog)\b|写作|润色|文案|文章|邮件|故事|翻译|发布说明|更新说明/.test(normalized)) {
+    return "writing";
+  }
+
+  // Jieba supplementary scoring
+  const words = jieba.cut(normalized, false);
+  let debugScore = 0;
+  let codeScore = 0;
+  let writingScore = 0;
+  for (const word of words) {
+    const w = word.toLowerCase();
+    if (w in ROUTING_WEIGHTS.debug) debugScore += ROUTING_WEIGHTS.debug[w];
+    if (w in ROUTING_WEIGHTS.code) codeScore += ROUTING_WEIGHTS.code[w];
+    if (w in ROUTING_WEIGHTS.writing) writingScore += ROUTING_WEIGHTS.writing[w];
+  }
+  const THRESHOLD = 5;
+  if (debugScore >= THRESHOLD && debugScore >= codeScore && debugScore >= writingScore) {
+    return "debug";
+  }
+  if (codeScore >= THRESHOLD && codeScore >= debugScore && codeScore >= writingScore) {
+    return "code";
+  }
+  if (writingScore >= THRESHOLD && writingScore >= debugScore && writingScore >= codeScore) {
+    return "writing";
+  }
+
+  return "general";
+}
+
+export async function computeRoutingRequirements(
+  body: any,
+  activeModelConfig: any,
+  isContinuation?: boolean,
+  prevBody?: any,
+): Promise<RoutingRequirements> {
+  const tokenEst = await estimateMultimodalInputUsage({ body });
+  const currentUserTurnHasImage = tokenEst.imageCount > 0;
+  const outboundPayloadHasImage = tokenEst.imageCount > 0;
+  const imageCount = tokenEst.imageCount;
+
+  const sourceBody = prevBody || body;
+  const inputText = extractCurrentUserInputForRouting(sourceBody);
+  const intentTaskType = classifyIntentTaskType(inputText, isContinuation || !!prevBody);
+
+  let requiresLongContext = false;
+  const contextBudget = resolveModelContextWindow(activeModelConfig);
+  if (contextBudget.limit > 0) {
+    let requestedOutputTokens = 0;
+    if (body?.max_tokens) requestedOutputTokens = body.max_tokens;
+    else if (body?.max_completion_tokens) requestedOutputTokens = body.max_completion_tokens;
+    else if (activeModelConfig?.maxOutputTokens) requestedOutputTokens = activeModelConfig.maxOutputTokens;
+    
+    const safetyMargin = 50;
+    if (contextBudget.kind === "max_input") {
+      requiresLongContext = (tokenEst.totalTokens + safetyMargin) > contextBudget.limit;
+    } else {
+      requiresLongContext = (tokenEst.totalTokens + requestedOutputTokens + safetyMargin) > contextBudget.limit;
+    }
+  }
+
+  return {
+    intentTaskType,
+    requiredCapabilities: {
+      vision: outboundPayloadHasImage,
+    },
+    currentUserTurnHasImage,
+    outboundPayloadHasImage,
+    imageCount,
+    requiresLongContext,
+    estimatedTextTokens: tokenEst.textTokens,
+    estimatedImageTokens: tokenEst.imageTokens,
+    estimatedTotalTokens: tokenEst.totalTokens,
+  };
+}
+
+export function getDeclaredVisionModels(route: any): Set<string> {
+  const visionModels = new Set<string>();
+
+  const collect = (rulesStr: any) => {
+    if (!rulesStr) return;
+    let rules: any[] = [];
+    if (typeof rulesStr === "string") {
+      try {
+        rules = JSON.parse(rulesStr);
+      } catch {
+        return;
+      }
+    } else if (Array.isArray(rulesStr)) {
+      rules = rulesStr;
+    }
+    for (const rule of rules) {
+      if (rule && typeof rule === "object" && rule.taskType === "vision" && rule.enabled !== false) {
+        if (rule.providerId && rule.modelId) {
+          visionModels.add(`${rule.providerId}:${rule.modelId}`);
+        }
+      }
+    }
+  };
+
+  collect(route.strategyRoutingRules);
+  collect(route.fallbackStrategyRoutingRules);
+
+  if (route.targets) {
+    try {
+      const parsed = typeof route.targets === "string" ? JSON.parse(route.targets) : route.targets;
+      if (Array.isArray(parsed)) {
+        for (const target of parsed) {
+          collect(target.strategyRoutingRules);
+        }
+      }
+    } catch {}
+  }
+
+  return visionModels;
+}
+
+export function parseStrategyRoutingRules(value: unknown): StrategyRoutingRule[] {
+  let raw = value;
+  if (typeof value === "string") {
+    if (!value.trim()) return [];
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+
+  const rules: StrategyRoutingRule[] = [];
+  const seen = new Set<StrategyTaskType>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as Record<string, unknown>;
+    if (!isStrategyTaskType(candidate.taskType)) continue;
+    if (seen.has(candidate.taskType)) continue;
+    const providerId = typeof candidate.providerId === "string" ? candidate.providerId.trim() : "";
+    const modelId = typeof candidate.modelId === "string" ? candidate.modelId.trim() : "";
+    const providerProtocol = candidate.providerProtocol === "anthropic" ? "anthropic" : "openai";
+    if (!providerId || !modelId) continue;
+    seen.add(candidate.taskType);
+    rules.push({
+      taskType: candidate.taskType,
+      providerId,
+      providerProtocol,
+      modelId,
+      enabled: candidate.enabled !== false,
+    });
+  }
+  return rules;
+}
+
+export function stringifyStrategyRoutingRules(rules: StrategyRoutingRule[]) {
+  return JSON.stringify(rules.map((rule) => ({
+    taskType: rule.taskType,
+    providerId: rule.providerId,
+    providerProtocol: rule.providerProtocol,
+    modelId: rule.modelId,
+    enabled: rule.enabled !== false,
+  })));
+}
+
+export function findStrategyRule(
+  rules: StrategyRoutingRule[],
+  taskType: StrategyTaskType,
+): StrategyRoutingRule | null {
+  const direct = rules.find((rule) => rule.enabled !== false && rule.taskType === taskType);
+  if (direct) return direct;
+  return rules.find((rule) => rule.enabled !== false && rule.taskType === "general") || null;
+}
+
+export async function validateAndNormalizeStrategyRules(options: {
+  enabled: boolean;
+  incomingProtocol: string;
+  rules: unknown;
+}): Promise<{ ok: true; rules: StrategyRoutingRule[] } | { ok: false; error: string }> {
+  if (!options.enabled) return { ok: true, rules: parseStrategyRoutingRules(options.rules) };
+
+  const rules = parseStrategyRoutingRules(options.rules);
+  if (rules.length === 0) {
+    return { ok: false, error: "启用策略路由时必须至少配置一个任务类型规则" };
+  }
+  if (!rules.some((rule) => rule.enabled !== false && rule.taskType === "general")) {
+    return { ok: false, error: "策略路由必须配置 general 兜底规则" };
+  }
+
+  const normalized: StrategyRoutingRule[] = [];
+  for (const rule of rules) {
+    if (rule.enabled === false) {
+      // Skip validation for disabled rules, just pass them through
+      normalized.push({
+        ...rule,
+        providerProtocol: rule.providerProtocol || "openai", // fallback protocol if missing
+      });
+      continue;
+    }
+
+    const providerRows = await db.select().from(providers).where(eq(providers.id, rule.providerId)).limit(1);
+    if (providerRows.length === 0 || !providerRows[0].enabled) {
+      return { ok: false, error: `策略路由 ${rule.taskType} 的供应商不存在或已停用` };
+    }
+    const modelRows = await db
+      .select()
+      .from(providerModels)
+      .where(and(
+        eq(providerModels.providerId, rule.providerId),
+        eq(providerModels.modelId, rule.modelId),
+        eq(providerModels.enabled, true),
+        eq(providerModels.active, true),
+      ))
+      .limit(1);
+    if (modelRows.length === 0) {
+      return { ok: false, error: `策略路由 ${rule.taskType} 的模型不存在、未启用或已失效` };
+    }
+    const allProviderModels = await db
+      .select()
+      .from(providerModels)
+      .where(eq(providerModels.providerId, rule.providerId));
+    const protocol = resolveRouteProviderProtocol({
+      incomingProtocol: options.incomingProtocol,
+      provider: {
+        hasOpenaiEndpoint: !!providerRows[0].openaiBaseUrl,
+        hasAnthropicEndpoint: !!providerRows[0].anthropicBaseUrl,
+      },
+      models: allProviderModels,
+      modelId: rule.modelId,
+    });
+    if (!protocol.ok) {
+      return { ok: false, error: `策略路由 ${rule.taskType}: ${protocol.error}` };
+    }
+    normalized.push({
+      ...rule,
+      providerProtocol: protocol.providerProtocol,
+    });
+  }
+
+  return { ok: true, rules: normalized };
+}
+
+export async function validateOneStrategyRule(options: {
+  incomingProtocol: string;
+  rule: StrategyRoutingRule;
+}): Promise<{ ok: true; rule: StrategyRoutingRule } | { ok: false; error: string }> {
+  if (options.rule.enabled === false) {
+    return { ok: false, error: `规则已被禁用` };
+  }
+  const providerRows = await db.select().from(providers).where(eq(providers.id, options.rule.providerId)).limit(1);
+  if (providerRows.length === 0 || !providerRows[0].enabled) {
+    return { ok: false, error: `供应商不存在或已停用` };
+  }
+  const modelRows = await db
+    .select()
+    .from(providerModels)
+    .where(and(
+      eq(providerModels.providerId, options.rule.providerId),
+      eq(providerModels.modelId, options.rule.modelId),
+      eq(providerModels.enabled, true),
+      eq(providerModels.active, true),
+    ))
+    .limit(1);
+  if (modelRows.length === 0) {
+    return { ok: false, error: `模型不存在、未启用或已失效` };
+  }
+  const allProviderModels = await db
+    .select()
+    .from(providerModels)
+    .where(eq(providerModels.providerId, options.rule.providerId));
+  const protocol = resolveRouteProviderProtocol({
+    incomingProtocol: options.incomingProtocol,
+    provider: {
+      hasOpenaiEndpoint: !!providerRows[0].openaiBaseUrl,
+      hasAnthropicEndpoint: !!providerRows[0].anthropicBaseUrl,
+    },
+    models: allProviderModels,
+    modelId: options.rule.modelId,
+  });
+  if (!protocol.ok) {
+    console.log("PROTOCOL ERROR:", protocol.error, "models:", allProviderModels.map(m=>m.modelId), "target:", options.rule.modelId); return { ok: false, error: protocol.error };
+  }
+  return {
+    ok: true,
+    rule: {
+      ...options.rule,
+      providerProtocol: protocol.providerProtocol,
+    },
+  };
+}
+
+export async function resolveStrategyRoutingDecision(options: {
+  route: any;
+  body: any;
+  currentAttempt: AttemptState;
+  incomingProtocol: string;
+  previousModelId?: string | null;
+  isContinuation?: boolean;
+}): Promise<StrategyRoutingDecision | null> {
+  let strategyRoutingEnabled = options.route?.strategyRoutingEnabled;
+  let strategyRoutingRules = options.route?.strategyRoutingRules;
+
+  if (options.route?.targets) {
+    try {
+      const parsedTargets = typeof options.route.targets === 'string' ? JSON.parse(options.route.targets) : options.route.targets;
+      const targetIndex = options.currentAttempt.targetIndex || 0;
+      if (Array.isArray(parsedTargets) && parsedTargets.length > targetIndex) {
+        strategyRoutingEnabled = parsedTargets[targetIndex].strategyRoutingEnabled;
+        strategyRoutingRules = parsedTargets[targetIndex].strategyRoutingRules;
+      }
+    } catch (e) {}
+  }
+
+  if (!strategyRoutingEnabled || options.currentAttempt.isFallback) {
+    return null;
+  }
+
+  const parseRules = (rulesStr: any) => {
+    if (!rulesStr) return [];
+    if (typeof rulesStr === 'string') {
+      try {
+        return JSON.parse(rulesStr);
+      } catch {
+        return [];
+      }
+    }
+    return rulesStr;
+  };
+
+  const defaultModelConfigRows = await db.select().from(providerModels).where(and(
+    eq(providerModels.providerId, options.currentAttempt.providerId),
+    eq(providerModels.modelId, options.currentAttempt.modelId),
+  )).limit(1);
+  const activeModelConfig = defaultModelConfigRows.length > 0 ? defaultModelConfigRows[0] : null;
+  const routingReq = await computeRoutingRequirements(
+    options.body,
+    activeModelConfig,
+    options.isContinuation
+  );
+
+  const parsedRules = parseRules(strategyRoutingRules);
+
+  // If outbound payload contains image: selected target must be current layer vision rule!
+  if (routingReq.requiredCapabilities.vision) {
+    const rule = parsedRules.find((r: any) => r.taskType === "vision" && r.enabled !== false);
+    if (!rule) {
+      return {
+        applied: false,
+        taskType: "vision",
+        reasons: ["required_capability_vision", "no_matching_vision_rule"],
+        rule: null,
+        skipReason: "no_matching_rule",
+      };
+    }
+    const validation = await validateOneStrategyRule({
+      incomingProtocol: options.incomingProtocol,
+      rule,
+    });
+    if (!validation.ok) {
+      return {
+        applied: false,
+        taskType: "vision",
+        reasons: ["required_capability_vision", `Validation failed: ${validation.error}`],
+        rule: null,
+        skipReason: "validation_failed",
+      };
+    }
+    if (options.currentAttempt.modelId === rule.modelId && options.currentAttempt.providerId === rule.providerId) {
+      return {
+        applied: false,
+        taskType: "vision",
+        reasons: ["required_capability_vision", `Already on vision model ${rule.modelId}`],
+        rule: null,
+        skipReason: "already_on_target",
+      };
+    }
+    return {
+      applied: true,
+      taskType: "vision",
+      reasons: ["required_capability_vision", `Switching to vision rule model ${rule.modelId}`],
+      rule: {
+        taskType: "vision" as StrategyTaskType,
+        modelId: rule.modelId,
+        providerId: rule.providerId,
+        providerProtocol: validation.rule.providerProtocol,
+        enabled: true,
+      },
+      newAttempt: {
+        providerId: rule.providerId,
+        providerProtocol: validation.rule.providerProtocol,
+        modelId: rule.modelId,
+        promptPolicyId: options.route.promptPolicyId || null,
+        isFallback: false,
+        fallbackReason: "",
+        targetIndex: options.currentAttempt.targetIndex || 0,
+      }
+    };
+  }
+
+  // ── Continuation requests (tool results, system-reminders, auto-drive, etc.) ──
+  // Not a real user input → unconditionally keep the current model.
+  // If we know the previous model from DB, inherit it; otherwise just stay put.
+  if (options.isContinuation) {
+    if (options.previousModelId) {
+      // We know what model the previous turn used — inherit it
+      if (options.previousModelId === options.currentAttempt.modelId) {
+        return {
+          applied: false,
+          taskType: "general" as StrategyTaskType,
+          reasons: ["continuation_request", `Already on ${options.previousModelId}`],
+          rule: null,
+          skipReason: "already_on_target",
+        };
+      }
+
+      // Need to switch to the previous model — validate it's still available
+      const rules = parseRules(strategyRoutingRules).filter((r: any) => r.enabled !== false);
+      let targetProviderId: string | null = null;
+      if (options.previousModelId === options.route.modelId) {
+        targetProviderId = options.route.providerId;
+      } else {
+        const matchedRule = rules.find((r: any) => r.modelId === options.previousModelId);
+        if (matchedRule) targetProviderId = matchedRule.providerId;
+      }
+
+      if (targetProviderId) {
+        const providerRows = await db.select().from(providers).where(and(
+          eq(providers.id, targetProviderId),
+          eq(providers.enabled, true),
+        )).limit(1);
+
+        if (providerRows.length > 0) {
+          const allModels = await db.select().from(providerModels).where(eq(providerModels.providerId, targetProviderId));
+          const modelRow = allModels.find(m => m.modelId === options.previousModelId && m.enabled && m.active);
+
+          if (modelRow) {
+            const protocol = resolveRouteProviderProtocol({
+              incomingProtocol: options.incomingProtocol,
+              provider: {
+                hasOpenaiEndpoint: !!providerRows[0].openaiBaseUrl,
+                hasAnthropicEndpoint: !!providerRows[0].anthropicBaseUrl,
+              },
+              models: allModels,
+              modelId: options.previousModelId!,
+            });
+
+            if (protocol.ok) {
+              return {
+                applied: true,
+                taskType: "general" as StrategyTaskType,
+                reasons: ["continuation_request", `Inheriting model ${options.previousModelId} from previous turn`],
+                rule: {
+                  taskType: "general" as StrategyTaskType,
+                  modelId: options.previousModelId!,
+                  providerId: targetProviderId,
+                  providerProtocol: protocol.providerProtocol,
+                  enabled: true,
+                },
+                newAttempt: {
+                  providerId: targetProviderId,
+                  providerProtocol: protocol.providerProtocol,
+                  modelId: options.previousModelId!,
+                  promptPolicyId: options.route.promptPolicyId || null,
+                  isFallback: false,
+                  fallbackReason: "",
+                  targetIndex: 0,
+                },
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // Continuation but couldn't find previous model — just keep the current model, don't re-classify
+    return {
+      applied: false,
+      taskType: "general" as StrategyTaskType,
+      reasons: ["continuation_request", "No previous model found, keeping current"],
+      rule: null,
+      skipReason: "already_on_target",
+    };
+  }
+
+  // ── Real user input (blue bubble) ──
+  // Always classify fresh — this is the user's intent signal.
+  const inputText = extractCurrentUserInputForRouting(options.body);
+  const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
+  const isVision = tokenEst.imageCount > 0;
+  const imageInput = isVision;
+  const classification = classifyStrategyTask(inputText, imageInput);
+
+  let selectedTaskType: StrategyTaskType = classification.taskType;
+  let reasons = [...classification.reasons];
+  if (isVision) {
+    selectedTaskType = "vision";
+    reasons = ["required_capability_vision"];
+  }
+
+  const rules = parseRules(strategyRoutingRules);
+  const rule = findStrategyRule(rules, selectedTaskType);
+
+  if (!rule) {
+    return {
+      applied: false,
+      taskType: selectedTaskType,
+      reasons: reasons,
+      rule: null,
+      skipReason: "no_matching_rule",
+    };
+  }
+
+  const validation = await validateOneStrategyRule({
+    incomingProtocol: options.incomingProtocol,
+    rule,
+  });
+  if (!validation.ok) {
+    return {
+      applied: false,
+      taskType: selectedTaskType,
+      reasons: reasons,
+      rule,
+      skipReason: validation.error,
+    };
+  }
+
+  const normalizedRule = validation.rule;
+  const sameTarget =
+    normalizedRule.providerId === options.currentAttempt.providerId &&
+    normalizedRule.providerProtocol === options.currentAttempt.providerProtocol &&
+    normalizedRule.modelId === options.currentAttempt.modelId;
+
+  if (sameTarget) {
+    return {
+      applied: false,
+      taskType: selectedTaskType,
+      reasons: reasons,
+      rule: normalizedRule,
+      skipReason: "already_on_target",
+    };
+  }
+
+  return {
+    applied: true,
+    taskType: selectedTaskType,
+    reasons: reasons,
+    rule: normalizedRule,
+    newAttempt: {
+      providerId: normalizedRule.providerId,
+      providerProtocol: normalizedRule.providerProtocol,
+      modelId: normalizedRule.modelId,
+      promptPolicyId: options.route.promptPolicyId || null,
+      isFallback: false,
+      fallbackReason: "",
+      targetIndex: 0,
+    },
+  };
+}
+
+export async function resolveFallbackStrategyRoutingDecision(options: {
+  route: any;
+  body: any;
+  currentFallbackModelId: string;
+  incomingProtocol: string;
+  currentStrategyTaskType?: string;
+  failedProviderId?: string;
+  failedModelId?: string;
+}): Promise<StrategyRoutingDecision | null> {
+  if (!options.route?.fallbackStrategyRoutingEnabled) {
+    return null;
+  }
+
+  const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
+  const isVision = tokenEst.imageCount > 0;
+
+  let taskType = options.currentStrategyTaskType;
+  let reasons: string[] = ["Inherited from current attempt"];
+
+  if (isVision) {
+    taskType = "vision";
+    reasons = ["required_capability_vision"];
+  } else if (!taskType) {
+    const inputText = extractCurrentUserInputForRouting(options.body);
+    const imageInput = isVision;
+    const classification = classifyStrategyTask(inputText, imageInput);
+    taskType = classification.taskType;
+    reasons = classification.reasons;
+  }
+
+  const rules = parseStrategyRoutingRules(options.route.fallbackStrategyRoutingRules);
+  const rule = findStrategyRule(rules, taskType as StrategyTaskType);
+  if (!rule) {
+    return {
+      applied: false,
+      taskType: taskType as StrategyTaskType,
+      reasons,
+      rule: null,
+      skipReason: "no_matching_rule",
+    };
+  }
+
+  const validation = await validateOneStrategyRule({
+    incomingProtocol: options.incomingProtocol,
+    rule,
+  });
+  if (!validation.ok) {
+    return {
+      applied: false,
+      taskType: taskType as StrategyTaskType,
+      reasons,
+      rule,
+      skipReason: validation.error,
+    };
+  }
+
+  const normalizedRule = validation.rule;
+  const sameTarget = normalizedRule.modelId === options.currentFallbackModelId;
+
+  if (sameTarget) {
+    return {
+      applied: false,
+      taskType: taskType as StrategyTaskType,
+      reasons,
+      rule: normalizedRule,
+      skipReason: "already_on_target",
+    };
+  }
+
+  if (
+    options.failedProviderId && options.failedModelId &&
+    normalizedRule.providerId === options.failedProviderId &&
+    normalizedRule.modelId === options.failedModelId
+  ) {
+    return {
+      applied: false,
+      taskType: taskType as StrategyTaskType,
+      reasons: [...reasons, `策略规则指向了已失败的提供商/模型 (${options.failedProviderId}/${options.failedModelId})，忽略该规则并使用降级目标默认值`],
+      rule: normalizedRule,
+      skipReason: "points_to_failed_target",
+    };
+  }
+
+  return {
+    applied: true,
+    taskType: taskType as StrategyTaskType,
+    reasons,
+    rule: normalizedRule,
+  };
+}
+
+export function getStrategyRuleForLayer(route: any, targetIndex: number, taskType: string): any | null {
+  if (!route) return null;
+  let strategyRoutingRules = route.strategyRoutingRules;
+  if (route.targets) {
+    try {
+      const parsedTargets = typeof route.targets === 'string' ? JSON.parse(route.targets) : route.targets;
+      if (Array.isArray(parsedTargets) && parsedTargets.length > targetIndex) {
+        strategyRoutingRules = parsedTargets[targetIndex].strategyRoutingRules ?? strategyRoutingRules;
+      }
+    } catch (e) {}
+  }
+  if (!strategyRoutingRules) return null;
+  const rules = parseStrategyRoutingRules(strategyRoutingRules);
+  const matched = rules.find((r: any) => r.taskType === taskType && r.enabled !== false);
+  return matched || null;
+}

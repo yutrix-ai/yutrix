@@ -1,0 +1,1 @@
+ALTER TABLE provider_models ADD `active` integer DEFAULT true NOT NULL;

@@ -1,0 +1,16 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  argon2: set this to true or false
+  better-sqlite3: set this to true or false
+  es5-ext: true
+  esbuild: true
+  msw: true
+  protobufjs: set this to true or false
+  sharp: set this to true or false
+allowedDeprecatedVersions:
+  "@esbuild-kit/core-utils": "*"
+  "@esbuild-kit/esm-loader": "*"
+  "node-domexception": "*"
+  "prebuild-install": "*"
