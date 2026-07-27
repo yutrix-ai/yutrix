@@ -1487,6 +1487,15 @@ data/action.log
 
 ---
 
+## 文档
+
+- [版本与产品线说明（Community vs 商业版）](./docs/editions.md)
+- [English README](./README.md)
+- [Caddy 部署指南](./docs/deployment-caddy.md)
+- [全新安装测试](./docs/fresh-install-test.md)
+- [实时日志说明](./docs/realtime-config.md)
+- [发布检查清单](./docs/release-checklist.md)
+
 ## License
 
 Yutrix is released under the [MIT License](./LICENSE).

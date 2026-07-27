@@ -593,6 +593,7 @@ Please keep changes focused and include enough context in your PR for maintainer
 
 ## Documentation
 
+- [Editions overview (Community vs commercial)](./docs/editions.md)
 - [中文完整文档](./README.zh-CN.md)
 - [Caddy deployment guide](./docs/deployment-caddy.md)
 - [Fresh install test](./docs/fresh-install-test.md)
