@@ -127,7 +127,7 @@ export default async function (fastify: FastifyInstance) {
   fastify.get(
     "/api/settings/public",
     async (request, reply) => {
-      const keys = ["theme", "accentColor", "tokenDisplayUnit", "systemName", "systemSlogan", "systemLogoUrl", "sidebarLogoAnimation", "appendSloganToTitle", "hideSystemNameInTitle", "dateFormat", "timeFormat"];
+      const keys = ["theme", "accentColor", "tokenDisplayUnit", "systemName", "systemSlogan", "systemLogoUrl", "sidebarLogoAnimation", "appendSloganToTitle", "hideSystemNameInTitle", "showGithubIcon", "dateFormat", "timeFormat"];
       const list = await db
         .select()
         .from(systemSettings)
@@ -146,6 +146,7 @@ export default async function (fastify: FastifyInstance) {
       if (!map.sidebarLogoAnimation) map.sidebarLogoAnimation = "none";
       if (!map.appendSloganToTitle) map.appendSloganToTitle = "false";
       if (!map.hideSystemNameInTitle) map.hideSystemNameInTitle = "false";
+      if (!map.showGithubIcon) map.showGithubIcon = "true";
       if (!map.dateFormat) map.dateFormat = "YYYY-MM-DD";
       if (!map.timeFormat) map.timeFormat = "24h";
 

@@ -244,6 +244,19 @@ export function BrandingSettings({ settings, updateSetting, updateBoolean }: Bra
               </SelectContent>
             </Select>
           </FormField>
+
+          <FormField label={t("settings.sections.branding.githubIcon", "顶部 GitHub 图标")}>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-github-icon-switch"
+                checked={settings.showGithubIcon !== "false"}
+                onCheckedChange={(checked) => updateBoolean("showGithubIcon", checked)}
+              />
+              <Label htmlFor="show-github-icon-switch" className="text-xs text-muted-foreground font-normal cursor-pointer select-none">
+                {t("settings.sections.branding.showGithubIcon", "在顶栏显示 GitHub 仓库入口")}
+              </Label>
+            </div>
+          </FormField>
         </CardContent>
       </Card>
 

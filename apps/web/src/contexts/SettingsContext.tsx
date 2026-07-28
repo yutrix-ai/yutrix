@@ -16,6 +16,7 @@ interface SettingsContextType {
   sidebarLogoAnimation: string;
   appendSloganToTitle: string;
   hideSystemNameInTitle: string;
+  showGithubIcon: string;
   dateFormat: string;
   timeFormat: string;
   formatDateTime: (value: string | Date | number | null | undefined) => string;
@@ -34,6 +35,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [sidebarLogoAnimation, setSidebarLogoAnimation] = useState('none');
   const [appendSloganToTitle, setAppendSloganToTitle] = useState('false');
   const [hideSystemNameInTitle, setHideSystemNameInTitle] = useState('false');
+  const [showGithubIcon, setShowGithubIcon] = useState('true');
   const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
   const [timeFormat, setTimeFormat] = useState('24h');
 
@@ -51,6 +53,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         if (data.sidebarLogoAnimation) setSidebarLogoAnimation(data.sidebarLogoAnimation);
         if (data.appendSloganToTitle) setAppendSloganToTitle(data.appendSloganToTitle);
         if (data.hideSystemNameInTitle) setHideSystemNameInTitle(data.hideSystemNameInTitle);
+        if (data.showGithubIcon !== undefined && data.showGithubIcon !== null) {
+          setShowGithubIcon(data.showGithubIcon);
+        }
         if (data.dateFormat) setDateFormat(data.dateFormat);
         if (data.timeFormat) setTimeFormat(data.timeFormat);
       }
@@ -210,6 +215,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     <SettingsContext.Provider value={{ 
       tokenDisplayUnit, setTokenDisplayUnit, formatToken, formatCost, refreshSettings, 
       systemName, systemSlogan, systemLogoUrl, sidebarLogoAnimation, appendSloganToTitle, hideSystemNameInTitle,
+      showGithubIcon,
       dateFormat, timeFormat, formatDateTime, formatDateOnly, formatShortDateTime
     }}>
       {children}
