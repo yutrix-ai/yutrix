@@ -101,6 +101,7 @@ export async function seedBrandingSettings() {
     { key: "sidebarLogoAnimation", value: "none" },
     { key: "appendSloganToTitle", value: "false" },
     { key: "hideSystemNameInTitle", value: "false" },
+    { key: "showGithubIcon", value: "true" },
   ];
 
   for (const setting of brandingSettings) {
