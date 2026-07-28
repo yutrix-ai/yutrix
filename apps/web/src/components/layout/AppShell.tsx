@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TimeRangeSelector } from "@/components/TimeRangeSelector";
+import { useSettings } from "@/contexts/SettingsContext";
 
 interface AppShellProps {
   currentPath: string;
@@ -32,6 +33,7 @@ function GitHubMark({ className = "" }: { className?: string }) {
 export function AppShell({ currentPath, onNavigate, children }: AppShellProps) {
   const lockPageScroll = currentPath === "/logs";
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" ? window.innerWidth >= 1024 : true);
+  const { showGithubIcon } = useSettings();
 
   return (
     <div className="flex h-[100dvh] md:h-screen w-full overflow-hidden bg-background">
@@ -85,16 +87,18 @@ export function AppShell({ currentPath, onNavigate, children }: AppShellProps) {
               <TimeRangeSelector />
             </div>
 
-            <a
-              href="https://github.com/yutrix-ai/yutrix"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="打开 GitHub 仓库"
-              title="GitHub"
-              className="hidden sm:inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <GitHubMark className="h-5 w-5" />
-            </a>
+            {showGithubIcon !== "false" && (
+              <a
+                href="https://github.com/yutrix-ai/yutrix"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="打开 GitHub 仓库"
+                title="GitHub"
+                className="hidden sm:inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <GitHubMark className="h-5 w-5" />
+              </a>
+            )}
             <ThemeToggle />
           </div>
         </header>
