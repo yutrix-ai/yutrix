@@ -1107,12 +1107,16 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               try {
                 finalBody = adapter.adaptRequestBody(adapterCtx, finalBody, { logAction, baseActionLog });
               } catch (adaptErr: any) {
-                // If the adapter throws a structured internal error (e.g. protocol_payload_incompatible),
-                // treat it as an early non-stream terminal error so it enters the fallback loop.
-                if (adaptErr.code === "unsupported_server_tool_shorthand") {
+                // Adapter-thrown protocol incompatibilities (server-tool shorthand in history,
+                // deferred tools, etc.) enter the funnel fallback loop instead of crashing.
+                const isProtocolIncompatible =
+                  adaptErr?.errorType === "protocol_payload_incompatible" ||
+                  adaptErr?.code === "unsupported_server_tool_shorthand" ||
+                  adaptErr?.code === "deferred_custom_tools_unsupported";
+                if (isProtocolIncompatible) {
                   responseData = {
                     status: 400,
-                    data: { error: { message: adaptErr.message, type: adaptErr.errorType } },
+                    data: { error: { message: adaptErr.message, type: adaptErr.errorType || "protocol_payload_incompatible" } },
                     isStream: false,
                     latencyMs: Date.now() - startTime,
                     queueMs: 0,
@@ -1121,8 +1125,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   };
                   responseData.terminalError = {
                     statusCode: 400,
-                    code: adaptErr.code,
-                    errorType: adaptErr.errorType,
+                    code: adaptErr.code || "protocol_payload_incompatible",
+                    errorType: adaptErr.errorType || "protocol_payload_incompatible",
                     message: adaptErr.message,
                     retryable: false,
                     retryClass: "protocol_payload_incompatible",

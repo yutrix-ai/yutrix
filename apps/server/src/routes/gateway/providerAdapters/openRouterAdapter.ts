@@ -149,6 +149,36 @@ function classifyError(input: { rawError: any, statusCode?: number, phase: "http
     } as any;
   }
 
+  // OpenRouter: deferred custom tools (defer_loading / tools omitted from tools[])
+  // are Anthropic-first-party only. Treat as protocol payload incompatibility so
+  // funnel fallback can switch models instead of spinning retries on the same free model.
+  const lowerMessage = message.toLowerCase();
+  const isDeferredToolsUnsupported =
+    lowerMessage.includes("deferred custom tools") ||
+    (lowerMessage.includes("deferred") &&
+      lowerMessage.includes("only supported on anthropic")) ||
+    (lowerMessage.includes("cannot call tools omitted from tools") &&
+      lowerMessage.includes("non-anthropic"));
+
+  if (isDeferredToolsUnsupported) {
+    const normMsg = normalizeMessageForFingerprint(message);
+    const fingerprintStr = `openrouter|${upstreamProvider || ""}|deferred_custom_tools_unsupported|protocol_payload_incompatible|${normMsg}`;
+    const fingerprint = crypto.createHash("sha256").update(fingerprintStr).digest("hex").slice(0, 16);
+    return {
+      statusCode: input.statusCode || 400,
+      code: "deferred_custom_tools_unsupported",
+      errorType: "protocol_payload_incompatible",
+      message: message,
+      retryable: false,
+      retryClass: "protocol_payload_incompatible",
+      adapterId: "openrouter",
+      upstreamProvider: upstreamProvider || "OpenRouter",
+      phase: input.phase,
+      fingerprint,
+      safeMetadata: {},
+    } as any;
+  }
+
   const errorType = err?.metadata?.error_type || err?.type || "upstream_error";
   const rawCode = err?.code;
   let statusCode = input.statusCode;
@@ -261,9 +291,54 @@ function classifyError(input: { rawError: any, statusCode?: number, phase: "http
   return result;
 }
 
+/**
+ * OpenRouter only supports Anthropic-native deferred tools / tool-search on
+ * first-party Anthropic model IDs (anthropic/*). Non-Anthropic models (qwen,
+ * nemotron, glm, kimi, …) reject payloads that use defer_loading or omit tools
+ * from tools[] while history still references them.
+ */
+export function isOpenRouterFirstPartyAnthropicModel(modelId: string | undefined | null): boolean {
+  if (!modelId || typeof modelId !== "string") return false;
+  return modelId.toLowerCase().startsWith("anthropic/");
+}
+
+/** Known Anthropic server-tool shorthands that OpenRouter rejects on many models. */
 const UNSUPPORTED_OPENROUTER_ANTHROPIC_SERVER_TOOL_TYPES = new Set([
-  "tool_search_tool_regex_20251119"
+  "tool_search_tool_regex_20251119",
+  "tool_search_tool_bm25_20251119",
 ]);
+
+function isUnsupportedOpenRouterServerToolType(type: unknown): boolean {
+  if (typeof type !== "string" || !type) return false;
+  if (UNSUPPORTED_OPENROUTER_ANTHROPIC_SERVER_TOOL_TYPES.has(type)) return true;
+  // Future-proof: any tool_search_tool_* shorthand is Anthropic-native.
+  return type.startsWith("tool_search_tool_");
+}
+
+/**
+ * Materialize deferred custom tools for non-Anthropic OpenRouter models by
+ * stripping `defer_loading`. This is not a capability downgrade: deferred
+ * loading is unsupported there and currently hard-fails with HTTP 400.
+ * Returns the number of tools that had defer_loading removed.
+ */
+export function materializeDeferredToolsForNonAnthropic(tools: any[]): number {
+  if (!Array.isArray(tools)) return 0;
+  let stripped = 0;
+  for (let i = 0; i < tools.length; i++) {
+    const tool = tools[i];
+    if (tool && typeof tool === "object" && tool.defer_loading === true) {
+      // Prefer in-place delete so other tool fields (name, input_schema, …) stay intact.
+      delete tool.defer_loading;
+      stripped++;
+    }
+  }
+  return stripped;
+}
+
+function bodyHasDeferredCustomTools(body: any): boolean {
+  if (!Array.isArray(body?.tools)) return false;
+  return body.tools.some((t: any) => t && t.defer_loading === true);
+}
 
 export const openRouterAdapter: ProviderAdapter = {
   id: "openrouter",
@@ -346,7 +421,7 @@ export const openRouterAdapter: ProviderAdapter = {
   adaptRequestBody(context: ProviderAdapterContext, body: any, helpers: { logAction: any, baseActionLog: any }): any {
     if (context.incomingProtocol === "anthropic" && body && Array.isArray(body.tools)) {
       const toolsToRemove = body.tools.filter((t: any) =>
-        t.type && UNSUPPORTED_OPENROUTER_ANTHROPIC_SERVER_TOOL_TYPES.has(t.type)
+        t.type && isUnsupportedOpenRouterServerToolType(t.type)
       );
 
       if (toolsToRemove.length > 0) {
@@ -403,6 +478,30 @@ export const openRouterAdapter: ProviderAdapter = {
           remainingToolCount: body.tools ? body.tools.length : 0,
           message: `Removed unsupported server-tool shorthands: ${removedNames.join(", ")}`,
         });
+      }
+
+      // Non-Anthropic OpenRouter models: materialize deferred custom tools.
+      // Leaving defer_loading causes hard 400: "Deferred custom tools are only
+      // supported on Anthropic models." Anthropic first-party models keep defer_loading.
+      if (
+        Array.isArray(body.tools) &&
+        body.tools.length > 0 &&
+        !isOpenRouterFirstPartyAnthropicModel(context.modelId) &&
+        bodyHasDeferredCustomTools(body)
+      ) {
+        const stripped = materializeDeferredToolsForNonAnthropic(body.tools);
+        if (stripped > 0) {
+          helpers.logAction({
+            ...helpers.baseActionLog,
+            level: "WARN",
+            code: "request.openrouter.deferred_tools_materialized",
+            providerName: context.providerName,
+            modelId: context.modelId,
+            strippedDeferLoadingCount: stripped,
+            remainingToolCount: body.tools.length,
+            message: `Materialized ${stripped} deferred custom tool(s) for non-Anthropic OpenRouter model ${context.modelId}`,
+          });
+        }
       }
     }
     return body;

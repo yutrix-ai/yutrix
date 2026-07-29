@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { openRouterAdapter } from "../src/routes/gateway/providerAdapters/openRouterAdapter";
+import {
+  openRouterAdapter,
+  isOpenRouterFirstPartyAnthropicModel,
+  materializeDeferredToolsForNonAnthropic,
+} from "../src/routes/gateway/providerAdapters/openRouterAdapter";
 import { parseAndNormalizeUrl } from "../src/routes/gateway/providerAdapters/urlMatcher";
 import { adaptRequestProtocol } from "../src/routes/gateway/protocolAdapter";
 import { createFakeStreamFromData } from "../src/routes/gateway/upstream";
@@ -18,6 +22,33 @@ async function readStreamText(stream: ReadableStream<Uint8Array>): Promise<strin
   text += decoder.decode();
   return text;
 }
+
+describe("openRouterAdapter deferred tools helpers", () => {
+  it("detects first-party Anthropic models only via anthropic/ prefix", () => {
+    expect(isOpenRouterFirstPartyAnthropicModel("anthropic/claude-sonnet-4")).toBe(true);
+    expect(isOpenRouterFirstPartyAnthropicModel("Anthropic/Claude-3.5-Sonnet")).toBe(true);
+    expect(isOpenRouterFirstPartyAnthropicModel("nvidia/nemotron-3-ultra-550b-a55b:free")).toBe(false);
+    expect(isOpenRouterFirstPartyAnthropicModel("qwen/qwen3-max")).toBe(false);
+    expect(isOpenRouterFirstPartyAnthropicModel("moonshotai/kimi-k2.5")).toBe(false);
+    expect(isOpenRouterFirstPartyAnthropicModel("claude-sonnet-4")).toBe(false);
+    expect(isOpenRouterFirstPartyAnthropicModel(undefined)).toBe(false);
+  });
+
+  it("materializes defer_loading without dropping other tool fields", () => {
+    const tools = [
+      { name: "Read", defer_loading: true, input_schema: { type: "object" } },
+      { name: "Bash", defer_loading: false, input_schema: { type: "object" } },
+      { name: "Edit", input_schema: { type: "object" } },
+    ];
+    const stripped = materializeDeferredToolsForNonAnthropic(tools);
+    expect(stripped).toBe(1);
+    expect(tools[0]).toEqual({ name: "Read", input_schema: { type: "object" } });
+    expect(tools[0].defer_loading).toBeUndefined();
+    // false is still a present flag — only true is stripped by design (OpenRouter cares about true)
+    expect(tools[1].defer_loading).toBe(false);
+    expect(tools[2].defer_loading).toBeUndefined();
+  });
+});
 
 describe("openRouterAdapter core capabilities", () => {
   const context = {
@@ -165,6 +196,89 @@ describe("openRouterAdapter core capabilities", () => {
       const obs3 = openRouterAdapter.observeStreamChunk!(chunk3, state, context);
       expect(obs3?.meaningful).toBe(true); // Still meaningful because reasoning_details is present
       expect(obs3?.reasoningText).toBeUndefined(); // Opaque details excluded
+    });
+  });
+
+  describe("Anthropic deferred tools request adaptation", () => {
+    const anthropicCtx = {
+      ...context,
+      modelId: "nvidia/nemotron-3-ultra-550b-a55b:free",
+      incomingProtocol: "anthropic",
+      requestPath: "/v1/messages",
+      providerProtocol: "anthropic",
+    };
+
+    it("strips defer_loading for non-Anthropic models and keeps tools", () => {
+      const logs: any[] = [];
+      const body = {
+        model: anthropicCtx.modelId,
+        messages: [{ role: "user", content: "hi" }],
+        tools: [
+          { name: "Read", defer_loading: true, input_schema: { type: "object" } },
+          { name: "Edit", defer_loading: true, input_schema: { type: "object" } },
+          { type: "tool_search_tool_regex_20251119", name: "tool_search_tool_regex" },
+        ],
+      };
+
+      const adapted = openRouterAdapter.adaptRequestBody!(anthropicCtx as any, body, {
+        logAction: (e: any) => logs.push(e),
+        baseActionLog: { requestId: "r1" },
+      });
+
+      expect(adapted.tools).toHaveLength(2);
+      expect(adapted.tools.every((t: any) => t.defer_loading === undefined)).toBe(true);
+      expect(adapted.tools.map((t: any) => t.name).sort()).toEqual(["Edit", "Read"]);
+      expect(logs.some((l) => l.code === "request.openrouter.unsupported_server_tool_removed")).toBe(true);
+      expect(logs.some((l) => l.code === "request.openrouter.deferred_tools_materialized")).toBe(true);
+    });
+
+    it("preserves defer_loading for anthropic/* models", () => {
+      const logs: any[] = [];
+      const claudeCtx = { ...anthropicCtx, modelId: "anthropic/claude-sonnet-4" };
+      const body = {
+        model: claudeCtx.modelId,
+        messages: [{ role: "user", content: "hi" }],
+        tools: [
+          { name: "Read", defer_loading: true, input_schema: { type: "object" } },
+          { type: "tool_search_tool_regex_20251119", name: "tool_search_tool_regex" },
+        ],
+      };
+
+      const adapted = openRouterAdapter.adaptRequestBody!(claudeCtx as any, body, {
+        logAction: (e: any) => logs.push(e),
+        baseActionLog: { requestId: "r2" },
+      });
+
+      // tool_search still stripped (unsupported shorthand), but defer_loading kept on Read
+      expect(adapted.tools).toHaveLength(1);
+      expect(adapted.tools[0].name).toBe("Read");
+      expect(adapted.tools[0].defer_loading).toBe(true);
+      expect(logs.some((l) => l.code === "request.openrouter.deferred_tools_materialized")).toBe(false);
+    });
+
+    it("classifies deferred-tools 400 as protocol_payload_incompatible", () => {
+      const term = openRouterAdapter.classifyUpstreamError!(
+        {
+          rawError: {
+            error: {
+              message:
+                "Deferred custom tools are only supported on Anthropic models. Non-Anthropic models cannot call tools omitted from tools[]. Received nvidia/nemotron-3-ultra-550b-a55b-20260604.",
+              code: 400,
+            },
+          },
+          statusCode: 400,
+          phase: "nonstream",
+        },
+        anthropicCtx as any,
+      );
+
+      expect(term).toMatchObject({
+        code: "deferred_custom_tools_unsupported",
+        errorType: "protocol_payload_incompatible",
+        retryClass: "protocol_payload_incompatible",
+        statusCode: 400,
+        retryable: false,
+      });
     });
   });
 

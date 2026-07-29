@@ -637,6 +637,108 @@ describe("SSE Terminal Error Integration Tests", () => {
       expect(fetchCalls[0].url).toContain("openrouter.ai"); // first try gets 400
       expect(fetchCalls[1].url).toContain("api.alternative.com"); // fallback works
     });
+
+    it("materializes defer_loading for non-Anthropic OpenRouter models before upstream call", async () => {
+      const fetchCalls: { url: string; auth: string; body: any }[] = [];
+      vi.spyOn(global, "fetch").mockImplementation(async (req: any, options: any) => {
+        let body: any = null;
+        if (options?.body) body = JSON.parse(options.body as string);
+
+        fetchCalls.push({
+          url: req.toString(),
+          auth: options?.headers?.Authorization || options?.headers?.authorization || "",
+          body,
+        });
+
+        return new Response(makeSseSuccess(modelL1, "deferred-ok"), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      });
+      await setupRoute("multi", [{ providerId: provL1, modelId: modelL1 }, { providerId: provL2, modelId: modelL2 }], { path: "/v1/messages", incomingProtocol: "anthropic" });
+
+      const response = await fastify.inject({
+        method: "POST",
+        url: `/v1/messages`,
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: {
+          model: "ignored",
+          messages: [{ role: "user", content: "edit file" }],
+          stream: true,
+          tools: [
+            { name: "Read", defer_loading: true, description: "read", input_schema: { type: "object" } },
+            { name: "Edit", defer_loading: true, description: "edit", input_schema: { type: "object" } },
+            { type: "tool_search_tool_regex_20251119", name: "tool_search_tool_regex" },
+          ],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain("deferred-ok");
+      expect(fetchCalls.length).toBe(1);
+      expect(fetchCalls[0].url).toContain("openrouter.ai");
+      // tool_search removed; custom tools kept without defer_loading
+      expect(fetchCalls[0].body.tools).toHaveLength(2);
+      for (const t of fetchCalls[0].body.tools) {
+        expect(t.defer_loading).toBeUndefined();
+        expect(["Read", "Edit"]).toContain(t.name);
+      }
+    });
+
+    it("triggers Funnel Fallback when upstream returns Deferred custom tools 400", async () => {
+      const fetchCalls: { url: string; auth: string; body: any }[] = [];
+      vi.spyOn(global, "fetch").mockImplementation(async (req: any, options: any) => {
+        let body: any = null;
+        if (options?.body) body = JSON.parse(options.body as string);
+
+        fetchCalls.push({
+          url: req.toString(),
+          auth: options?.headers?.Authorization || options?.headers?.authorization || "",
+          body,
+        });
+
+        if (req.toString().includes("openrouter.ai")) {
+          const errorResp = {
+            error: {
+              message:
+                "Deferred custom tools are only supported on Anthropic models. Non-Anthropic models cannot call tools omitted from tools[]. Received nvidia/nemotron-3-ultra-550b-a55b-20260604.",
+              code: 400,
+            },
+          };
+          return new Response(JSON.stringify(errorResp), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
+        return new Response(makeSseSuccess(modelL2, "deferred-fallback-success"), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      });
+      await setupRoute("multi", [{ providerId: provL1, modelId: modelL1 }, { providerId: provL2, modelId: modelL2 }], { path: "/v1/messages", incomingProtocol: "anthropic" });
+
+      const response = await fastify.inject({
+        method: "POST",
+        url: `/v1/messages`,
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: {
+          model: "ignored",
+          messages: [{ role: "user", content: "continue" }],
+          stream: true,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain("deferred-fallback-success");
+      expect(fetchCalls.length).toBe(2);
+      expect(fetchCalls[0].url).toContain("openrouter.ai");
+      expect(fetchCalls[1].url).toContain("api.alternative.com");
+    });
   });
 
   // =========================================================================
