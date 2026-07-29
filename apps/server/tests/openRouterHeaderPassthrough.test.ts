@@ -8,7 +8,8 @@ describe("buildUpstreamHeaders for Anthropic / OpenRouter passthrough", () => {
   const dummyContext: ProviderAdapterContext = {
     providerId: "openrouter",
     providerName: "OpenRouter",
-    providerProtocol: "openrouter",
+    // Native Anthropic surface: selected base URL bound as anthropic
+    providerProtocol: "anthropic",
     rawBaseUrl: "https://openrouter.ai/api/v1",
     normalizedBaseUrl: "https://openrouter.ai/api/v1",
     hostname: "openrouter.ai",

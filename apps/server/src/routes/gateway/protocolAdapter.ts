@@ -32,6 +32,19 @@ function isResponseOnlyContentBlock(block: any): boolean {
   );
 }
 
+/** Anthropic server-tool shorthands have no OpenAI function equivalent. */
+function isAnthropicServerToolName(name: unknown): boolean {
+  if (typeof name !== "string" || !name) return false;
+  return name.startsWith("tool_search_tool_") || name.startsWith("tool_search");
+}
+
+function isAnthropicServerToolDef(tool: any): boolean {
+  if (!tool || typeof tool !== "object") return false;
+  if (typeof tool.type === "string" && tool.type.startsWith("tool_search_tool_")) return true;
+  if (isAnthropicServerToolName(tool.name)) return true;
+  return false;
+}
+
 function sanitizeOpenAIMessageForUpstream(message: any, requestPolicy?: any): void {
   if (!message || typeof message !== "object" || Array.isArray(message)) {
     return;
@@ -197,20 +210,46 @@ export function adaptRequestProtocol(
       pushSystemText(systemTextParts, body.system);
     }
 
+    // Track server-tool uses dropped from history so matching tool_results can be dropped too.
+    const droppedServerToolUseIds = new Set<string>();
+
     if (Array.isArray(body.tools)) {
-      finalBody.tools = body.tools.map((t: any) => {
-        // If tool is already in OpenAI function format, pass through unchanged
-        if (t.type === "function" && t.function?.name) return t;
-        // Otherwise convert from Anthropic format
-        return {
-          type: "function",
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.input_schema,
-          },
-        };
-      });
+      // Anthropic → OpenAI tools: keep only OpenAI-compatible function tools.
+      // Intentionally drop Anthropic-only semantics (defer_loading, tool_search
+      // server-tool shorthands, cache_control on tools, etc.). Building a fresh
+      // function object is the protocol boundary — do not pass Anthropic fields through.
+      finalBody.tools = body.tools
+        .map((t: any) => {
+          if (!t || typeof t !== "object") return null;
+          // Already OpenAI function format
+          if (t.type === "function" && t.function?.name) {
+            if (isAnthropicServerToolName(t.function.name)) return null;
+            return {
+              type: "function",
+              function: {
+                name: t.function.name,
+                description: t.function.description,
+                parameters: t.function.parameters ?? { type: "object", properties: {} },
+              },
+            };
+          }
+          // Anthropic server-tool shorthands (tool_search_tool_*, …) — no OpenAI equivalent.
+          if (isAnthropicServerToolDef(t)) return null;
+          if (typeof t.type === "string" && t.type !== "custom" && t.type !== "function" && !t.name) {
+            return null;
+          }
+          if (!t.name) return null;
+          return {
+            type: "function",
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.input_schema ?? { type: "object", properties: {} },
+            },
+          };
+        })
+        .filter(Boolean);
+      if (finalBody.tools.length === 0) delete finalBody.tools;
     }
     if (body.tool_choice) {
       if (body.tool_choice.type === "auto") {
@@ -236,6 +275,7 @@ export function adaptRequestProtocol(
           let finalContentParts: any[] = [];
           let toolCalls: any[] = [];
           let hasToolResult = false;
+          let keptAnyBlock = false;
 
           for (const block of msg.content) {
             if (isResponseOnlyContentBlock(block)) {
@@ -244,6 +284,7 @@ export function adaptRequestProtocol(
 
             if (block.type === "text") {
               finalContentParts.push(sanitizeOpenAIContentPart(block));
+              keptAnyBlock = true;
             } else if (
               block.type === "image_url" ||
               block.type === "image" ||
@@ -252,7 +293,13 @@ export function adaptRequestProtocol(
               block.type === "input-image"
             ) {
               finalContentParts.push(normalizeImageBlock(block, logInfo));
+              keptAnyBlock = true;
             } else if (block.type === "tool_use") {
+              // Drop Anthropic server-tool uses — no OpenAI equivalent (same boundary as tools[]).
+              if (isAnthropicServerToolName(block.name)) {
+                if (block.id) droppedServerToolUseIds.add(block.id);
+                continue;
+              }
               toolCalls.push({
                 id: block.id,
                 type: "function",
@@ -264,8 +311,13 @@ export function adaptRequestProtocol(
                       : JSON.stringify(block.input || {}),
                 },
               });
+              keptAnyBlock = true;
             } else if (block.type === "tool_result") {
+              if (block.tool_use_id && droppedServerToolUseIds.has(block.tool_use_id)) {
+                continue;
+              }
               hasToolResult = true;
+              keptAnyBlock = true;
               if (finalContentParts.length > 0) {
                 finalBody.messages.push({
                   role: msg.role,
@@ -291,6 +343,11 @@ export function adaptRequestProtocol(
             } else {
               finalContentParts.push(normalizeImageBlock(block, logInfo));
             }
+          }
+
+          // Entire message was Anthropic-only server-tool noise — drop it.
+          if (!keptAnyBlock) {
+            continue;
           }
 
           if (!hasToolResult) {

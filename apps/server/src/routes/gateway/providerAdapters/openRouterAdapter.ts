@@ -292,14 +292,19 @@ function classifyError(input: { rawError: any, statusCode?: number, phase: "http
 }
 
 /**
- * OpenRouter only supports Anthropic-native deferred tools / tool-search on
- * first-party Anthropic model IDs (anthropic/*). Non-Anthropic models (qwen,
- * nemotron, glm, kimi, …) reject payloads that use defer_loading or omit tools
- * from tools[] while history still references them.
+ * Whether this attempt is bound to OpenRouter's *native Anthropic* surface.
+ *
+ * `context.providerProtocol` is the protocol of the **selected base URL**
+ * (openaiBaseUrl vs anthropicBaseUrl), not the client's incoming protocol.
+ * - anthropic → `/messages` + Anthropic payload passthrough
+ * - openai    → OpenAI-compatible; Anthropic clients must go through protocol
+ *               conversion (drops Anthropic-only fields such as defer_loading)
  */
-export function isOpenRouterFirstPartyAnthropicModel(modelId: string | undefined | null): boolean {
-  if (!modelId || typeof modelId !== "string") return false;
-  return modelId.toLowerCase().startsWith("anthropic/");
+export function isOpenRouterNativeAnthropicAttempt(context: {
+  incomingProtocol?: string;
+  providerProtocol?: string;
+}): boolean {
+  return context.incomingProtocol === "anthropic" && context.providerProtocol === "anthropic";
 }
 
 /** Known Anthropic server-tool shorthands that OpenRouter rejects on many models. */
@@ -313,31 +318,6 @@ function isUnsupportedOpenRouterServerToolType(type: unknown): boolean {
   if (UNSUPPORTED_OPENROUTER_ANTHROPIC_SERVER_TOOL_TYPES.has(type)) return true;
   // Future-proof: any tool_search_tool_* shorthand is Anthropic-native.
   return type.startsWith("tool_search_tool_");
-}
-
-/**
- * Materialize deferred custom tools for non-Anthropic OpenRouter models by
- * stripping `defer_loading`. This is not a capability downgrade: deferred
- * loading is unsupported there and currently hard-fails with HTTP 400.
- * Returns the number of tools that had defer_loading removed.
- */
-export function materializeDeferredToolsForNonAnthropic(tools: any[]): number {
-  if (!Array.isArray(tools)) return 0;
-  let stripped = 0;
-  for (let i = 0; i < tools.length; i++) {
-    const tool = tools[i];
-    if (tool && typeof tool === "object" && tool.defer_loading === true) {
-      // Prefer in-place delete so other tool fields (name, input_schema, …) stay intact.
-      delete tool.defer_loading;
-      stripped++;
-    }
-  }
-  return stripped;
-}
-
-function bodyHasDeferredCustomTools(body: any): boolean {
-  if (!Array.isArray(body?.tools)) return false;
-  return body.tools.some((t: any) => t && t.defer_loading === true);
 }
 
 export const openRouterAdapter: ProviderAdapter = {
@@ -356,8 +336,13 @@ export const openRouterAdapter: ProviderAdapter = {
   },
 
   effectiveUpstreamProtocol(context: ProviderAdapterContext): string | undefined {
-    // OpenRouter speaks native Anthropic
-    if (context.incomingProtocol === "anthropic") return "anthropic";
+    // Only native Anthropic when the selected base URL is the Anthropic slot.
+    // OpenAI-URL-only providers must use OpenAI-compatible upstream so
+    // Anthropic→OpenAI conversion runs (and strips Anthropic-only tool fields).
+    if (context.incomingProtocol === "anthropic") {
+      if (context.providerProtocol === "anthropic") return "anthropic";
+      if (context.providerProtocol === "openai") return "openai";
+    }
     return undefined;
   },
 
@@ -375,30 +360,23 @@ export const openRouterAdapter: ProviderAdapter = {
   },
 
   overrideUpstreamPath(context: ProviderAdapterContext, originalPath: string): string | undefined {
-    if (context.incomingProtocol === "anthropic") {
-      // For Anthropic messages, we should hit /api/v1/chat/completions (OpenRouter accepts Anthropic payload there too)
-      // or we can hit /api/v1/messages? No, OpenRouter's docs say /api/v1/chat/completions is standard,
-      // but wait... "POST OpenRouter /api/v1/messages" is what the prompt asked for.
-      // And PromptGate standard incoming path is `/v1/messages`. So `reqPath` is `/v1/messages`.
-      // `determineUpstreamPath(true, '/v1/messages')` returns `/v1/messages`.
-      // So if OpenRouter base url is `https://openrouter.ai/api/v1`, the full path will be `https://openrouter.ai/api/v1/messages`.
-      // That perfectly aligns.
+    // Native Anthropic surface only when anthropicBaseUrl (anthropic-bound URL) was selected.
+    if (isOpenRouterNativeAnthropicAttempt(context)) {
       return "/messages";
     }
     return undefined;
   },
 
   adaptUpstreamHeaders(context: ProviderAdapterContext, originalHeaders: Record<string, string>): Record<string, string> | undefined {
-    if (context.incomingProtocol === "anthropic") {
-      // Ensure Bearer auth is used, which OpenRouter requires, and keep anthropic-version
+    // Normalize auth for OpenRouter; Anthropic client headers only on native Anthropic surface.
+    if (context.incomingProtocol === "anthropic" || context.providerProtocol === "openai") {
       const headers = { ...originalHeaders };
       if (headers["x-api-key"]) {
         headers["authorization"] = `Bearer ${headers["x-api-key"]}`;
         delete headers["x-api-key"];
       }
 
-      // Whitelist client headers for OpenRouter Native Anthropic
-      if (context.clientHeaders) {
+      if (isOpenRouterNativeAnthropicAttempt(context) && context.clientHeaders) {
         const allowed = ["anthropic-version", "anthropic-beta", "x-anthropic-client", "user-agent"];
         for (const [k, v] of Object.entries(context.clientHeaders)) {
           const lowerKey = k.toLowerCase();
@@ -413,13 +391,16 @@ export const openRouterAdapter: ProviderAdapter = {
   },
 
   bypassProtocolAdaptation(context: ProviderAdapterContext): boolean | undefined {
-    // True because we don't want PromptGate to convert Anthropic incoming to OpenAI outgoing
-    if (context.incomingProtocol === "anthropic") return true;
+    // Pass Anthropic payloads through only on the native Anthropic URL.
+    // OpenAI-URL-only OpenRouter must convert Anthropic → OpenAI.
+    if (isOpenRouterNativeAnthropicAttempt(context)) return true;
     return undefined;
   },
 
   adaptRequestBody(context: ProviderAdapterContext, body: any, helpers: { logAction: any, baseActionLog: any }): any {
-    if (context.incomingProtocol === "anthropic" && body && Array.isArray(body.tools)) {
+    // Server-tool shorthand cleanup only for native Anthropic passthrough.
+    // Converted OpenAI bodies already drop these in protocolAdapter.
+    if (isOpenRouterNativeAnthropicAttempt(context) && body && Array.isArray(body.tools)) {
       const toolsToRemove = body.tools.filter((t: any) =>
         t.type && isUnsupportedOpenRouterServerToolType(t.type)
       );
@@ -478,30 +459,6 @@ export const openRouterAdapter: ProviderAdapter = {
           remainingToolCount: body.tools ? body.tools.length : 0,
           message: `Removed unsupported server-tool shorthands: ${removedNames.join(", ")}`,
         });
-      }
-
-      // Non-Anthropic OpenRouter models: materialize deferred custom tools.
-      // Leaving defer_loading causes hard 400: "Deferred custom tools are only
-      // supported on Anthropic models." Anthropic first-party models keep defer_loading.
-      if (
-        Array.isArray(body.tools) &&
-        body.tools.length > 0 &&
-        !isOpenRouterFirstPartyAnthropicModel(context.modelId) &&
-        bodyHasDeferredCustomTools(body)
-      ) {
-        const stripped = materializeDeferredToolsForNonAnthropic(body.tools);
-        if (stripped > 0) {
-          helpers.logAction({
-            ...helpers.baseActionLog,
-            level: "WARN",
-            code: "request.openrouter.deferred_tools_materialized",
-            providerName: context.providerName,
-            modelId: context.modelId,
-            strippedDeferLoadingCount: stripped,
-            remainingToolCount: body.tools.length,
-            message: `Materialized ${stripped} deferred custom tool(s) for non-Anthropic OpenRouter model ${context.modelId}`,
-          });
-        }
       }
     }
     return body;

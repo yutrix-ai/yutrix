@@ -100,6 +100,8 @@ describe("OpenRouter Anthropic Native Stream Integration", () => {
       id: provId,
       name: "OpenRouter Test Provider",
       openaiBaseUrl: "https://openrouter.ai/api/v1",
+      // Native Anthropic surface requires anthropicBaseUrl (or anthropic-bound route URL).
+      anthropicBaseUrl: "https://openrouter.ai/api/v1",
       enabled: true,
       concurrencyLimit: 10,
       createdAt: new Date(),
@@ -139,13 +141,13 @@ describe("OpenRouter Anthropic Native Stream Integration", () => {
       updatedAt: new Date(),
     });
 
-    // Register Endpoint Route
+    // Register Endpoint Route — anthropic protocol selects anthropicBaseUrl → native /messages
     await db.insert(endpointRoutes).values({
       id: routeId,
       endpointId: epId,
       name: "OR Route",
       providerId: provId,
-      providerProtocol: "openai",
+      providerProtocol: "anthropic",
       modelId: "anthropic/claude-3.5-sonnet",
       strategyRoutingEnabled: false,
       status: "active",

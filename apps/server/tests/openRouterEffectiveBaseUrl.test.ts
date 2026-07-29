@@ -214,12 +214,18 @@ describe("OpenRouter Effective Base URL", () => {
       }
     });
 
+    // Only openaiBaseUrl is configured. Even if the route is labeled anthropic,
+    // OpenRouter must be treated as OpenAI-compatible so Anthropic→OpenAI conversion runs.
     expect(response.statusCode).toBe(200);
-    expect(fetchedUrl).toBe("https://openrouter.ai/api/v1/messages");
-    expect(fetchedHeaders["authorization"]).toBe("Bearer sk-or-dummy-key");
+    expect(fetchedUrl).toBe("https://openrouter.ai/api/v1/chat/completions");
+    const authHeader = fetchedHeaders["authorization"] || fetchedHeaders["Authorization"];
+    expect(authHeader).toBe("Bearer sk-or-dummy-key");
     expect(fetchedHeaders["x-api-key"]).toBeUndefined();
     expect(fetchedUrl).not.toContain("api.anthropic.com");
+    expect(fetchedUrl).not.toContain("/messages");
     expect(fetchedBody.messages).toBeDefined();
     expect(fetchedBody.model).toBe("anthropic/claude-3.5-sonnet");
+    // Converted OpenAI body shape (not raw Anthropic content blocks for simple text)
+    expect(typeof fetchedBody.messages[0].content === "string" || Array.isArray(fetchedBody.messages[0].content)).toBe(true);
   });
 });

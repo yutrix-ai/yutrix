@@ -517,21 +517,18 @@ describe("SSE Terminal Error Integration Tests", () => {
       expect(text).toContain("success-content");
       expect(fetchCalls.length).toBe(1);
 
-      // Verify tools stripped correctly
+      // OpenAI-URL-only OpenRouter: Anthropic→OpenAI conversion drops server-tool
+      // shorthands (tool_search, computer_*) and keeps named custom tools as functions.
       const sentBody = fetchCalls[0].body;
-      expect(sentBody.tools.length).toBe(2);
-      expect(sentBody.tools).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: "tool_search_tool_regex_20251119" })])
-      );
-      expect(sentBody.tools).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: "computer_20241022" }),
-          expect.objectContaining({ name: "normal_tool" })
-        ])
-      );
+      expect(fetchCalls[0].url).toContain("/chat/completions");
+      expect(sentBody.tools.length).toBe(1);
+      expect(sentBody.tools[0]).toMatchObject({
+        type: "function",
+        function: { name: "normal_tool" },
+      });
     });
 
-    it("should trigger Funnel Fallback if unsupported shorthand is referenced in history", async () => {
+    it("should drop server-tool history at Anthropic→OpenAI conversion boundary", async () => {
       const fetchCalls: { url: string; auth: string; body: any }[] = [];
       vi.spyOn(global, "fetch").mockImplementation(async (req: any, options: any) => {
         let body: any = null;
@@ -543,19 +540,19 @@ describe("SSE Terminal Error Integration Tests", () => {
           body,
         });
 
-        return new Response(makeSseSuccess(modelL2, "fallback-success"), {
+        return new Response(makeSseSuccess(modelL1, "converted-ok"), {
           status: 200,
           headers: { "content-type": "text/event-stream" },
         });
       });
       await setupRoute("multi", [{ providerId: provL1, modelId: modelL1 }, { providerId: provL2, modelId: modelL2 }], { path: "/v1/messages", incomingProtocol: "anthropic" });
       
-      // Inject request where history contains tool_use
+      // History references Anthropic server-tool shorthand — conversion must drop it, not hard-fail.
       const response = await fastify.inject({
         method: "POST",
         url: `/v1/messages`,
         headers: {
-          authorization: `Bearer ${apiKey}`, // multi-target for fallback
+          authorization: `Bearer ${apiKey}`,
         },
         body: {
           model: "ignored",
@@ -572,12 +569,15 @@ describe("SSE Terminal Error Integration Tests", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const text = response.body;
-      expect(text).toContain("fallback-success");
-      // Should have skipped L1 immediately and hit L2
+      expect(response.body).toContain("converted-ok");
       expect(fetchCalls.length).toBe(1);
-      expect(fetchCalls[0].url).toContain("api.alternative.com");
-      expect(fetchCalls[0].body.model).toBe(modelL2);
+      expect(fetchCalls[0].url).toContain("openrouter.ai");
+      expect(fetchCalls[0].url).toContain("/chat/completions");
+      // Server tools and their history uses are stripped at the protocol boundary
+      expect(fetchCalls[0].body.tools).toBeUndefined();
+      const roles = fetchCalls[0].body.messages.map((m: any) => m.role);
+      expect(roles).not.toContain("tool");
+      expect(fetchCalls[0].body.messages.some((m: any) => m.tool_calls)).toBe(false);
     });
 
     it("should trigger Funnel Fallback if upstream explicitly returns Unknown server-tool shorthand", async () => {
@@ -638,7 +638,7 @@ describe("SSE Terminal Error Integration Tests", () => {
       expect(fetchCalls[1].url).toContain("api.alternative.com"); // fallback works
     });
 
-    it("materializes defer_loading for non-Anthropic OpenRouter models before upstream call", async () => {
+    it("converts Anthropic tools to OpenAI when OpenRouter only has openaiBaseUrl", async () => {
       const fetchCalls: { url: string; auth: string; body: any }[] = [];
       vi.spyOn(global, "fetch").mockImplementation(async (req: any, options: any) => {
         let body: any = null;
@@ -678,12 +678,16 @@ describe("SSE Terminal Error Integration Tests", () => {
       expect(response.statusCode).toBe(200);
       expect(response.body).toContain("deferred-ok");
       expect(fetchCalls.length).toBe(1);
+      // OpenAI-compatible path (not /messages native Anthropic)
       expect(fetchCalls[0].url).toContain("openrouter.ai");
-      // tool_search removed; custom tools kept without defer_loading
+      expect(fetchCalls[0].url).toContain("/chat/completions");
+      // Protocol conversion: OpenAI function tools, no defer_loading, tool_search dropped
       expect(fetchCalls[0].body.tools).toHaveLength(2);
       for (const t of fetchCalls[0].body.tools) {
+        expect(t.type).toBe("function");
+        expect(t.function?.name).toBeTruthy();
         expect(t.defer_loading).toBeUndefined();
-        expect(["Read", "Edit"]).toContain(t.name);
+        expect(["Read", "Edit"]).toContain(t.function.name);
       }
     });
 

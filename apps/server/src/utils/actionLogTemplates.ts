@@ -93,10 +93,6 @@ export function renderActionLogServerLine(
     return `${timestamp} ${event.level} OpenRouter removed unsupported server-tool shorthand requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} removed=${Array.isArray(event.removedToolNames) ? event.removedToolNames.join(",") : event.removedToolNames} remainingTools=${event.remainingToolCount}`;
   }
 
-  if (code === "request.openrouter.deferred_tools_materialized") {
-    return `${timestamp} ${event.level} OpenRouter materialized deferred tools for non-Anthropic model requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} stripped=${event.strippedDeferLoadingCount} remainingTools=${event.remainingToolCount}`;
-  }
-
   if (code === "request.strategy_routing.error") {
     return `${timestamp} ${event.level} Strategy routing error requestId=${event.requestId} error=${event.error}`;
   }
