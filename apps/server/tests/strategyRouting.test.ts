@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyIntentTaskType,
   classifyStrategyTask,
   extractCurrentUserInputForRouting,
   findStrategyRule,
@@ -267,5 +268,137 @@ describe("strategy routing helpers", () => {
   it("classifies input containing return or let statements as code", () => {
     expect(classifyStrategyTask("return { count: 0 }", false).taskType).toBe("code");
     expect(classifyStrategyTask("let items = []", false).taskType).toBe("code");
+  });
+
+  // --- Utterance layer + product-name false positives (audit-log corpus) ---
+
+  it("does not classify product-name bug-analyzer style intros as debug", () => {
+    expect(
+      classifyStrategyTask("bug-analyzer Bug定位分析，帮助快速找到问题根源", false).taskType,
+    ).not.toBe("debug");
+    expect(
+      classifyStrategyTask("bug-analyzer Bug定位分析，帮助快速找到问题根源", false).taskType,
+    ).toBe("general");
+    expect(classifyStrategyTask("my-bug-tracker 问题定位工具介绍", false).taskType).not.toBe("debug");
+  });
+
+  it("still classifies real bug-fix intents as debug", () => {
+    expect(classifyStrategyTask("fix the bug in the parser", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("有个 bug 帮我看看", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("this function throws an error", false).taskType).toBe("debug");
+  });
+
+  it("matches high-frequency mined utterances to the right task", () => {
+    expect(classifyStrategyTask("还是不行", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("你能看到图片吗", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("帮我写一封邮件", false).taskType).toBe("writing");
+    expect(classifyStrategyTask("帮我实现这个接口", false).taskType).toBe("code");
+    expect(classifyStrategyTask("分析这份长日志", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("你好", false).taskType).toBe("general");
+  });
+
+  it("does not misroute add-logging / debug+日志 as long_context via utterance includes", () => {
+    // Instrumenting code with logs is code/debug, not long_context analysis
+    expect(classifyStrategyTask("还是报错 增加日志 排查错误", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("帮我在接口里增加日志", false).taskType).toBe("code");
+    expect(classifyStrategyTask("加点日志看看问题", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("添加打印日志", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("添加调试日志", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("查询访问日志列表", false).taskType).not.toBe("long_context");
+    // True long_context anchors still work
+    expect(classifyStrategyTask("分析这份长日志", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("总结这段长文本", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("帮我看审计日志", false).taskType).toBe("long_context");
+    // English instrumentation must not become long_context either
+    expect(classifyStrategyTask("please add more logging to debug this", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("add console logs in the API handler", false).taskType).toBe("code");
+  });
+
+  // --- Bilingual (EN + ZH) utterance parity ---
+
+  it("classifies English-only prompts to the same task types as Chinese counterparts", () => {
+    // debug
+    expect(classifyStrategyTask("still not working", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("the page crashed after deploy", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("request keeps timing out", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("blank screen on load", false).taskType).toBe("debug");
+    // code
+    expect(classifyStrategyTask("please implement this API", false).taskType).toBe("code");
+    expect(classifyStrategyTask("refactor this function", false).taskType).toBe("code");
+    expect(classifyStrategyTask("add a pagination component", false).taskType).toBe("code");
+    // writing
+    expect(classifyStrategyTask("write an email for me", false).taskType).toBe("writing");
+    expect(classifyStrategyTask("polish this marketing copy", false).taskType).toBe("writing");
+    expect(classifyStrategyTask("translate this to English", false).taskType).toBe("writing");
+    // vision
+    expect(classifyStrategyTask("what's in this screenshot", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("describe the layout in this image", false).taskType).toBe("vision");
+    // long_context (analyze/read only)
+    expect(classifyStrategyTask("summarize this long audit log", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("review this long transcript", false).taskType).toBe("long_context");
+    // general
+    expect(classifyStrategyTask("hello", false).taskType).toBe("general");
+    expect(classifyStrategyTask("thanks", false).taskType).toBe("general");
+  });
+
+  it("keeps EN/ZH product-name false positives out of debug", () => {
+    expect(
+      classifyStrategyTask("bug-analyzer helps you quickly find the root cause", false).taskType,
+    ).not.toBe("debug");
+    expect(
+      classifyStrategyTask("BugLocator is a tool for root cause analysis", false).taskType,
+    ).not.toBe("debug");
+    // Intent path must match strategy path (jieba product-bug gate)
+    expect(
+      classifyIntentTaskType("bug-analyzer helps you quickly find the root cause"),
+    ).not.toBe("debug");
+    expect(classifyIntentTaskType("bug-analyzer Bug定位分析，帮助快速找到问题根源")).not.toBe(
+      "debug",
+    );
+  });
+
+  it("does not steal generic short EN fragments via utterance reverse-include", () => {
+    // Reverse match disabled for Latin: fragments must not become writing/debug/long_context
+    // via utterance reverse-includes (keyword hits like bare "function" → code are OK)
+    const stolen = [
+      "for me",
+      "the page",
+      "this function",
+      "long text",
+      "to English",
+      "key points",
+      "an error",
+      "button",
+      "please",
+      "build",
+      "white",
+      "layout",
+      "working",
+    ];
+    for (const frag of stolen) {
+      const result = classifyStrategyTask(frag, false);
+      const task = result.taskType;
+      // Must not reverse-include into writing/long_context
+      expect(task).not.toBe("writing");
+      expect(task).not.toBe("long_context");
+      // debug only if real error language (regex), not reverse "an error" from longer EN phrases alone
+      // "an error" still hits \berror\b keyword — acceptable; reverse-only paths must not fire
+      if (task === "debug") {
+        expect(/\berror\b|exception|fail|crash|timeout/i.test(frag)).toBe(true);
+        expect(result.reasons.some((r) => r.startsWith("utterance_"))).toBe(false);
+      }
+      if (task === "code") {
+        // keyword/signal only — not utterance reverse
+        expect(result.reasons.some((r) => r.startsWith("utterance_"))).toBe(false);
+      }
+    }
+    // Full phrases still work
+    expect(classifyStrategyTask("write an email for me", false).taskType).toBe("writing");
+    expect(classifyStrategyTask("still not working", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("summarize this long text", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("this function throws an error", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("for me", false).taskType).toBe("general");
+    expect(classifyStrategyTask("key points", false).taskType).toBe("general");
+    expect(classifyStrategyTask("long text", false).taskType).toBe("general");
   });
 });

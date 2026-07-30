@@ -91,6 +91,11 @@ export function normalizeStrategyInput(text: string) {
 
 import { Jieba } from "@node-rs/jieba";
 import { dict } from "@node-rs/jieba/dict";
+import {
+  hasIntentBugToken,
+  isProductStyleBugMention,
+  matchStrategyUtterance,
+} from "./strategyRouteUtterances";
 
 const jieba = Jieba.withDict(dict);
 
@@ -238,9 +243,27 @@ export function classifyStrategyTask(
     return { taskType: "code", reasons, inputText: text, hasImageInput: false };
   }
 
+  // --- 1d. Aurelio-style utterance anchors (corpus-informed, before loose keywords) ---
+  const utteranceHit = matchStrategyUtterance(normalized);
+  if (utteranceHit && utteranceHit.taskType !== "general") {
+    // general exact hits are handled only as soft signal at the end (prefer specific tasks)
+    reasons.push(utteranceHit.reason);
+    return {
+      taskType: utteranceHit.taskType,
+      reasons,
+      inputText: text,
+      hasImageInput: false,
+    };
+  }
+
+  // Product/tool names like bug-analyzer must not trip bare "bug" debug routing
+  const productStyleBug = isProductStyleBugMention(normalized);
+
   // --- 2. Debug: errors, failures, and negative feedback indicating something is broken ---
+  // Note: bare \bbug\b is gated via hasIntentBugToken (excludes bug-analyzer product intros).
   if (
-    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|bug|crash|panic|repair)\b|exception\b/.test(normalized) ||
+    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|crash|panic|repair)\b|exception\b/.test(normalized) ||
+    hasIntentBugToken(normalized) ||
     /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(normalized) ||
     /is not defined|undefined|is null|is empty|not found|not registered/.test(normalized) ||
     /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱|不好使|渲染层错误|不存在|无效/.test(normalized) ||
@@ -330,7 +353,13 @@ export function classifyStrategyTask(
     return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
   }
 
-  if (/\b(log|audit|transcript|migration)\b|日志|审计|长文本|迁移/.test(normalized)) {
+  // Analyze/read long content — not "add logging" instrumentation (code/debug)
+  if (
+    /\b(audit|transcript|migration)\b|审计|长文本|长日志/.test(normalized) ||
+    /(?:分析|查看|阅读|梳理|总结|review).{0,12}(?:\blog\b|日志|审计|长文本|transcript)/.test(normalized) ||
+    /(?:\blog\b|日志|审计).{0,12}(?:分析|查看|阅读|梳理|总结|线索)/.test(normalized) ||
+    /数据库迁移|迁移脚本|migration\s+script/.test(normalized)
+  ) {
     reasons.push("long_context_keyword");
     return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
   }
@@ -349,7 +378,14 @@ export function classifyStrategyTask(
 
   for (const word of words) {
     const w = word.toLowerCase();
-    if (w in ROUTING_WEIGHTS.debug) debugScore += ROUTING_WEIGHTS.debug[w];
+    // Do not let product-name "bug" tokens inflate debug score (bug-analyzer intros)
+    if (w in ROUTING_WEIGHTS.debug) {
+      if (productStyleBug && (w === "bug" || w === "error")) {
+        // skip branding-only bug/error tokens without failure language
+      } else {
+        debugScore += ROUTING_WEIGHTS.debug[w];
+      }
+    }
     if (w in ROUTING_WEIGHTS.code) codeScore += ROUTING_WEIGHTS.code[w];
     if (w in ROUTING_WEIGHTS.writing) writingScore += ROUTING_WEIGHTS.writing[w];
   }
@@ -369,7 +405,12 @@ export function classifyStrategyTask(
     return { taskType: "writing", reasons, inputText: text, hasImageInput: false };
   }
 
-  // --- 7. General: fallback ---
+  // --- 7. General utterance exact match (soft), then default ---
+  if (utteranceHit?.taskType === "general") {
+    reasons.push(utteranceHit.reason);
+    return { taskType: "general", reasons, inputText: text, hasImageInput: false };
+  }
+
   reasons.push("default");
   return { taskType: "general", reasons, inputText: text, hasImageInput: false };
 }
@@ -407,9 +448,10 @@ export function classifyIntentTaskType(
     }
   }
 
-  // Debug keywords
+  // Debug keywords (bare "bug" gated like classifyStrategyTask)
   if (
-    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|bug|crash|panic|repair)\b|exception\b/.test(normalized) ||
+    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|crash|panic|repair)\b|exception\b/.test(normalized) ||
+    hasIntentBugToken(normalized) ||
     /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(normalized) ||
     /is not defined|undefined|is null|is empty|not found|not registered/.test(normalized) ||
     /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱|不好使|渲染层错误|不存在|无效/.test(normalized) ||
@@ -469,7 +511,12 @@ export function classifyIntentTaskType(
   if (text.length > 4000) {
     return "long_context";
   }
-  if (/\b(log|audit|transcript|migration)\b|日志|审计|长文本|迁移/.test(normalized)) {
+  if (
+    /\b(audit|transcript|migration)\b|审计|长文本|长日志/.test(normalized) ||
+    /(?:分析|查看|阅读|梳理|总结|review).{0,12}(?:\blog\b|日志|审计|长文本|transcript)/.test(normalized) ||
+    /(?:\blog\b|日志|审计).{0,12}(?:分析|查看|阅读|梳理|总结|线索)/.test(normalized) ||
+    /数据库迁移|迁移脚本|migration\s+script/.test(normalized)
+  ) {
     return "long_context";
   }
 
@@ -478,14 +525,21 @@ export function classifyIntentTaskType(
     return "writing";
   }
 
-  // Jieba supplementary scoring
+  // Jieba supplementary scoring (mirror classifyStrategyTask: skip product-style bug tokens)
+  const productStyleBug = isProductStyleBugMention(normalized);
   const words = jieba.cut(normalized, false);
   let debugScore = 0;
   let codeScore = 0;
   let writingScore = 0;
   for (const word of words) {
     const w = word.toLowerCase();
-    if (w in ROUTING_WEIGHTS.debug) debugScore += ROUTING_WEIGHTS.debug[w];
+    if (w in ROUTING_WEIGHTS.debug) {
+      if (productStyleBug && (w === "bug" || w === "error")) {
+        // branding-only bug/error without failure language
+      } else {
+        debugScore += ROUTING_WEIGHTS.debug[w];
+      }
+    }
     if (w in ROUTING_WEIGHTS.code) codeScore += ROUTING_WEIGHTS.code[w];
     if (w in ROUTING_WEIGHTS.writing) writingScore += ROUTING_WEIGHTS.writing[w];
   }
