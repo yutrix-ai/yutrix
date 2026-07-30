@@ -70,19 +70,28 @@ export function hasLiveBreakageSignal(normalizedInput: string): boolean {
   const n = norm(normalizedInput);
   if (!n) return false;
 
-  // Exception classes (IOException, CustomException) — baseline exception\b semantics
-  if (/\b[a-z][a-z0-9_]*exception\b/.test(n) || /\bexception\b/.test(n)) return true;
-
-  // Explicit runtime / ops breakage
+  // Exception *classes* (IOException, CustomException) — not bare "exception handling"
+  // Require a prefix before "exception" (class-like) OR live exception phrasing
+  if (/\b[a-z][a-z0-9_]+exception\b/.test(n)) return true;
   if (
-    /\b(stack\s*trace|stacktrace|traceback|panic|crashed|crashing|throws?)\b/.test(n) ||
+    /\b(throws?|throwing|unhandled|uncaught)\b.{0,12}\bexception\b/.test(n) ||
+    /\bexception\b.{0,8}(at\s|:\s*\d|thrown|raised)/.test(n)
+  ) {
+    return true;
+  }
+
+  // Explicit runtime / ops breakage (no bare timeout/error/exception as design themes)
+  if (
+    /\b(stack\s*trace|stacktrace|traceback|panic|crashed|crashing)\b/.test(n) ||
     /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(n) ||
     /\b(not working|doesn't work|does not work|still not working|is not working|aren't working|is broken|stopped working|won't start|will not start)\b/.test(n) ||
     // Do NOT match bare "timeout" (design: timeout handling)
     /\b(keeps? timing out|timing out|timed out)\b/.test(n) ||
     /\breturns?\s*(?:a\s+)?(?:5\d\d|500|502|503|504)\b|\bhttp\s*5\d\d\b/.test(n) ||
     /\b(failed to|failure to|build failed|execution failed|applicationcontext failed)\b/.test(n) ||
-    /\bcode["\s:=]+404\b|\b"code"\s*:\s*404\b/.test(n)
+    /\bcode["\s:=]+404\b|\b"code"\s*:\s*404\b/.test(n) ||
+    // "throws an error" without matching bare error in "error handling"
+    /\bthrows?\s+(an?\s+)?error\b|\berror\s+(was\s+)?thrown\b/.test(n)
   ) {
     return true;
   }
@@ -114,13 +123,22 @@ export function hasLiveBreakageSignal(normalizedInput: string): boolean {
 export function isDesignSpecFailureTheme(normalizedInput: string): boolean {
   const n = norm(normalizedInput);
   if (!n) return false;
-  if (hasLiveBreakageSignal(n)) return false;
+  // Live class exceptions / throws still override design-spec
+  if (/\b[a-z][a-z0-9_]+exception\b/.test(n)) return false;
+  if (/\b(throws?|throwing|unhandled|uncaught)\b.{0,12}\bexception\b/.test(n)) return false;
+  if (/\bthrows?\s+(an?\s+)?error\b|\berror\s+(was\s+)?thrown\b/.test(n)) return false;
+  if (hasLiveBreakageSignal(n) && !/\b(timeout|error|exception|failure)\s+handling\b/.test(n)) {
+    // pure live breakage is not design-spec
+    if (!/\bhandling\b|\bsupport\b|\bretry\b|处理|支持|重试/.test(n)) return false;
+  }
   return (
-    /\bwith timeout handling\b|\btimeout handling\b|\berror handling\b|\bbug\s*fix\b|\bfix notes\b|\brelease notes\b/.test(n) ||
+    /\b(with\s+)?(timeout|error|exception|failure)\s+handling\b/.test(n) ||
+    /\bneed\s+(timeout|error|exception)\s+handling\b/.test(n) ||
+    /\bbug\s*fix\b|\bfix notes\b|\brelease notes\b/.test(n) ||
     /\breturn\s+\d{3}\s+when\b|\bwhen the .+ is not found\b|\bif .+ not found\b/.test(n) ||
     /超时处理|错误处理|异常处理|失败重试|返回\s*\d{3}|当.+不存在|若不存在/.test(n) ||
-    /\bimplement\b.+\b(timeout|error|failure)\b.+\b(handling|support|retry)\b/.test(n) ||
-    /实现.+(超时|错误|失败).*(处理|支持|重试)/.test(n)
+    /\bimplement\b.+\b(timeout|error|failure|exception)\b.+\b(handling|support|retry)\b/.test(n) ||
+    /实现.+(超时|错误|失败|异常).*(处理|支持|重试)/.test(n)
   );
 }
 

@@ -95,6 +95,7 @@ import {
   hasExplicitFailureSignal,
   hasLongContextLogAnalyzeSignal,
   isAgenticProtocolPayload,
+  isDesignSpecFailureTheme,
   isProductStyleBugMention,
   matchStrategyUtterance,
 } from "./strategyRouteUtterances";
@@ -370,6 +371,8 @@ export function classifyStrategyTask(
   }
 
   // --- 6. Jieba supplementary scoring (catches borderline cases that slip through regex) ---
+  // Design-spec themes (timeout/error/exception handling) must not become debug via jieba alone.
+  const designSpec = isDesignSpecFailureTheme(normalized);
   const words = jieba.cut(normalized, false);
   let debugScore = 0;
   let codeScore = 0;
@@ -381,6 +384,21 @@ export function classifyStrategyTask(
     if (w in ROUTING_WEIGHTS.debug) {
       if (productStyleBug && (w === "bug" || w === "error")) {
         // skip branding-only bug/error tokens without failure language
+      } else if (
+        designSpec &&
+        (w === "bug" ||
+          w === "error" ||
+          w === "timeout" ||
+          w === "fail" ||
+          w === "failed" ||
+          w === "failure" ||
+          w === "exception" ||
+          w === "报错" ||
+          w === "异常" ||
+          w === "失败" ||
+          w === "超时")
+      ) {
+        // skip design-spec theme tokens
       } else {
         debugScore += ROUTING_WEIGHTS.debug[w];
       }

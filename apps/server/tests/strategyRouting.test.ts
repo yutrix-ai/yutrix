@@ -508,10 +508,19 @@ describe("strategy routing helpers", () => {
     expect(classifyStrategyTask("return 404 when the item is not found", false).taskType).not.toBe(
       "debug",
     );
+    // Pure design-spec (no code/writing keywords) must not hit debug via bare exception/timeout/error or jieba
+    expect(classifyStrategyTask("implement this API with exception handling", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("exception handling for retries", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("we need timeout handling", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("with error handling", false).taskType).not.toBe("debug");
     // Live failure still wins
     expect(
       classifyStrategyTask("please implement this API; it throws an error", false).taskType,
     ).toBe("debug");
+    expect(classifyStrategyTask("throws an exception at line 12", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("IOException", false).taskType).toBe("debug");
   });
 
   it("recovers natural Chinese short aliases without reverse-match misroutes", () => {
