@@ -92,7 +92,9 @@ export function normalizeStrategyInput(text: string) {
 import { Jieba } from "@node-rs/jieba";
 import { dict } from "@node-rs/jieba/dict";
 import {
+  hasExplicitFailureSignal,
   hasIntentBugToken,
+  hasLongContextLogAnalyzeSignal,
   isProductStyleBugMention,
   matchStrategyUtterance,
 } from "./strategyRouteUtterances";
@@ -200,20 +202,31 @@ export const ROUTING_WEIGHTS: Record<string, Record<string, number>> = {
   },
 };
 
+export interface ClassifyStrategyOptions {
+  /** Skip vision keyword/image early return (intent path has no vision enum). */
+  skipVision?: boolean;
+  /** Skip agentic protocol → code (continuation turns keep previous model intent). */
+  skipAgentic?: boolean;
+}
+
 export function classifyStrategyTask(
   text: string,
   hasCurrentImageInput: boolean,
+  options?: ClassifyStrategyOptions,
 ): StrategyTaskClassification {
   const truncatedText = (text || "").slice(0, 8000);
   const normalized = normalizeStrategyInput(truncatedText);
   const reasons: string[] = [];
+  const skipVision = !!options?.skipVision;
+  const skipAgentic = !!options?.skipAgentic;
 
   // --- 1. Vision: image input or vision-related keywords (O(1) pre-check, HIGHEST PRIORITY) ---
   // Must be first! "宁可错杀也不要放过" — vision misrouting crashes non-vision models
   if (
-    hasCurrentImageInput ||
-    /\b(image|screenshot|vision|picture|photo|jpg|jpeg|png|webp|gif|ocr)\b|截图|图片|图像|视觉|照片|图中|图里|原图|大图|识别图|海报|头像|logo|二维码|attached media from tool result/.test(normalized) ||
-    /"type"\s*:\s*"(?:image_url|image|input_image)"|"image_url"\s*:|"image"\s*:/i.test(truncatedText)
+    !skipVision &&
+    (hasCurrentImageInput ||
+      /\b(image|screenshot|vision|picture|photo|jpg|jpeg|png|webp|gif|ocr)\b|截图|图片|图像|视觉|照片|图中|图里|原图|大图|识别图|海报|头像|logo|二维码|attached media from tool result/.test(normalized) ||
+      /"type"\s*:\s*"(?:image_url|image|input_image)"|"image_url"\s*:|"image"\s*:/i.test(truncatedText))
   ) {
     reasons.push(hasCurrentImageInput ? "image_input" : "vision_keyword");
     return { taskType: "vision", reasons, inputText: text, hasImageInput: hasCurrentImageInput };
@@ -232,21 +245,38 @@ export function classifyStrategyTask(
 
   // --- 1c. Code Protocol: Agentic actions, Tool calls, File paths (O(1) pre-check) ---
   if (
-    /qqrrrrqqquuuuqqq|vvxxxxvvvddddvvv|<system-reminder>|<system_reminder>|<task-notification>|<transcript>/.test(truncatedText) ||
+    !skipAgentic &&
+    (/qqrrrrqqquuuuqqq|vvxxxxvvvddddvvv|<system-reminder>|<system_reminder>|<task-notification>|<transcript>/.test(truncatedText) ||
     /\[\{"role":"tool"/.test(truncatedText) ||
     /\[\{"tool_use_id"/.test(truncatedText) ||
     /"type":\s*"tool_result"/.test(truncatedText) ||
     /\[Request interrupted/.test(truncatedText) ||
-    /<path>.*<\/path>|<content>/.test(normalized)
+    /<path>.*<\/path>|<content>/.test(normalized))
   ) {
     reasons.push("agentic_protocol_marker");
     return { taskType: "code", reasons, inputText: text, hasImageInput: false };
   }
 
-  // --- 1d. Aurelio-style utterance anchors (corpus-informed, before loose keywords) ---
   const utteranceHit = matchStrategyUtterance(normalized);
-  if (utteranceHit && utteranceHit.taskType !== "general") {
-    // general exact hits are handled only as soft signal at the end (prefer specific tasks)
+
+  // --- 1d. Debug utterances only (before other task utterances) ---
+  if (utteranceHit?.taskType === "debug") {
+    reasons.push(utteranceHit.reason);
+    return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // Product/tool names like bug-analyzer must not trip bare "bug" debug routing
+  const productStyleBug = isProductStyleBugMention(normalized);
+
+  // --- 2. Debug: explicit failure signals BEFORE non-debug utterances ---
+  // Mixed "implement API; it throws an error" must be debug, not code-from-utterance.
+  if (hasExplicitFailureSignal(normalized)) {
+    reasons.push("debug_keyword");
+    return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
+  }
+
+  // --- 2b. Non-debug Aurelio utterances (code / writing / long_context) ---
+  if (utteranceHit && utteranceHit.taskType !== "general" && utteranceHit.taskType !== "debug") {
     reasons.push(utteranceHit.reason);
     return {
       taskType: utteranceHit.taskType,
@@ -254,39 +284,6 @@ export function classifyStrategyTask(
       inputText: text,
       hasImageInput: false,
     };
-  }
-
-  // Product/tool names like bug-analyzer must not trip bare "bug" debug routing
-  const productStyleBug = isProductStyleBugMention(normalized);
-
-  // --- 2. Debug: errors, failures, and negative feedback indicating something is broken ---
-  // Note: bare \bbug\b is gated via hasIntentBugToken (excludes bug-analyzer product intros).
-  if (
-    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|crash|panic|repair)\b|exception\b/.test(normalized) ||
-    hasIntentBugToken(normalized) ||
-    /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(normalized) ||
-    /is not defined|undefined|is null|is empty|not found|not registered/.test(normalized) ||
-    /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱|不好使|渲染层错误|不存在|无效/.test(normalized) ||
-    /没展示|没显示|没有显示|没有展示|没改好|没改完|没效果|没作用/.test(normalized) ||
-    // Production data: negative feedback patterns (100+ occurrences in chat_logs)
-    /还是不|还是没|不行$|不能用|没有变化|没有出现|为什么没/.test(normalized) ||
-    // Production data round 2: more negative feedback ("怎么...没/不" patterns)
-    /怎么没|怎么不|点不了|用不了|不见了/.test(normalized) ||
-    // Production data round 3: data-passing failures, state issues
-    /没带过来|没传过来|不一致|都不对/.test(normalized) ||
-    // Production data round 4: logic errors, element disappeared
-    /逻辑是错|逻辑不对/.test(normalized) ||
-    // Production data round 5 (MDP): UI bugs and layout failures
-    /滚动条|盖住|溢出|重叠|遮挡|错位/.test(normalized) ||
-    // Production data round 6 (MDP review): data-passing and state failures
-    /带不回数据|带不回|没有实现|对不齐/.test(normalized) ||
-    // Production data (MDP review 2): display blank / no response
-    /显示空白|还是空白/.test(normalized) ||
-    // UI action failures
-    /不能(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|无法(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|点不开|打不开/.test(normalized)
-  ) {
-    reasons.push("debug_keyword");
-    return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
   }
 
   // --- 3. Code: programming keywords, file references, CSS properties, dev terminology ---
@@ -354,12 +351,7 @@ export function classifyStrategyTask(
   }
 
   // Analyze/read long content — not "add logging" instrumentation (code/debug)
-  if (
-    /\b(audit|transcript|migration)\b|审计|长文本|长日志/.test(normalized) ||
-    /(?:分析|查看|阅读|梳理|总结|review).{0,12}(?:\blog\b|日志|审计|长文本|transcript)/.test(normalized) ||
-    /(?:\blog\b|日志|审计).{0,12}(?:分析|查看|阅读|梳理|总结|线索)/.test(normalized) ||
-    /数据库迁移|迁移脚本|migration\s+script/.test(normalized)
-  ) {
+  if (hasLongContextLogAnalyzeSignal(normalized)) {
     reasons.push("long_context_keyword");
     return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
   }
@@ -415,146 +407,23 @@ export function classifyStrategyTask(
   return { taskType: "general", reasons, inputText: text, hasImageInput: false };
 }
 
+/**
+ * Intent path mirrors strategy classification (same failure priority, utterances, bug gates).
+ * No vision enum here: skipVision. Continuations skip agentic protocol → code.
+ */
 export function classifyIntentTaskType(
   text: string,
   isContinuation?: boolean,
 ): "debug" | "code" | "long_context" | "writing" | "general" {
-  const truncatedText = (text || "").slice(0, 8000);
-  const normalized = normalizeStrategyInput(truncatedText);
-
-  // Skip vision checks. Go straight to protocol or keywords checks.
-
-  // Debug Protocol
-  if (
-    (/tool_result|role["\s]*:["\s]*tool|system-reminder|system_reminder/.test(normalized)) &&
-    (/error|exception|fail|timeout|crash|panic|reject|invalid|undefined|not defined|is null|is empty|not found|not registered/.test(normalized) ||
-     /zsh:.*not found|enoent:/.test(normalized) ||
-     /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱/.test(normalized))
-  ) {
-    return "debug";
+  const result = classifyStrategyTask(text, false, {
+    skipVision: true,
+    skipAgentic: !!isContinuation,
+  });
+  if (result.taskType === "vision") {
+    // Defensive: skipVision should prevent this
+    return "general";
   }
-
-  // Code Protocol: skip if isContinuation is true
-  if (!isContinuation) {
-    if (
-      /qqrrrrqqquuuuqqq|vvxxxxvvvddddvvv|<system-reminder>|<system_reminder>|<task-notification>|<transcript>/.test(truncatedText) ||
-      /\[\{"role":"tool"/.test(truncatedText) ||
-      /\[\{"tool_use_id"/.test(truncatedText) ||
-      /"type":\s*"tool_result"/.test(truncatedText) ||
-      /\[Request interrupted/.test(truncatedText) ||
-      /<path>.*<\/path>|<content>/.test(normalized)
-    ) {
-      return "code";
-    }
-  }
-
-  // Debug keywords (bare "bug" gated like classifyStrategyTask)
-  if (
-    /\b(error|stack trace|stacktrace|traceback|timeout|timed? out|timing out|failed|failure|crash|panic|repair)\b|exception\b/.test(normalized) ||
-    hasIntentBugToken(normalized) ||
-    /\b(typeerror|referenceerror|syntaxerror|rangeerror|nullpointerexception|systemerror)\b/.test(normalized) ||
-    /is not defined|undefined|is null|is empty|not found|not registered/.test(normalized) ||
-    /报错|异常|超时|失败|崩溃|修复|排查|不生效|没生效|白屏|错乱|不好使|渲染层错误|不存在|无效/.test(normalized) ||
-    /没展示|没显示|没有显示|没有展示|没改好|没改完|没效果|没作用/.test(normalized) ||
-    /还是不|还是没|不行$|不能用|没有变化|没有出现|为什么没/.test(normalized) ||
-    /怎么没|怎么不|点不了|用不了|不见了/.test(normalized) ||
-    /没带过来|没传过来|不一致|都不对/.test(normalized) ||
-    /逻辑是错|逻辑不对/.test(normalized) ||
-    /滚动条|盖住|溢出|重叠|遮挡|错位/.test(normalized) ||
-    /带不回数据|带不回|没有实现|对不齐/.test(normalized) ||
-    /显示空白|还是空白/.test(normalized) ||
-    /不能(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|无法(?:编辑|修改|点击|选择|保存|提交|获取|显示|展示)|点不开|打不开/.test(normalized)
-  ) {
-    return "debug";
-  }
-
-  // Code keywords
-  if (
-    /```|\b(class|function|def|fn|const|async|await|interface|struct|enum|extends|implements|import|export|throw|catch|yield|private|public|protected)\b|\blet\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\bvar\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\breturn\s+(?!to\b)[a-zA-Z0-9_$'"[{(-]|return\s*;/.test(normalized) ||
-    /\.(tsx|ts|jsx|js|vue|java|py|go|rs|cpp|c|cs|php|rb|sql|swift|kt)\b/.test(normalized) ||
-    /\bsrc[/\\]|(?:^|[\s/\\])(?:pages|views|components|packages|package)[/\\]|\b[\w-]{1,50}packages\/[\w-]{1,50}\/|\b[\w-]{1,50}\/[\w-]{1,50}\/index\b/.test(normalized) ||
-    /\b(padding|margin|border-radius|opacity|font-size|background-color|z-index|flex|grid)\b|\d+r?px\b/.test(normalized) ||
-    /代码|接口|组件|函数|编译|重构|页面|样式|字段|参数|调用|分页|筛选|弹框|弹窗|跳转|路由|回显|排序|传参|分包|克隆|折线图/.test(normalized) ||
-    /(?:controller|service|repository|entity|mapper|dto)\b/.test(normalized) ||
-    /\btype mismatch|\bgeneric|\bmono<|\bflux<|\bmap<|\blist</.test(normalized) ||
-    /\/api\/|yyyy|hh:mm|格式化|从底部弹出|底部弹/.test(normalized) ||
-    /\.[a-z][\w-]*\[|\bwindow\.|\bconsole\.|\bgap\b|\.then\(|\=\>/.test(truncatedText.replace(/\s+/g, ' ')) ||
-    /清空功能|垂直居中|水平居中|靠上|靠下|靠左|靠右/.test(normalized) ||
-    /自动撑开|写死|边距/.test(normalized) ||
-    /提交到远程仓库|新建.*md/.test(normalized) ||
-    /\b(font-weight|redisson|commonjs|gradlew|redis|mysql|docker|nginx)\b/.test(normalized) ||
-    /合并到.*(main|master|dev)|提交到|推送到/.test(normalized) ||
-    /<script|<div|<span|<style|<link|<img|<form/.test(normalized) ||
-    /#[0-9a-f]{6}\b/.test(normalized) ||
-    /\b(nc|curl|wget|chmod|mkdir|npm|pnpm|yarn|pip|git|gradle)\b/.test(normalized) ||
-    /\b[a-z]+[A-Z]\w*\b/.test(truncatedText) ||
-    /改为#|改为\d|改为0x|改为https?|引入|调试|部署/.test(normalized) ||
-    /\.tgz\b|\.png\b|\.jpg\b|\.svg\b|\.css\b|\.html\b|\.json\b|\.xml\b|\.yml\b|\.yaml\b|\.sh\b|\.md\b/.test(normalized) ||
-    /\bskill\.md\b|\bworktree\b|\bmcp\b|\boss\b|\bcdn\b|\bapi\b/.test(normalized) ||
-    /拖拽|滑动|虚化|卡片|弹屏|弧角|序号|导航|开关|显隐|注入|封装/.test(normalized) ||
-    /安装|运行|启动|构建|打包/.test(normalized) ||
-    /展示|平齐|竖向|横向|换行|一行展示|左右对.|上下对.|按label对齐|复选框|全选|批量/.test(normalized) ||
-    /\b@(?:post|get|put|delete|patch|request)mapping\b/.test(normalized) ||
-    /perform a web search|\bweb search for the query\b/.test(normalized) ||
-    /圆形|赋值|字符|数组|对象|列表|表头|表格|复用|返回上一|还原/.test(normalized) ||
-    /间距|去掉|增加.*间距|秒.*消失|消失|分支|映射|回调|充值|缴纳|退款|退住|打印/.test(normalized) ||
-    /search the codebase|find all files/.test(normalized) ||
-    /\{"[a-z]+":\s*[\d"\[{]/.test(normalized) ||
-    /提示.*成功|提示.*失败|下边框|上边框/.test(normalized) ||
-    /\bstore\b|后端|占位图|扫码|二维码|校验|重名/.test(normalized) ||
-    /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized)
-  ) {
-    return "code";
-  }
-
-  // Large input / long context
-  if (text.length > 4000) {
-    return "long_context";
-  }
-  if (
-    /\b(audit|transcript|migration)\b|审计|长文本|长日志/.test(normalized) ||
-    /(?:分析|查看|阅读|梳理|总结|review).{0,12}(?:\blog\b|日志|审计|长文本|transcript)/.test(normalized) ||
-    /(?:\blog\b|日志|审计).{0,12}(?:分析|查看|阅读|梳理|总结|线索)/.test(normalized) ||
-    /数据库迁移|迁移脚本|migration\s+script/.test(normalized)
-  ) {
-    return "long_context";
-  }
-
-  // Writing
-  if (/\b(write|rewrite|polish|story|copy|email|article|translate|release notes|changelog)\b|写作|润色|文案|文章|邮件|故事|翻译|发布说明|更新说明/.test(normalized)) {
-    return "writing";
-  }
-
-  // Jieba supplementary scoring (mirror classifyStrategyTask: skip product-style bug tokens)
-  const productStyleBug = isProductStyleBugMention(normalized);
-  const words = jieba.cut(normalized, false);
-  let debugScore = 0;
-  let codeScore = 0;
-  let writingScore = 0;
-  for (const word of words) {
-    const w = word.toLowerCase();
-    if (w in ROUTING_WEIGHTS.debug) {
-      if (productStyleBug && (w === "bug" || w === "error")) {
-        // branding-only bug/error without failure language
-      } else {
-        debugScore += ROUTING_WEIGHTS.debug[w];
-      }
-    }
-    if (w in ROUTING_WEIGHTS.code) codeScore += ROUTING_WEIGHTS.code[w];
-    if (w in ROUTING_WEIGHTS.writing) writingScore += ROUTING_WEIGHTS.writing[w];
-  }
-  const THRESHOLD = 5;
-  if (debugScore >= THRESHOLD && debugScore >= codeScore && debugScore >= writingScore) {
-    return "debug";
-  }
-  if (codeScore >= THRESHOLD && codeScore >= debugScore && codeScore >= writingScore) {
-    return "code";
-  }
-  if (writingScore >= THRESHOLD && writingScore >= debugScore && writingScore >= codeScore) {
-    return "writing";
-  }
-
-  return "general";
+  return result.taskType;
 }
 
 export async function computeRoutingRequirements(

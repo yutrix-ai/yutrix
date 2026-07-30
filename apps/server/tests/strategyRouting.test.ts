@@ -358,7 +358,7 @@ describe("strategy routing helpers", () => {
   });
 
   it("does not steal generic short EN fragments via utterance reverse-include", () => {
-    // Reverse match disabled for Latin: fragments must not become writing/debug/long_context
+    // Reverse match disabled: fragments must not become writing/debug/long_context
     // via utterance reverse-includes (keyword hits like bare "function" → code are OK)
     const stolen = [
       "for me",
@@ -378,21 +378,16 @@ describe("strategy routing helpers", () => {
     for (const frag of stolen) {
       const result = classifyStrategyTask(frag, false);
       const task = result.taskType;
-      // Must not reverse-include into writing/long_context
       expect(task).not.toBe("writing");
       expect(task).not.toBe("long_context");
-      // debug only if real error language (regex), not reverse "an error" from longer EN phrases alone
-      // "an error" still hits \berror\b keyword — acceptable; reverse-only paths must not fire
       if (task === "debug") {
         expect(/\berror\b|exception|fail|crash|timeout/i.test(frag)).toBe(true);
         expect(result.reasons.some((r) => r.startsWith("utterance_"))).toBe(false);
       }
       if (task === "code") {
-        // keyword/signal only — not utterance reverse
         expect(result.reasons.some((r) => r.startsWith("utterance_"))).toBe(false);
       }
     }
-    // Full phrases still work
     expect(classifyStrategyTask("write an email for me", false).taskType).toBe("writing");
     expect(classifyStrategyTask("still not working", false).taskType).toBe("debug");
     expect(classifyStrategyTask("summarize this long text", false).taskType).toBe("long_context");
@@ -400,5 +395,70 @@ describe("strategy routing helpers", () => {
     expect(classifyStrategyTask("for me", false).taskType).toBe("general");
     expect(classifyStrategyTask("key points", false).taskType).toBe("general");
     expect(classifyStrategyTask("long text", false).taskType).toBe("general");
+  });
+
+  // --- Review regressions (P1–P3): failure priority, CJK reverse, tickets, log analyze, dual entry ---
+
+  it("prefers explicit failure over non-debug code utterances", () => {
+    expect(
+      classifyStrategyTask("please implement this API; it throws an error", false).taskType,
+    ).toBe("debug");
+    expect(classifyStrategyTask("帮我实现这个接口，但是现在报错了", false).taskType).toBe("debug");
+    // Pure implement without failure stays code
+    expect(classifyStrategyTask("please implement this API", false).taskType).toBe("code");
+  });
+
+  it("does not reverse-match short CJK fragments into vision/debug/long_context", () => {
+    expect(classifyStrategyTask("还原页面", false).taskType).not.toBe("vision");
+    expect(classifyStrategyTask("这个请求", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("展示出来", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("定位问题线索", false).taskType).not.toBe("long_context");
+    // Full anchors still work
+    expect(classifyStrategyTask("根据截图还原页面", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("从日志里定位问题线索", false).taskType).toBe("long_context");
+  });
+
+  it("classifies bug tickets and broken products as debug; marketing stays non-debug", () => {
+    expect(classifyStrategyTask("fix BUG-123", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("investigate bug-42", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("bug-analyzer is not working", false).taskType).toBe("debug");
+    expect(
+      classifyStrategyTask("bug-analyzer helps you quickly find the root cause", false).taskType,
+    ).not.toBe("debug");
+    expect(
+      classifyStrategyTask("Bug Analyzer helps you quickly find the root cause", false).taskType,
+    ).not.toBe("debug");
+  });
+
+  it("classifies controlled log-analyze requests as long_context without add-logging false positives", () => {
+    expect(classifyStrategyTask("analyze the server log", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("read the application log", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("summarize this log", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("看一下服务日志", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("please add more logging to debug this", false).taskType).not.toBe(
+      "long_context",
+    );
+    expect(classifyStrategyTask("帮我在接口里增加日志", false).taskType).not.toBe("long_context");
+  });
+
+  it("keeps classifyIntentTaskType aligned with classifyStrategyTask for non-vision intents", () => {
+    const samples = [
+      "still not working",
+      "please implement this API; it throws an error",
+      "帮我实现这个接口，但是现在报错了",
+      "fix BUG-123",
+      "bug-analyzer is not working",
+      "bug-analyzer helps you quickly find the root cause",
+      "analyze the server log",
+      "please implement this API",
+      "write an email for me",
+      "hello",
+    ];
+    for (const s of samples) {
+      const strategy = classifyStrategyTask(s, false).taskType;
+      const intent = classifyIntentTaskType(s);
+      const expected = strategy === "vision" ? "general" : strategy;
+      expect(intent).toBe(expected);
+    }
   });
 });
