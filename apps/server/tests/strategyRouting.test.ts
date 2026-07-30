@@ -540,5 +540,82 @@ describe("strategy routing helpers", () => {
     expect(classifyIntentTaskType(agenticOnly, true)).not.toBe("code");
     // Non-continuation still sees agentic as code
     expect(classifyIntentTaskType(agenticOnly, false)).toBe("code");
+    // Expanded continuation wrappers
+    expect(classifyIntentTaskType("[Request interrupted by user]", true)).not.toBe("code");
+    expect(classifyIntentTaskType("Web page content: <html></html>", true)).not.toBe("code");
+  });
+
+  // --- Post-review P1/P2 fixes (design+live, code vs long_context, bugs plural, layout, etc.) ---
+
+  it("does not let design-spec handling mask live failure in the same sentence", () => {
+    expect(
+      classifyStrategyTask("timeout handling exists but the request timed out", false).taskType,
+    ).toBe("debug");
+    expect(classifyStrategyTask("错误处理加好了，但请求还是报错", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("implement this API with timeout handling", false).taskType).not.toBe(
+      "debug",
+    );
+  });
+
+  it("does not let long_context steal clear code requests", () => {
+    expect(
+      classifyStrategyTask("analyze log handling in src/logger.ts", false).taskType,
+    ).toBe("code");
+    expect(
+      classifyStrategyTask("fix database migration in src/db.ts", false).taskType,
+    ).toBe("code");
+    expect(classifyStrategyTask("implement transcript storage API", false).taskType).toBe("code");
+    const bigTs = "const x = 1;\n".repeat(400) + "function foo() { return x; }\n".repeat(50);
+    expect(classifyStrategyTask(bigTs, false).taskType).toBe("code");
+    // True log analysis still works
+    expect(classifyStrategyTask("analyze nginx logs", false).taskType).toBe("long_context");
+  });
+
+  it("recognizes plural bugs and work on bugs", () => {
+    expect(classifyStrategyTask("fix bugs in the parser", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("investigate these bugs", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("resolve production bugs", false).taskType).toBe("debug");
+  });
+
+  it("does not treat layout feature requests as live debug", () => {
+    expect(classifyStrategyTask("给表格加一个滚动条", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("支持卡片重叠布局", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("写一个 CSS 溢出示例", false).taskType).not.toBe("debug");
+  });
+
+  it("matches present-tense crash/timeout live failures", () => {
+    expect(classifyStrategyTask("the app crashes on launch", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("the request times out", false).taskType).toBe("debug");
+  });
+
+  it("protects known bug brands without marketing slogans", () => {
+    expect(classifyStrategyTask("What is Bug Analyzer?", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("configure bug-tracker", false).taskType).not.toBe("debug");
+  });
+
+  it("uses full word bounds for log verbs and does not kill summarize-then-print", () => {
+    expect(classifyStrategyTask("preview logs for users", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("thread logs its state", false).taskType).not.toBe("long_context");
+    expect(
+      classifyStrategyTask("summarize logs, then print the result", false).taskType,
+    ).toBe("long_context");
+  });
+
+  it("requires exception context for debug; allows XException class form", () => {
+    expect(classifyStrategyTask("write a unit test for IOException", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("document CustomException behavior", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("XException", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("IOException", false).taskType).toBe("debug");
+  });
+
+  it("uses controlled short Chinese aliases without over-contains", () => {
+    expect(classifyStrategyTask("看一下这张图", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("看下这幅图", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("新增堆栈信息展示功能", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("堆栈信息", false).taskType).toBe("debug");
   });
 });

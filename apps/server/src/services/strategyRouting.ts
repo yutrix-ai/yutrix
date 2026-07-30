@@ -94,6 +94,7 @@ import { dict } from "@node-rs/jieba/dict";
 import {
   hasExplicitFailureSignal,
   hasLongContextLogAnalyzeSignal,
+  hasStrongCodeDevIntent,
   isAgenticProtocolPayload,
   isDesignSpecFailureTheme,
   isProductStyleBugMention,
@@ -271,18 +272,24 @@ export function classifyStrategyTask(
 
   // --- 2. Debug: explicit failure signals BEFORE non-debug utterances ---
   // Mixed "implement API; it throws an error" must be debug, not code-from-utterance.
+  // Design-spec spans do not mask independent live clauses (strip then re-check).
   if (hasExplicitFailureSignal(normalized)) {
     reasons.push("debug_keyword");
     return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
   }
 
-  // --- 2a. Long-context log analyze BEFORE broad code tokens (nginx/docker/git logs) ---
-  if (text.length > 4000) {
-    reasons.push("large_input");
+  const codeHeavy = hasStrongCodeDevIntent(normalized, truncatedText);
+  const agenticOnly =
+    skipAgentic && isAgenticProtocolPayload(normalized, truncatedText);
+
+  // --- 2a. Long-context only when NOT strong code-dev intent / agentic packaging ---
+  // True "analyze nginx logs" has no src/implement; large pure non-code pastes use length.
+  if (!codeHeavy && !agenticOnly && hasLongContextLogAnalyzeSignal(normalized)) {
+    reasons.push("long_context_keyword");
     return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
   }
-  if (hasLongContextLogAnalyzeSignal(normalized)) {
-    reasons.push("long_context_keyword");
+  if (!codeHeavy && !agenticOnly && text.length > 4000) {
+    reasons.push("large_input");
     return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
   }
 
@@ -291,7 +298,8 @@ export function classifyStrategyTask(
   if (
     utteranceHit &&
     utteranceHit.taskType !== "general" &&
-    !(skipVision && utteranceHit.taskType === "vision")
+    !(skipVision && utteranceHit.taskType === "vision") &&
+    !(agenticOnly && (utteranceHit.taskType === "code" || utteranceHit.taskType === "long_context"))
   ) {
     reasons.push(utteranceHit.reason);
     return {
@@ -356,9 +364,9 @@ export function classifyStrategyTask(
     // Production data (MDP review 2): UI interaction and specific layouts
     /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized);
 
-  if (looksLikeCode) {
+  if (looksLikeCode || codeHeavy) {
     // skipAgentic: pure tool/protocol dumps must not become code via broad signals
-    if (!(skipAgentic && isAgenticProtocolPayload(normalized, truncatedText))) {
+    if (!agenticOnly) {
       reasons.push("code_signal");
       return { taskType: "code", reasons, inputText: text, hasImageInput: false };
     }
