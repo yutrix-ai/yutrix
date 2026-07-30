@@ -94,6 +94,7 @@ import { dict } from "@node-rs/jieba/dict";
 import {
   hasExplicitFailureSignal,
   hasLongContextLogAnalyzeSignal,
+  isAgenticProtocolPayload,
   isProductStyleBugMention,
   matchStrategyUtterance,
 } from "./strategyRouteUtterances";
@@ -274,9 +275,23 @@ export function classifyStrategyTask(
     return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
   }
 
+  // --- 2a. Long-context log analyze BEFORE broad code tokens (nginx/docker/git logs) ---
+  if (text.length > 4000) {
+    reasons.push("large_input");
+    return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
+  }
+  if (hasLongContextLogAnalyzeSignal(normalized)) {
+    reasons.push("long_context_keyword");
+    return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
+  }
+
   // --- 2b. Non-debug Aurelio utterances (code / writing / long_context / vision-text) ---
-  // Debug already returned above; TypeScript narrows taskType away from "debug".
-  if (utteranceHit && utteranceHit.taskType !== "general") {
+  // skipVision: do not honor vision utterances on the intent path
+  if (
+    utteranceHit &&
+    utteranceHit.taskType !== "general" &&
+    !(skipVision && utteranceHit.taskType === "vision")
+  ) {
     reasons.push(utteranceHit.reason);
     return {
       taskType: utteranceHit.taskType,
@@ -287,7 +302,7 @@ export function classifyStrategyTask(
   }
 
   // --- 3. Code: programming keywords, file references, CSS properties, dev terminology ---
-  if (
+  const looksLikeCode =
     // Code blocks and language keywords
     /```|\b(class|function|def|fn|const|async|await|interface|struct|enum|extends|implements|import|export|throw|catch|yield|private|public|protected)\b|\blet\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\bvar\s+[a-zA-Z0-9_$]+(?:\s*=|;|,|\s+in\b)|\breturn\s+(?!to\b)[a-zA-Z0-9_$'"[{(-]|return\s*;/.test(normalized) ||
     // File extensions
@@ -338,22 +353,14 @@ export function classifyStrategyTask(
     // Production data round 20+ (MDP review): store/backend, placeholder, scanning
     /\bstore\b|后端|占位图|扫码|二维码|校验|重名/.test(normalized) ||
     // Production data (MDP review 2): UI interaction and specific layouts
-    /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized)
-  ) {
-    reasons.push("code_signal");
-    return { taskType: "code", reasons, inputText: text, hasImageInput: false };
-  }
+    /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized);
 
-  // --- 4. Long context: long-content-specific keywords (O(1) pre-check) ---
-  if (text.length > 4000) {
-    reasons.push("large_input");
-    return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
-  }
-
-  // Analyze/read long content — not "add logging" instrumentation (code/debug)
-  if (hasLongContextLogAnalyzeSignal(normalized)) {
-    reasons.push("long_context_keyword");
-    return { taskType: "long_context", reasons, inputText: text, hasImageInput: false };
+  if (looksLikeCode) {
+    // skipAgentic: pure tool/protocol dumps must not become code via broad signals
+    if (!(skipAgentic && isAgenticProtocolPayload(normalized, truncatedText))) {
+      reasons.push("code_signal");
+      return { taskType: "code", reasons, inputText: text, hasImageInput: false };
+    }
   }
 
   // --- 5. Writing: content creation and editing ---

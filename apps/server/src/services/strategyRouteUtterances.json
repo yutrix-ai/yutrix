@@ -11,11 +11,13 @@
     "分析这张 UI 图",
     "识别截图中的内容",
     "看这张图",
+    "看下这张图",
     "这是截图",
     "图片里的文字",
     "图片替换",
     "看下截图",
     "图中显示什么",
+
     "screenshot of the page",
     "what's in this screenshot",
     "what is in this screenshot",
@@ -42,7 +44,9 @@
     "点击没反应",
     "控制台有报错",
     "堆栈信息如下",
+    "堆栈信息",
     "fix the bug in the parser",
+
     "this function throws an error",
     "the request keeps timing out",
     "部署之后页面崩溃了",
@@ -143,7 +147,9 @@
     "总结这段长文本",
     "review this transcript",
     "从日志里定位问题线索",
+    "从日志里定位问题",
     "summarize this long audit log",
+
     "review this long transcript",
     "analyze this lengthy log file",
     "go through this migration document",

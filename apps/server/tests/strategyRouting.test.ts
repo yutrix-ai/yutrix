@@ -461,4 +461,75 @@ describe("strategy routing helpers", () => {
       expect(intent).toBe(expected);
     }
   });
+
+  // --- Boundary regressions (exception, bug-hyphen, log bounds, design-spec, CJK aliases, skip flags) ---
+
+  it("classifies *Exception class names as debug", () => {
+    expect(classifyStrategyTask("IOException", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("SQLException", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("CustomException", false).taskType).toBe("debug");
+    expect(
+      classifyStrategyTask("OrderNotFoundException at OrderService.java:42", false).taskType,
+    ).toBe("debug");
+  });
+
+  it("treats hyphenated bug work as debug; marketing brands stay non-debug", () => {
+    expect(classifyStrategyTask("fix security-bug", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("investigate bug-report", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("resolve critical-bug", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("fix bug-analyzer", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("the app stopped working", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("service won't start", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("endpoint returns 500", false).taskType).toBe("debug");
+    expect(
+      classifyStrategyTask("bug-analyzer helps you quickly find the root cause", false).taskType,
+    ).not.toBe("debug");
+  });
+
+  it("avoids long_context false positives and keeps tech-log analyze as long_context", () => {
+    expect(classifyStrategyTask("review catalogs", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("summarize backlogs", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("preview dialogs", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("review and add logs", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("enable audit logging", false).taskType).not.toBe("long_context");
+    expect(classifyStrategyTask("analyze nginx logs", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("analyze docker logs", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("summarize git logs", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("analyze API logs", false).taskType).toBe("long_context");
+  });
+
+  it("does not treat design-spec failure themes as live debug", () => {
+    expect(classifyStrategyTask("implement this API with timeout handling", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("write release notes for this bug fix", false).taskType).toBe(
+      "writing",
+    );
+    expect(classifyStrategyTask("return 404 when the item is not found", false).taskType).not.toBe(
+      "debug",
+    );
+    // Live failure still wins
+    expect(
+      classifyStrategyTask("please implement this API; it throws an error", false).taskType,
+    ).toBe("debug");
+  });
+
+  it("recovers natural Chinese short aliases without reverse-match misroutes", () => {
+    expect(classifyStrategyTask("看下这张图", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("堆栈信息", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("从日志里定位问题", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("还原页面", false).taskType).not.toBe("vision");
+    expect(classifyStrategyTask("这个请求", false).taskType).not.toBe("debug");
+  });
+
+  it("honors skipVision and skipAgentic on intent path", () => {
+    expect(classifyIntentTaskType("看下这张图")).not.toBe("vision" as any);
+    expect(classifyIntentTaskType("what's in this screenshot")).not.toBe("vision" as any);
+    // Pure agentic protocol should not force code when skipAgentic (continuation)
+    const agenticOnly =
+      '[{"role":"tool","content":"<path>/tmp/x</path><type>file</type>"}]';
+    expect(classifyIntentTaskType(agenticOnly, true)).not.toBe("code");
+    // Non-continuation still sees agentic as code
+    expect(classifyIntentTaskType(agenticOnly, false)).toBe("code");
+  });
 });
