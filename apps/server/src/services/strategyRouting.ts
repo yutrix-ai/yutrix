@@ -95,9 +95,11 @@ import {
   hasExplicitFailureSignal,
   hasLongContextLogAnalyzeSignal,
   hasStrongCodeDevIntent,
+  hasStrongWritingIntent,
   isAgenticProtocolPayload,
   isDesignSpecFailureTheme,
   isProductStyleBugMention,
+  looksLikeStructuredLogPaste,
   matchStrategyUtterance,
 } from "./strategyRouteUtterances";
 
@@ -295,11 +297,16 @@ export function classifyStrategyTask(
 
   // --- 2b. Non-debug Aurelio utterances (code / writing / long_context / vision-text) ---
   // skipVision: do not honor vision utterances on the intent path
+  // long_context utterances must not steal implement/API/writing intents
   if (
     utteranceHit &&
     utteranceHit.taskType !== "general" &&
     !(skipVision && utteranceHit.taskType === "vision") &&
-    !(agenticOnly && (utteranceHit.taskType === "code" || utteranceHit.taskType === "long_context"))
+    !(agenticOnly && (utteranceHit.taskType === "code" || utteranceHit.taskType === "long_context")) &&
+    !(
+      utteranceHit.taskType === "long_context" &&
+      (codeHeavy || hasStrongWritingIntent(normalized) || hasStrongCodeDevIntent(normalized, truncatedText))
+    )
   ) {
     reasons.push(utteranceHit.reason);
     return {
@@ -364,7 +371,9 @@ export function classifyStrategyTask(
     // Production data (MDP review 2): UI interaction and specific layouts
     /触底|加载更多|自适应|自提|json|cicd|openapi|坐标|地图|distance|对齐/.test(normalized);
 
-  if (looksLikeCode || codeHeavy) {
+  // Structured log pastes must not become code via broad nginx/api/return tokens
+  const logPaste = looksLikeStructuredLogPaste(truncatedText);
+  if ((looksLikeCode || codeHeavy) && !logPaste) {
     // skipAgentic: pure tool/protocol dumps must not become code via broad signals
     if (!agenticOnly) {
       reasons.push("code_signal");
@@ -379,21 +388,26 @@ export function classifyStrategyTask(
   }
 
   // --- 6. Jieba supplementary scoring (catches borderline cases that slip through regex) ---
-  // Design-spec themes (timeout/error/exception handling) must not become debug via jieba alone.
+  // Design-spec themes and product brands must not become debug via jieba alone.
+  // If brand stripped residual has live failure, productStyleBug is already false.
   const designSpec = isDesignSpecFailureTheme(normalized);
   const words = jieba.cut(normalized, false);
   let debugScore = 0;
   let codeScore = 0;
   let writingScore = 0;
+  const skipDebugTheme =
+    productStyleBug ||
+    designSpec ||
+    /(新增|添加|实现).{0,12}(报错|异常|堆栈).{0,12}(提示|展示|功能)/.test(normalized) ||
+    /\b(article|biography|release notes|workplace policy|recommendations in this report)\b/.test(
+      normalized,
+    );
 
   for (const word of words) {
     const w = word.toLowerCase();
-    // Do not let product-name "bug" tokens inflate debug score (bug-analyzer intros)
     if (w in ROUTING_WEIGHTS.debug) {
-      if (productStyleBug && (w === "bug" || w === "error")) {
-        // skip branding-only bug/error tokens without failure language
-      } else if (
-        designSpec &&
+      if (
+        skipDebugTheme &&
         (w === "bug" ||
           w === "error" ||
           w === "timeout" ||
@@ -406,7 +420,7 @@ export function classifyStrategyTask(
           w === "失败" ||
           w === "超时")
       ) {
-        // skip design-spec theme tokens
+        // skip branding / design-spec / writing theme tokens
       } else {
         debugScore += ROUTING_WEIGHTS.debug[w];
       }

@@ -618,4 +618,103 @@ describe("strategy routing helpers", () => {
     expect(classifyStrategyTask("新增堆栈信息展示功能", false).taskType).not.toBe("debug");
     expect(classifyStrategyTask("堆栈信息", false).taskType).toBe("debug");
   });
+
+  // --- Adjacent false-positive pass (after 28f4e76 / 28f4e76+ stack) ---
+
+  it("detects multi-lang dense code and not structured log pastes as codeHeavy", () => {
+    const py = "def foo():\n  return 1\n".repeat(80);
+    const rust = "fn main() {\n  let x = 1;\n}\n".repeat(60);
+    const go = "func main() {\n  return\n}\n".repeat(60);
+    const sql = "SELECT a FROM t WHERE b=1;\n".repeat(80);
+    expect(classifyStrategyTask(py, false).taskType).toBe("code");
+    expect(classifyStrategyTask(rust, false).taskType).toBe("code");
+    expect(classifyStrategyTask(go, false).taskType).toBe("code");
+    expect(classifyStrategyTask(sql, false).taskType).toBe("code");
+    const nginxLog =
+      "2024-01-01 12:00:00 function=/api class=Handler return=200 msg=ok\n".repeat(20);
+    expect(classifyStrategyTask(nginxLog, false).taskType).not.toBe("code");
+  });
+
+  it("does not let long_context utterance steal code/writing intents", () => {
+    expect(
+      classifyStrategyTask("review this transcript and implement a parser API", false).taskType,
+    ).toBe("code");
+    expect(classifyStrategyTask("build transcript storage API", false).taskType).toBe("code");
+    expect(classifyStrategyTask("write an article about an audit log", false).taskType).toBe(
+      "writing",
+    );
+  });
+
+  it("recovers residual live failure after design-spec and broad failure tenses", () => {
+    expect(
+      classifyStrategyTask("失败重试已经实现，但请求还是失败了", false).taskType,
+    ).toBe("debug");
+    expect(
+      classifyStrategyTask("failure handling exists but deployment failed", false).taskType,
+    ).toBe("debug");
+    expect(
+      classifyStrategyTask(
+        "implement the API to report an error when the token is invalid",
+        false,
+      ).taskType,
+    ).not.toBe("debug");
+    expect(classifyStrategyTask("the requests time out", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("build fails on CI", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("the endpoint returned 500", false).taskType).toBe("debug");
+  });
+
+  it("handles layout feature vs fault after feature correctly", () => {
+    expect(classifyStrategyTask("实现溢出处理后页面还是错位", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("需求定了，滚动条放在右边", false).taskType).not.toBe("debug");
+  });
+
+  it("allows independent failure after known bug brand", () => {
+    expect(classifyStrategyTask("Bug Analyzer has a bug", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("Bug Analyzer has bugs", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("Bug Analyzer shows an error", false).taskType).toBe("debug");
+    expect(classifyStrategyTask("Bug Analyzer is failing", false).taskType).toBe("debug");
+  });
+
+  it("keeps exception/stack feature framing non-debug", () => {
+    expect(classifyStrategyTask("implement IOException handling", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("catch IOException and retry", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("新增异常堆栈展示功能", false).taskType).not.toBe("debug");
+    expect(classifyStrategyTask("新增报错提示功能", false).taskType).not.toBe("debug");
+  });
+
+  it("does not treat writing/about bugs as debug", () => {
+    expect(classifyStrategyTask("write release notes for these bugs", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("write an article about software bugs", false).taskType).not.toBe(
+      "debug",
+    );
+    expect(classifyStrategyTask("Bugs Bunny character biography", false).taskType).not.toBe(
+      "debug",
+    );
+  });
+
+  it("requires tech adjacency for implement as code", () => {
+    expect(classifyStrategyTask("implement a workplace policy", false).taskType).not.toBe("code");
+    expect(
+      classifyStrategyTask("implement the recommendations in this report", false).taskType,
+    ).not.toBe("code");
+  });
+
+  it("allows flexible Chinese short alias prefixes and tails", () => {
+    expect(classifyStrategyTask("请看一下这张图", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("看一下这张图。", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("看下这张图的布局", false).taskType).toBe("vision");
+    expect(classifyStrategyTask("堆栈信息如下：线程阻塞", false).taskType).toBe("debug");
+  });
+
+  it("covers more log analysis verb orders without nginx code steal", () => {
+    expect(classifyStrategyTask("please print and analyze the logs", false).taskType).toBe(
+      "long_context",
+    );
+    expect(classifyStrategyTask("check the server logs", false).taskType).toBe("long_context");
+    expect(classifyStrategyTask("find errors in nginx logs", false).taskType).toBe("long_context");
+  });
 });
