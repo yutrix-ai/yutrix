@@ -93,7 +93,6 @@ import { Jieba } from "@node-rs/jieba";
 import { dict } from "@node-rs/jieba/dict";
 import {
   hasExplicitFailureSignal,
-  hasIntentBugToken,
   hasLongContextLogAnalyzeSignal,
   isProductStyleBugMention,
   matchStrategyUtterance,
@@ -275,8 +274,9 @@ export function classifyStrategyTask(
     return { taskType: "debug", reasons, inputText: text, hasImageInput: false };
   }
 
-  // --- 2b. Non-debug Aurelio utterances (code / writing / long_context) ---
-  if (utteranceHit && utteranceHit.taskType !== "general" && utteranceHit.taskType !== "debug") {
+  // --- 2b. Non-debug Aurelio utterances (code / writing / long_context / vision-text) ---
+  // Debug already returned above; TypeScript narrows taskType away from "debug".
+  if (utteranceHit && utteranceHit.taskType !== "general") {
     reasons.push(utteranceHit.reason);
     return {
       taskType: utteranceHit.taskType,
