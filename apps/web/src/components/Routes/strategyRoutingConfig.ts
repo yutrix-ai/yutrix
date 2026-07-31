@@ -6,9 +6,6 @@ export const STRATEGY_TASKS: Array<{
   fallbackLabel: string;
   descriptionKey: string;
   fallbackDescription: string;
-  /** Optional help text for a small "?" tooltip (e.g. long_context floor). */
-  helpKey?: string;
-  fallbackHelp?: string;
 }> = [
   {
     type: "vision",
@@ -37,9 +34,6 @@ export const STRATEGY_TASKS: Array<{
     fallbackLabel: "长上下文",
     descriptionKey: "routes.strategy.taskDescriptions.long_context",
     fallbackDescription: "仅当预估输入超过 100 万 tokens 时才会路由到此模型。",
-    helpKey: "routes.strategy.taskHelp.long_context",
-    fallbackHelp:
-      "只有预估输入 token 数严格大于 1,000,000 时，才会路由到「长上下文」策略配置的模型；未达门槛时按其它任务类型或通用模型处理。",
   },
   {
     type: "writing",

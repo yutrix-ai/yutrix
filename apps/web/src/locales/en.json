@@ -932,9 +932,6 @@
         "long_context": "Only routes here when estimated input exceeds 1,000,000 tokens.",
         "writing": "Use for articles, copy, email, translation, rewriting, or polishing.",
         "general": "Default model when no other task type matches."
-      },
-      "taskHelp": {
-        "long_context": "The long-context strategy model is used only when estimated input tokens are strictly greater than 1,000,000. Below that floor, other task types or the general model are used instead."
       }
     }
   },

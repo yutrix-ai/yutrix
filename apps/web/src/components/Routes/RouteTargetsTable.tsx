@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Trash2, Plus, ArrowUp, ArrowDown, Search, Check, ChevronDown, HelpCircle } from "lucide-react";
+import { Trash2, Plus, ArrowUp, ArrowDown, Search, Check, ChevronDown } from "lucide-react";
 import { STRATEGY_TASKS } from "./strategyRoutingConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -151,16 +151,8 @@ export function RouteTargetsTable({
               {STRATEGY_TASKS.map(task => (
                 <TableHead key={task.type} className="min-w-[155px] py-3.5 px-2">
                   <div className="flex flex-col space-y-0.5">
-                    <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50 inline-flex items-center gap-1">
+                    <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
                       {t(task.labelKey, task.fallbackLabel)}
-                      {task.helpKey && (
-                        <span
-                          className="inline-flex items-center cursor-help select-none"
-                          title={t(task.helpKey, task.fallbackHelp || "")}
-                        >
-                          <HelpCircle className="h-3 w-3 text-muted-foreground/70 hover:text-violet-500 transition-colors" />
-                        </span>
-                      )}
                     </span>
                     <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
                       {t(task.descriptionKey, task.fallbackDescription)}

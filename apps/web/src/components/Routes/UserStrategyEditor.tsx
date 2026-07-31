@@ -8,7 +8,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { HelpCircle } from "lucide-react";
 import { STRATEGY_TASKS } from "./strategyRoutingConfig";
 import { ProviderModel, StrategyRoutingRule, StrategyTaskType } from "./types";
 
@@ -55,18 +54,8 @@ export function UserStrategyEditor({
 
         return (
           <div key={task.type} className="flex flex-col gap-1.5">
-            <Label className="text-xs text-muted-foreground flex items-center justify-between gap-1">
-              <span className="inline-flex items-center gap-1">
-                {t(task.labelKey, task.fallbackLabel)}
-                {task.helpKey && (
-                  <span
-                    className="inline-flex items-center cursor-help select-none"
-                    title={t(task.helpKey, task.fallbackHelp || "")}
-                  >
-                    <HelpCircle className="h-3 w-3 text-muted-foreground/70 hover:text-violet-500 transition-colors" />
-                  </span>
-                )}
-              </span>
+            <Label className="text-xs text-muted-foreground flex items-center justify-between">
+              {t(task.labelKey, task.fallbackLabel)}
               {task.type === "general" && (
                 <span className="text-[10px] text-muted-foreground/60">
                   {t("routes.strategy.generalFallback", "兜底")}
