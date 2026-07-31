@@ -34,6 +34,48 @@ export const STRATEGY_TASK_TYPES = [
 
 export type StrategyTaskType = (typeof STRATEGY_TASK_TYPES)[number];
 
+/**
+ * Floor for routing to the long_context strategy model.
+ * Only requests with estimated input tokens strictly greater than this value
+ * may use the long_context strategy target (classification or override).
+ */
+export const LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS = 1_000_000;
+
+export function meetsLongContextStrategyTokenFloor(
+  estimatedInputTokens: number,
+): boolean {
+  return (
+    Number.isFinite(estimatedInputTokens) &&
+    estimatedInputTokens > LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS
+  );
+}
+
+/**
+ * If classification picked long_context but the request is not above the
+ * 1M-token floor, demote to the next-best non-long_context task type.
+ */
+export function applyLongContextStrategyTokenGate(options: {
+  taskType: StrategyTaskType;
+  estimatedInputTokens: number;
+  inputText: string;
+}): { taskType: StrategyTaskType; reasons: string[] } {
+  if (options.taskType !== "long_context") {
+    return { taskType: options.taskType, reasons: [] };
+  }
+  if (meetsLongContextStrategyTokenFloor(options.estimatedInputTokens)) {
+    return { taskType: "long_context", reasons: [] };
+  }
+  const reasons = [
+    `long_context_below_min_tokens:total_${Math.floor(options.estimatedInputTokens)}<=${LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS}`,
+  ];
+  const alt = classifyStrategyTask(options.inputText, false, {
+    excludeLongContext: true,
+  });
+  const taskType =
+    alt.taskType === "long_context" ? "general" : alt.taskType;
+  return { taskType, reasons: [...reasons, ...alt.reasons] };
+}
+
 export interface StrategyRoutingRule {
   taskType: StrategyTaskType;
   providerId: string;
@@ -225,6 +267,11 @@ export interface ClassifyStrategyOptions {
   skipVision?: boolean;
   /** Skip agentic protocol → code (continuation turns keep previous model intent). */
   skipAgentic?: boolean;
+  /**
+   * Do not return long_context (used when reclassifying after the 1M-token
+   * strategy floor rejects long_context routing).
+   */
+  excludeLongContext?: boolean;
 }
 
 function isLogAnalysisFailureTheme(evidence: {
@@ -273,6 +320,7 @@ export function classifyStrategyTask(
   const reasons: string[] = [];
   const skipVision = !!options?.skipVision;
   const skipAgentic = !!options?.skipAgentic;
+  const excludeLongContext = !!options?.excludeLongContext;
 
   // --- 1. Vision: image input or vision-related keywords (O(1) pre-check, HIGHEST PRIORITY) ---
   // Must be first! "宁可错杀也不要放过" — vision misrouting crashes non-vision models
@@ -423,7 +471,10 @@ export function classifyStrategyTask(
       ? null
       : utteranceHit?.taskType,
   );
-  if (contentRoute) {
+  if (
+    contentRoute &&
+    !(excludeLongContext && contentRoute.taskType === "long_context")
+  ) {
     reasons.push(
       contentRoute.reason === "content_large_input"
         ? "large_input"
@@ -470,7 +521,7 @@ export function classifyStrategyTask(
 
   // Preserve the legacy migration/log vocabulary as a weak fallback. All
   // explicit code/writing/source evidence has already won above.
-  if (hasLongContextLogAnalyzeSignal(normalized)) {
+  if (!excludeLongContext && hasLongContextLogAnalyzeSignal(normalized)) {
     reasons.push("long_context_keyword");
     return {
       taskType: "long_context",
@@ -750,7 +801,11 @@ export async function computeRoutingRequirements(
 
   let requiresLongContext = false;
   const contextBudget = resolveModelContextWindow(activeModelConfig);
-  if (contextBudget.limit > 0) {
+  // Preemptive long_context strategy only when above the 1M floor AND over model budget
+  if (
+    meetsLongContextStrategyTokenFloor(tokenEst.totalTokens) &&
+    contextBudget.limit > 0
+  ) {
     let requestedOutputTokens = 0;
     if (body?.max_tokens) requestedOutputTokens = body.max_tokens;
     else if (body?.max_completion_tokens)
@@ -1311,6 +1366,14 @@ export async function resolveStrategyRoutingDecision(options: {
   if (isVision) {
     selectedTaskType = "vision";
     reasons = ["required_capability_vision"];
+  } else if (selectedTaskType === "long_context") {
+    const gated = applyLongContextStrategyTokenGate({
+      taskType: selectedTaskType,
+      estimatedInputTokens: tokenEst.totalTokens,
+      inputText,
+    });
+    selectedTaskType = gated.taskType;
+    reasons = [...reasons, ...gated.reasons];
   }
 
   const rules = parseRules(strategyRoutingRules);
@@ -1389,6 +1452,7 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
 
   const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
   const isVision = tokenEst.imageCount > 0;
+  const inputText = extractCurrentUserInputForRouting(options.body);
 
   let taskType = options.currentStrategyTaskType;
   let reasons: string[] = ["Inherited from current attempt"];
@@ -1397,11 +1461,21 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
     taskType = "vision";
     reasons = ["required_capability_vision"];
   } else if (!taskType) {
-    const inputText = extractCurrentUserInputForRouting(options.body);
-    const imageInput = isVision;
-    const classification = classifyStrategyTask(inputText, imageInput);
+    const classification = classifyStrategyTask(inputText, isVision);
     taskType = classification.taskType;
     reasons = classification.reasons;
+  }
+
+  if (taskType === "long_context") {
+    const gated = applyLongContextStrategyTokenGate({
+      taskType: "long_context",
+      estimatedInputTokens: tokenEst.totalTokens,
+      inputText,
+    });
+    if (gated.taskType !== "long_context") {
+      taskType = gated.taskType;
+      reasons = [...reasons, ...gated.reasons];
+    }
   }
 
   const rules = parseStrategyRoutingRules(

@@ -24,7 +24,7 @@ import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit } from "./inputTokenLimitGuard";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTokenLimit } from "./inputTokenLimit";
-import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements } from "../../services/strategyRouting";
+import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { looksLikeContinuationRequestRaw } from "../../utils/chatTurnsDetector";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
@@ -691,8 +691,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   // If no vision target with sufficient context found, fall through to try long_context rules below
                 }
 
-                // Try long_context rules (for non-vision requests, or as fallback for vision requests when no bigger vision model exists)
-                if (!longContextOverrideApplied) {
+                // Try long_context rules only when input exceeds the 1M-token strategy floor
+                // (for non-vision requests, or as fallback when no bigger vision model exists)
+                if (
+                  !longContextOverrideApplied &&
+                  meetsLongContextStrategyTokenFloor(estimatedTotalTokens)
+                ) {
                   let currentStrategyRoutingRules = route.strategyRoutingRules;
                   if (route.targets) {
                     try {

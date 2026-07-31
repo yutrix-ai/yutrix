@@ -64,6 +64,15 @@ export async function ensureTokenLimitColumns() {
   await addColumnIfMissing("users", "maxInputTokensOverride", "ALTER TABLE users ADD COLUMN maxInputTokensOverride integer");
 }
 
+/** Model-level context window (routing) — independent of maxOutputTokens (output clamp). */
+export async function ensureProviderModelContextWindowColumn() {
+  await addColumnIfMissing(
+    "provider_models",
+    "contextWindowTokens",
+    "ALTER TABLE provider_models ADD COLUMN contextWindowTokens integer",
+  );
+}
+
 export async function ensureFunnelRoutingColumns() {
   await addColumnIfMissing("provider_models", "alias", "ALTER TABLE provider_models ADD COLUMN alias text");
   await addColumnIfMissing("endpoint_routes", "targets", "ALTER TABLE endpoint_routes ADD COLUMN targets text");

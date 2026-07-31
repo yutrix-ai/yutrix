@@ -652,7 +652,7 @@
     },
     "modelList": {
       "title": "Model List",
-      "description": "Available models for this provider, synced automatically. Setting the Max Output Limit will override and clamp the request's max_tokens parameter.",
+      "description": "Available models for this provider, synced automatically. Context window drives long-context strategy routing; max output only clamps request max_tokens.",
       "refresh": "Refresh Models",
       "refreshing": "Refreshing...",
       "empty": "No model data, click Refresh",
@@ -662,9 +662,15 @@
         "model": "Model ID",
         "enabled": "Enabled",
         "tokenizerRepo": "Tokenizer (HF Repo)",
+        "contextWindow": "Context Window",
         "maxOutput": "Max Output Limit",
+        "maxTokens": "Max Output Limit",
         "inputPrice": "Input $/1M",
         "outputPrice": "Output $/1M"
+      },
+      "hints": {
+        "contextWindow": "Total model context window for long-context strategy routing. Leave empty to skip preemptive override and rely on upstream error fallback.",
+        "maxOutput": "Only clamps request max_tokens; not used for context routing."
       },
       "placeholders": {
         "uncapped": "Uncapped",
@@ -923,9 +929,12 @@
         "vision": "Use when the current input contains images, screenshots, visual recognition, or image-position tasks.",
         "debug": "Use for errors, timeouts, failures, stack traces, or repair intent.",
         "code": "Use for code generation, refactoring, APIs, components, builds, or implementation tasks.",
-        "long_context": "Use for long logs, audit records, documents, migrations, or large context.",
+        "long_context": "Only routes here when estimated input exceeds 1,000,000 tokens.",
         "writing": "Use for articles, copy, email, translation, rewriting, or polishing.",
         "general": "Default model when no other task type matches."
+      },
+      "taskHelp": {
+        "long_context": "The long-context strategy model is used only when estimated input tokens are strictly greater than 1,000,000. Below that floor, other task types or the general model are used instead."
       }
     }
   },

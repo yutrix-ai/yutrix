@@ -77,12 +77,35 @@ function ModelRow({ model, onChange }: { model: any; onChange: (field: string, v
           <Input
             type="number"
             min="0"
+            value={model.contextWindowTokens !== null && model.contextWindowTokens !== undefined ? model.contextWindowTokens : ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              onChange("contextWindowTokens", val === "" ? null : parseInt(val, 10));
+            }}
+            placeholder={t("providers.modelList.placeholders.uncapped", "不限")}
+            title={t(
+              "providers.modelList.hints.contextWindow",
+              "模型总上下文窗口，用于长上下文策略路由。留空则不预判，依赖上游错误后 fallback。",
+            )}
+            className="h-9 w-28 text-center text-sm font-medium bg-background border-zinc-200 dark:border-zinc-800 rounded-md focus-visible:ring-primary"
+          />
+        </div>
+      </TableCell>
+      <TableCell className="py-3.5">
+        <div className="relative flex items-center">
+          <Input
+            type="number"
+            min="0"
             value={model.maxOutputTokens !== null && model.maxOutputTokens !== undefined ? model.maxOutputTokens : ""}
             onChange={(e) => {
               const val = e.target.value;
               onChange("maxOutputTokens", val === "" ? null : parseInt(val, 10));
             }}
             placeholder={t("providers.modelList.placeholders.uncapped", "不限")}
+            title={t(
+              "providers.modelList.hints.maxOutput",
+              "仅裁剪请求中的 max_tokens，不参与上下文路由。",
+            )}
             className="h-9 w-28 text-center text-sm font-medium bg-background border-zinc-200 dark:border-zinc-800 rounded-md focus-visible:ring-primary"
           />
         </div>
@@ -188,6 +211,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
           providerModels.map(m => ({
             modelId: m.modelId,
             enabled: m.enabled,
+            contextWindowTokens: m.contextWindowTokens,
             maxOutputTokens: m.maxOutputTokens,
             inputTokenPricePerM: m.inputTokenPricePerM,
             outputTokenPricePerM: m.outputTokenPricePerM,
@@ -207,11 +231,14 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[1000px] h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
+      <DialogContent className="sm:max-w-[1180px] h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="px-6 py-4 border-b shrink-0 bg-muted/30">
           <DialogTitle>{t("providers.modelList.title", "配置供应商模型")} - {provider?.name}</DialogTitle>
           <DialogDescription>
-            {t("providers.modelList.description", "精细化配置该供应商下的所有可用模型。通过获取上游更新列表。")}
+            {t(
+              "providers.modelList.description",
+              "精细化配置该供应商下的所有可用模型。「最大上下文」用于长上下文策略路由；「最大输出」仅裁剪请求 max_tokens。",
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -239,6 +266,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
                   <TableHead className="w-24 font-semibold">{t("providers.modelList.table.enable", "启用")}</TableHead>
                   <TableHead className="w-40 font-semibold">{t("providers.modelList.table.alias", "别名")}</TableHead>
                   <TableHead className="w-36 font-semibold">{t("providers.modelList.table.tokenizer", "分词器")}</TableHead>
+                  <TableHead className="w-32 font-semibold">{t("providers.modelList.table.contextWindow", "最大上下文")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.maxTokens", "最大输出限制")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.inputPrice", "输入 (1M)")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.outputPrice", "输出 (1M)")}</TableHead>
@@ -247,7 +275,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
               <TableBody>
                 {loadingModels ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-64 text-center">
+                    <TableCell colSpan={8} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center text-muted-foreground gap-3">
                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         <span className="text-sm">{t("providers.modelList.loading", "加载中...")}</span>
@@ -256,7 +284,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
                   </TableRow>
                 ) : providerModels.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-64 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="h-64 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <p>{t("providers.modelList.empty", "暂无模型，请点击获取列表。")}</p>
                       </div>

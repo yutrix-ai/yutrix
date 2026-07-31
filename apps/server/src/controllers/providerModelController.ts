@@ -31,6 +31,7 @@ export const updateModelConfig = async (request: FastifyRequest, reply: FastifyR
       const { providerId, modelId } = request.params as any;
       const updateModelSchema = z.object({
         enabled: z.boolean().optional(),
+        contextWindowTokens: z.number().int().nonnegative().nullable().optional(),
         maxOutputTokens: z.number().int().nonnegative().nullable().optional(),
         inputTokenPricePerM: z.number().nonnegative().nullable().optional(),
         outputTokenPricePerM: z.number().nonnegative().nullable().optional(),
@@ -46,6 +47,7 @@ export const updateModelConfig = async (request: FastifyRequest, reply: FastifyR
       const data = parsed.data;
       const updateData: any = {};
       if (data.enabled !== undefined) updateData.enabled = data.enabled;
+      if (data.contextWindowTokens !== undefined) updateData.contextWindowTokens = data.contextWindowTokens;
       if (data.maxOutputTokens !== undefined) updateData.maxOutputTokens = data.maxOutputTokens;
       if (data.inputTokenPricePerM !== undefined) updateData.inputTokenPricePerM = data.inputTokenPricePerM;
       if (data.outputTokenPricePerM !== undefined) updateData.outputTokenPricePerM = data.outputTokenPricePerM;
@@ -75,6 +77,7 @@ export const bulkUpdateModels = async (request: FastifyRequest, reply: FastifyRe
         z.object({
           modelId: z.string(),
           enabled: z.boolean().optional(),
+          contextWindowTokens: z.number().int().nonnegative().nullable().optional(),
           maxOutputTokens: z.number().int().nonnegative().nullable().optional(),
           inputTokenPricePerM: z.number().nonnegative().nullable().optional(),
           outputTokenPricePerM: z.number().nonnegative().nullable().optional(),
@@ -94,6 +97,7 @@ export const bulkUpdateModels = async (request: FastifyRequest, reply: FastifyRe
         for (const item of updates) {
           const updateData: any = {};
           if (item.enabled !== undefined) updateData.enabled = item.enabled;
+          if (item.contextWindowTokens !== undefined) updateData.contextWindowTokens = item.contextWindowTokens;
           if (item.maxOutputTokens !== undefined) updateData.maxOutputTokens = item.maxOutputTokens;
           if (item.inputTokenPricePerM !== undefined) updateData.inputTokenPricePerM = item.inputTokenPricePerM;
           if (item.outputTokenPricePerM !== undefined) updateData.outputTokenPricePerM = item.outputTokenPricePerM;
@@ -187,6 +191,7 @@ export const refreshModels = async (request: FastifyRequest, reply: FastifyReply
           for (const m of existing) {
             if (!incomingModelIds.has(m.modelId)) {
               const hasCustomConfig =
+                (m.contextWindowTokens && m.contextWindowTokens > 0) ||
                 (m.maxOutputTokens && m.maxOutputTokens > 0) ||
                 m.inputTokenPricePerM !== null ||
                 m.outputTokenPricePerM !== null ||

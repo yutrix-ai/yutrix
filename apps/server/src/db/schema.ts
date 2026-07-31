@@ -77,6 +77,9 @@ export const providerModels = sqliteTable("provider_models", {
   displayName: text("displayName").notNull(),
   rawJson: text("rawJson"), // JSON string
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** Total context window (input+output budget) for strategy/long_context routing. Independent of maxOutputTokens. */
+  contextWindowTokens: integer("contextWindowTokens"),
+  /** Caps client max_tokens / max_completion_tokens only; never used as context window. */
   maxOutputTokens: integer("maxOutputTokens"),
   inputTokenPricePerM: real("inputTokenPricePerM"),
   outputTokenPricePerM: real("outputTokenPricePerM"),

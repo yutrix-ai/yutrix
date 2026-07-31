@@ -60,4 +60,34 @@ describe("fallback context budget validation", () => {
       })
     ).toBe(true);
   });
+
+  it("uses provider_models.contextWindowTokens column when set", () => {
+    const modelConfig = {
+      modelId: "kimi-k2.5",
+      maxOutputTokens: 98304,
+      contextWindowTokens: 262144,
+    };
+    const budget = resolveModelContextWindow(modelConfig);
+    expect(budget.limit).toBe(262144);
+    expect(budget.source).toBe("contextWindowTokens");
+    expect(
+      fitsContextBudget({
+        inputTokens: 155401,
+        requestedOutputTokens: 0,
+        safetyMargin: 50,
+        budget,
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores maxOutputTokens for context budget (output clamp only)", () => {
+    const modelConfig = {
+      modelId: "kimi-k2.5",
+      maxOutputTokens: 98304,
+      contextWindowTokens: null,
+    };
+    const budget = resolveModelContextWindow(modelConfig);
+    expect(budget.limit).toBe(0);
+    expect(budget.source).toBe("unknown");
+  });
 });

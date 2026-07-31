@@ -40,6 +40,7 @@ async function runAutoMigrations() {
 
     // ── provider_models ──
     "ALTER TABLE provider_models ADD COLUMN maxOutputTokens integer;",
+    "ALTER TABLE provider_models ADD COLUMN contextWindowTokens integer;",
     "ALTER TABLE provider_models ADD COLUMN inputTokenPricePerM real;",
     "ALTER TABLE provider_models ADD COLUMN outputTokenPricePerM real;",
     "ALTER TABLE provider_models ADD COLUMN tokenizerRepo text;",

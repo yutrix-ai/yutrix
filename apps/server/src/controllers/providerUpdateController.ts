@@ -283,6 +283,7 @@ export const updateProvider = async (request: FastifyRequest, reply: FastifyRepl
           const key = `${m.modelId}`;
           if (!incomingKeys.has(key)) {
             const hasCustomConfig =
+              (m.contextWindowTokens && m.contextWindowTokens > 0) ||
               (m.maxOutputTokens && m.maxOutputTokens > 0) ||
               m.inputTokenPricePerM !== null ||
               m.outputTokenPricePerM !== null ||

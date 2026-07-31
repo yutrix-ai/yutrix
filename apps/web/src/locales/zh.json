@@ -649,7 +649,7 @@
     },
     "modelList": {
       "title": "模型列表",
-      "description": "该供应商下可用的模型，系统会自动与此数据同步。设置输出限额会覆盖并限制 API 请求中的 max_tokens 参数。",
+      "description": "该供应商下可用的模型，系统会自动与此数据同步。「最大上下文」用于长上下文策略路由；「最大输出/输出限额」仅裁剪请求中的 max_tokens。",
       "refresh": "刷新模型",
       "refreshing": "正在刷新...",
       "empty": "暂无模型数据，请点击刷新",
@@ -659,9 +659,15 @@
         "model": "模型 ID",
         "enabled": "启用",
         "tokenizerRepo": "分词器词表 (HF 仓库)",
+        "contextWindow": "最大上下文",
         "maxOutput": "输出限额",
+        "maxTokens": "最大输出限制",
         "inputPrice": "输入 $/1M",
         "outputPrice": "输出 $/1M"
+      },
+      "hints": {
+        "contextWindow": "模型总上下文窗口，用于长上下文策略路由。留空则不预判，依赖上游错误后 fallback。",
+        "maxOutput": "仅裁剪请求中的 max_tokens，不参与上下文路由。"
       },
       "placeholders": {
         "uncapped": "不限",
@@ -920,9 +926,12 @@
         "vision": "当前输入包含图片、截图、视觉识别或图片位置调整时使用。",
         "debug": "包含异常、超时、失败、堆栈或修复意图时使用。",
         "code": "代码生成、重构、接口、组件、编译或工程实现任务。",
-        "long_context": "长日志、审计记录、文档、迁移或大段上下文。",
+        "long_context": "仅当预估输入超过 100 万 tokens 时才会路由到此模型。",
         "writing": "文章、文案、邮件、翻译、改写或润色任务。",
         "general": "未命中其他任务类型时的默认模型。"
+      },
+      "taskHelp": {
+        "long_context": "只有预估输入 token 数严格大于 1,000,000 时，才会路由到「长上下文」策略配置的模型；未达门槛时按其它任务类型或通用模型处理，不会因短日志/文档意图单独切到该模型。"
       }
     }
   },

@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Network, SlidersHorizontal } from "lucide-react";
+import { Network, SlidersHorizontal, HelpCircle } from "lucide-react";
 import { Provider, ProviderModel, StrategyRoutingRule, StrategyTaskType } from "./types";
 import {
   STRATEGY_TASKS,
@@ -137,6 +137,14 @@ export function StrategyRoutingEditor({
                 <Label className="flex items-center gap-2 text-sm font-medium">
                   <Network className="h-3.5 w-3.5 text-emerald-600" />
                   {t(task.labelKey, task.fallbackLabel)}
+                  {task.helpKey && (
+                    <span
+                      className="inline-flex items-center cursor-help select-none"
+                      title={t(task.helpKey, task.fallbackHelp || "")}
+                    >
+                      <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/80 hover:text-emerald-600 transition-colors" />
+                    </span>
+                  )}
                 </Label>
                 <p className="text-xs text-muted-foreground">
                   {t(task.descriptionKey, task.fallbackDescription)}

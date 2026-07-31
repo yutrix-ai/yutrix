@@ -19,8 +19,8 @@
  *   ↓
  * ③ Long Context Override
  *    → Estimate input tokens
- *    → Exceeds current model's maxOutputTokens → Route to Long Context model
- *    → Under limit → Stay on original model
+ *    → Exceeds current model's contextWindowTokens (column or rawJson) → Route to Long Context model
+ *    → Context unknown / under limit → Stay on original model (no maxOutputTokens misuse)
  *   ↓
  * ④ Send to upstream
  * ```
@@ -37,6 +37,7 @@
  * ```
  * 
  * The two pipelines are fully independent.
+ * contextWindowTokens (routing) ≠ maxOutputTokens (output clamp).
  */
 
 import { describe, expect, it } from "vitest";
@@ -115,18 +116,50 @@ describe("Contract: User group input token limit (Step ①)", () => {
 // ============================================================================
 
 describe("Contract: Long Context Override decision logic (Step ③)", () => {
-  it("resolveModelContextWindow uses maxOutputTokens as context window fallback", () => {
+  it("resolveModelContextWindow uses explicit contextWindowTokens column", () => {
     const modelConfig = {
-      maxOutputTokens: 202752,
+      contextWindowTokens: 262144,
+      maxOutputTokens: 98304,
+    };
+    const budget = resolveModelContextWindow(modelConfig);
+    expect(budget.limit).toBe(262144);
+    expect(budget.kind).toBe("total_context");
+    expect(budget.source).toBe("contextWindowTokens");
+  });
+
+  it("resolveModelContextWindow does NOT treat maxOutputTokens as context window", () => {
+    // maxOutputTokens is an output clamp only; using it as context caused false long_context overrides
+    // (e.g. kimi-k2.5 maxOutput=98304 while real context is 262K).
+    const modelConfig = {
+      maxOutputTokens: 98304,
       contextWindowTokens: null,
     };
     const budget = resolveModelContextWindow(modelConfig);
-    expect(budget.limit).toBe(202752);
-    expect(budget.kind).toBe("total_context");
-    expect(budget.source).toBe("maxOutputTokens");
+    expect(budget.limit).toBe(0);
+    expect(budget.source).toBe("unknown");
   });
 
-  it("resolveModelContextWindow prefers contextWindowTokens from rawJson when explicitly set", () => {
+  it("resolveModelContextWindow treats contextWindowTokens=0 or null as unset", () => {
+    expect(resolveModelContextWindow({ contextWindowTokens: 0, maxOutputTokens: 8192 }).source).toBe(
+      "unknown",
+    );
+    expect(resolveModelContextWindow({ contextWindowTokens: null, maxOutputTokens: 8192 }).source).toBe(
+      "unknown",
+    );
+  });
+
+  it("resolveModelContextWindow prefers column contextWindowTokens over rawJson", () => {
+    const modelConfig = {
+      contextWindowTokens: 262144,
+      maxOutputTokens: 8192,
+      rawJson: JSON.stringify({ contextWindowTokens: 1000000 }),
+    };
+    const budget = resolveModelContextWindow(modelConfig);
+    expect(budget.limit).toBe(262144);
+    expect(budget.source).toBe("contextWindowTokens");
+  });
+
+  it("resolveModelContextWindow prefers contextWindowTokens from rawJson when column unset", () => {
     const modelConfig = {
       maxOutputTokens: 8192,
       rawJson: JSON.stringify({ contextWindowTokens: 1000000 }),
@@ -148,7 +181,7 @@ describe("Contract: Long Context Override decision logic (Step ③)", () => {
       inputTokens: 200000,
       requestedOutputTokens: 8192,
       safetyMargin: 50,
-      budget: { limit: 202752, kind: "total_context", source: "maxOutputTokens" },
+      budget: { limit: 202752, kind: "total_context", source: "contextWindowTokens" },
     });
     // 200000 + 8192 + 50 = 208242 > 202752
     expect(fits).toBe(false);
@@ -159,7 +192,7 @@ describe("Contract: Long Context Override decision logic (Step ③)", () => {
       inputTokens: 100000,
       requestedOutputTokens: 8192,
       safetyMargin: 50,
-      budget: { limit: 202752, kind: "total_context", source: "maxOutputTokens" },
+      budget: { limit: 202752, kind: "total_context", source: "contextWindowTokens" },
     });
     // 100000 + 8192 + 50 = 108242 < 202752
     expect(fits).toBe(true);
@@ -172,20 +205,54 @@ describe("Contract: Long Context Override decision logic (Step ③)", () => {
       safetyMargin: 50,
       budget: { limit: 0, kind: "total_context", source: "unknown" },
     });
-    // Unknown budget → always fits (user's model, user's responsibility)
+    // Unknown budget → always fits → no preemptive long_context override; real request + fallback
     expect(fits).toBe(true);
   });
 
   it("fitsContextBudget uses input-only comparison for max_input kind", () => {
-    // When kind is max_input (from contextWindowTokens), only input + margin matters
+    // When kind is max_input (from rawJson max_input_tokens), only input + margin matters
     const fits = fitsContextBudget({
       inputTokens: 500000,
       requestedOutputTokens: 999999, // ignored for max_input kind
       safetyMargin: 50,
-      budget: { limit: 1000000, kind: "max_input", source: "contextWindowTokens" },
+      budget: { limit: 1000000, kind: "max_input", source: "maxInputTokens" },
     });
     // 500000 + 50 = 500050 < 1000000
     expect(fits).toBe(true);
+  });
+
+  it("kimi-k2.5 style: maxOutput 98304 must not force long_context when context is 262K", () => {
+    const kimiMisconfiguredAsBefore = {
+      maxOutputTokens: 98304,
+      // no contextWindowTokens → unknown → do not preempt
+    };
+    const kimiCorrect = {
+      maxOutputTokens: 98304,
+      contextWindowTokens: 262144,
+    };
+    const inputTokens = 155401;
+
+    const unknownBudget = resolveModelContextWindow(kimiMisconfiguredAsBefore);
+    expect(unknownBudget.source).toBe("unknown");
+    expect(
+      fitsContextBudget({
+        inputTokens,
+        requestedOutputTokens: 0,
+        safetyMargin: 50,
+        budget: unknownBudget,
+      }),
+    ).toBe(true);
+
+    const correctBudget = resolveModelContextWindow(kimiCorrect);
+    expect(correctBudget.limit).toBe(262144);
+    expect(
+      fitsContextBudget({
+        inputTokens,
+        requestedOutputTokens: 0,
+        safetyMargin: 50,
+        budget: correctBudget,
+      }),
+    ).toBe(true);
   });
 });
 

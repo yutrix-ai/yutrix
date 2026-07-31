@@ -143,8 +143,26 @@ export function isOpenRouterCapacityError(error: any): boolean {
   );
 }
 
+/**
+ * Resolve the model's context budget for preemptive long_context routing.
+ *
+ * Priority:
+ * 1. Explicit provider_models.contextWindowTokens column (admin-configured)
+ * 2. Metadata in rawJson (contextWindowTokens / context_window / …)
+ * 3. Unknown (limit=0) — do NOT preemptive-override; let the request run and
+ *    fall back on real upstream context errors
+ *
+ * maxOutputTokens is intentionally NOT used here: it only clamps client
+ * max_tokens / max_completion_tokens in the output pipeline.
+ */
 export function resolveModelContextWindow(modelConfig: any): { limit: number, kind: "total_context" | "max_input", source: string } {
   if (!modelConfig) return { limit: 0, kind: "total_context", source: "unknown" };
+
+  const columnLimit = modelConfig.contextWindowTokens;
+  if (typeof columnLimit === "number" && Number.isFinite(columnLimit) && columnLimit > 0) {
+    return { limit: Math.floor(columnLimit), kind: "total_context", source: "contextWindowTokens" };
+  }
+
   if (modelConfig.rawJson) {
     try {
       const raw = typeof modelConfig.rawJson === 'string' ? JSON.parse(modelConfig.rawJson) : modelConfig.rawJson;
@@ -168,9 +186,7 @@ export function resolveModelContextWindow(modelConfig: any): { limit: number, ki
       }
     } catch (e) {}
   }
-  if (typeof modelConfig.maxOutputTokens === 'number' && modelConfig.maxOutputTokens > 0) {
-    return { limit: modelConfig.maxOutputTokens, kind: "total_context", source: "maxOutputTokens" };
-  }
+
   return { limit: 0, kind: "total_context", source: "unknown" };
 }
 

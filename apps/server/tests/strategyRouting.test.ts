@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyLongContextStrategyTokenGate,
   classifyIntentTaskType,
   classifyStrategyTask,
   extractCurrentUserInputForRouting,
   findStrategyRule,
   hasCurrentUserImageInputForRouting,
   hasImageInput,
+  LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS,
+  meetsLongContextStrategyTokenFloor,
   parseStrategyRoutingRules,
 } from "../src/services/strategyRouting";
 
@@ -716,5 +719,65 @@ describe("strategy routing helpers", () => {
     );
     expect(classifyStrategyTask("check the server logs", false).taskType).toBe("long_context");
     expect(classifyStrategyTask("find errors in nginx logs", false).taskType).toBe("long_context");
+  });
+});
+
+describe("long_context strategy 1M token floor", () => {
+  it("meetsLongContextStrategyTokenFloor is strict greater-than 1,000,000", () => {
+    expect(LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS).toBe(1_000_000);
+    expect(meetsLongContextStrategyTokenFloor(1_000_000)).toBe(false);
+    expect(meetsLongContextStrategyTokenFloor(1_000_001)).toBe(true);
+    expect(meetsLongContextStrategyTokenFloor(155_401)).toBe(false);
+    expect(meetsLongContextStrategyTokenFloor(0)).toBe(false);
+  });
+
+  it("does not demote non-long_context task types", () => {
+    const gated = applyLongContextStrategyTokenGate({
+      taskType: "code",
+      estimatedInputTokens: 100,
+      inputText: "refactor this function",
+    });
+    expect(gated.taskType).toBe("code");
+    expect(gated.reasons).toEqual([]);
+  });
+
+  it("keeps long_context only when tokens exceed 1M", () => {
+    const gated = applyLongContextStrategyTokenGate({
+      taskType: "long_context",
+      estimatedInputTokens: 1_500_000,
+      inputText: "analyze nginx logs",
+    });
+    expect(gated.taskType).toBe("long_context");
+    expect(gated.reasons).toEqual([]);
+  });
+
+  it("demotes long_context below 1M floor to a non-long_context type", () => {
+    const gated = applyLongContextStrategyTokenGate({
+      taskType: "long_context",
+      estimatedInputTokens: 12_000,
+      inputText: "analyze nginx logs",
+    });
+    expect(gated.taskType).not.toBe("long_context");
+    expect(gated.reasons.some((r) => r.startsWith("long_context_below_min_tokens"))).toBe(
+      true,
+    );
+  });
+
+  it("excludeLongContext reclassification never returns long_context", () => {
+    expect(
+      classifyStrategyTask("analyze nginx logs", false, {
+        excludeLongContext: true,
+      }).taskType,
+    ).not.toBe("long_context");
+    expect(
+      classifyStrategyTask("summarize this long audit log", false, {
+        excludeLongContext: true,
+      }).taskType,
+    ).not.toBe("long_context");
+    expect(
+      classifyStrategyTask("a".repeat(5000), false, {
+        excludeLongContext: true,
+      }).taskType,
+    ).not.toBe("long_context");
   });
 });
