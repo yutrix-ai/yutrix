@@ -19,7 +19,7 @@ import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
 import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
-import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget } from "./gatewayExecutorUtils";
+import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch } from "./gatewayExecutorUtils";
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit } from "./inputTokenLimitGuard";
@@ -799,6 +799,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 if (errorFallback) {
                   currentAttempt = errorFallback.newAttempt;
                   ctx.currentAttempt = currentAttempt;
+                  attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
                   continue;
                 } else {
                   break;
@@ -822,6 +823,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             if (concurrencyFallback) {
               currentAttempt = concurrencyFallback.newAttempt;
               ctx.currentAttempt = currentAttempt;
+              attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
               continue;
             }
 
@@ -883,6 +885,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                    currentAttempt = errorFallback.newAttempt;
                    ctx.currentAttempt = currentAttempt;
                    responseData = null;
+                   attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
                    continue;
                  }
                  break;
@@ -1144,6 +1147,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                     currentAttempt = errorFallback.newAttempt;
                     ctx.currentAttempt = currentAttempt;
                     responseData = null;
+                    attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
                     continue;
                   }
                   break; // If no fallback available, break loop
@@ -1601,6 +1605,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 ctx.currentAttempt = currentAttempt;
                 responseData = null;
                 releaseAttemptResources();
+                attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
                 continue;
               } else {
                 break;
@@ -1676,6 +1681,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 ctx.currentAttempt = currentAttempt;
                 responseData = null;
                 releaseAttemptResources();
+                attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
                 continue;
               }
             }
@@ -1884,6 +1890,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                responseData.releaseSlots = undefined;
             }
             responseData = null;
+            attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
             continue; // fallback to next target
           }
         }

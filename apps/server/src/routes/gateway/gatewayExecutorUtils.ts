@@ -2,6 +2,26 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { providerApiKeys } from "../../db/schema";
 
+/**
+ * After a funnel layer switch (error/concurrency fallback), ensure the attempt
+ * loop can still run at least once for the new target.
+ *
+ * Same-provider transient 5xx retries share the global attempt budget with
+ * funnel layers. When that budget is already exhausted, checkErrorFallback may
+ * select L1 and log "路由错误降级" but `continue` never re-enters the loop —
+ * leaving responseData null and surfacing "网关内部错误".
+ *
+ * Conservative: only adjusts when attemptCount is already at/above maxAttempts.
+ * Early fallback paths (e.g. first-try 429) keep their existing attempt accounting.
+ */
+export function reserveAttemptBudgetForLayerSwitch(attemptCount: number, maxAttempts: number): number {
+  if (maxAttempts <= 0) return attemptCount;
+  if (attemptCount >= maxAttempts) {
+    return maxAttempts - 1;
+  }
+  return attemptCount;
+}
+
 export async function processErrorRetryLogic(params: {
   responseData: any;
   activeKeyId: string | null;

@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { processErrorRetryLogic } from "../src/routes/gateway/gatewayExecutorUtils";
+import { processErrorRetryLogic, reserveAttemptBudgetForLayerSwitch } from "../src/routes/gateway/gatewayExecutorUtils";
+
+describe("reserveAttemptBudgetForLayerSwitch", () => {
+  it("does not change attemptCount when budget remains (early fallback paths)", () => {
+    expect(reserveAttemptBudgetForLayerSwitch(1, 6)).toBe(1);
+    expect(reserveAttemptBudgetForLayerSwitch(5, 6)).toBe(5);
+  });
+
+  it("frees one slot when attemptCount is already exhausted so L1 can run", () => {
+    expect(reserveAttemptBudgetForLayerSwitch(6, 6)).toBe(5);
+    expect(reserveAttemptBudgetForLayerSwitch(7, 6)).toBe(5);
+  });
+
+  it("handles edge maxAttempts values safely", () => {
+    expect(reserveAttemptBudgetForLayerSwitch(0, 0)).toBe(0);
+    expect(reserveAttemptBudgetForLayerSwitch(1, 1)).toBe(0);
+  });
+});
 
 describe("gateway executor retry logic", () => {
   it("retries transient upstream 5xx with the same provider key when attempts remain", async () => {

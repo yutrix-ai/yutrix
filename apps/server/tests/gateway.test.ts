@@ -911,6 +911,14 @@ describe("Gateway Models Endpoint", () => {
     await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel-p%'`);
     await db.delete(providerModels).where(sql`providerId LIKE 'funnel-p%'`);
     await db.delete(providers).where(sql`id LIKE 'funnel-p%'`);
+    await db.delete(systemSettings).where(eq(systemSettings.key, "allowUnknownHostFallback"));
+    await db.insert(systemSettings).values({
+      key: "allowUnknownHostFallback",
+      value: "true",
+      description: "funnel routing test host fallback",
+      createdAt: now,
+      updatedAt: now,
+    });
 
     // Insert 3 providers
     await db.insert(providers).values([
@@ -1187,6 +1195,217 @@ describe("Gateway Models Endpoint", () => {
     await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel-p%'`);
     await db.delete(providerModels).where(sql`providerId LIKE 'funnel-p%'`);
     await db.delete(providers).where(sql`id LIKE 'funnel-p%'`);
+  });
+
+  it("still falls through to L1 after same-provider transient 500 retries exhaust the attempt budget", async () => {
+    // Reproduces production bug: L0 returns 500 (e.g. 当前无可用凭证) for every same-key
+    // retry until attemptCount == maxAttempts; funnel then logged 路由错误降级 but never
+    // called L1, and the client saw 网关内部错误 (null responseData).
+    const now = new Date();
+    const endpointId = "funnel-500-endpoint";
+    const routeId = "funnel-500-route";
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel500-p%'`);
+    await db.delete(providerModels).where(sql`providerId LIKE 'funnel500-p%'`);
+    await db.delete(providers).where(sql`id LIKE 'funnel500-p%'`);
+    await db.delete(systemSettings).where(eq(systemSettings.key, "allowUnknownHostFallback"));
+    await db.insert(systemSettings).values({
+      key: "allowUnknownHostFallback",
+      value: "true",
+      description: "funnel 500 exhaustion host fallback",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(providers).values([
+      {
+        id: "funnel500-p1",
+        name: "Funnel500 Provider L0",
+        openaiBaseUrl: "https://p1-500.test/v1",
+        anthropicBaseUrl: null,
+        enabled: true,
+        concurrencyLimit: 10,
+        timeoutMs: 30000,
+        maxOutputTokens: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "funnel500-p2",
+        name: "Funnel500 Provider L1",
+        openaiBaseUrl: "https://p2-500.test/v1",
+        anthropicBaseUrl: null,
+        enabled: true,
+        concurrencyLimit: 10,
+        timeoutMs: 30000,
+        maxOutputTokens: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await db.insert(providerModels).values([
+      {
+        id: crypto.randomUUID(),
+        providerId: "funnel500-p1",
+        modelId: "gemini-high",
+        displayName: "Gemini High",
+        enabled: true,
+        active: true,
+        createdAt: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        providerId: "funnel500-p2",
+        modelId: "kimi-k2.5",
+        displayName: "Kimi K2.5",
+        enabled: true,
+        active: true,
+        createdAt: now,
+      },
+    ]);
+
+    await db.insert(providerApiKeys).values([
+      {
+        id: "funnel500-k1",
+        providerId: "funnel500-p1",
+        keyEncrypted: encryptText("sk-l0"),
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "funnel500-k2",
+        providerId: "funnel500-p2",
+        keyEncrypted: encryptText("sk-l1"),
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await db.insert(endpoints).values({
+      id: endpointId,
+      userId,
+      name: "Funnel 500 Endpoint",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // maxAttempts = retryCount(4) + targets(2) = 6 — matches production attempt=x/6 logs
+    const targets = [
+      {
+        providerId: "funnel500-p1",
+        modelId: "gemini-high",
+        providerProtocol: "openai",
+        bestEffort: false,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      },
+      {
+        providerId: "funnel500-p2",
+        modelId: "kimi-k2.5",
+        providerProtocol: "openai",
+        bestEffort: false,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      },
+    ];
+
+    await db.insert(endpointRoutes).values({
+      id: routeId,
+      name: "Funnel 500 Route",
+      endpointId,
+      providerId: "funnel500-p1",
+      providerProtocol: "openai",
+      modelId: "gemini-high",
+      retryCount: 4,
+      targets: JSON.stringify(targets),
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId,
+      userId,
+      createdAt: now,
+    });
+
+    const receivedCalls: Array<{ url: string; model: string }> = [];
+
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || "{}"));
+      receivedCalls.push({ url: String(url), model: body.model });
+
+      if (String(url).includes("p1-500.test")) {
+        return new Response(
+          JSON.stringify({ error: "当前无可用凭证" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      if (String(url).includes("p2-500.test")) {
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-funnel500-success",
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: body.model,
+            choices: [
+              { index: 0, message: { role: "assistant", content: "l1 fallback success" }, finish_reason: "stop" },
+            ],
+            usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+      },
+      payload: {
+        model: "gemini-high",
+        messages: [{ role: "user", content: "test 500 budget exhaustion funnel" }],
+        stream: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const resBody = JSON.parse(response.body);
+    expect(resBody.choices[0].message.content).toBe("l1 fallback success");
+
+    // L0 burned the full attempt budget (6), then L1 must still be invoked once
+    const l0Calls = receivedCalls.filter((c) => c.url.includes("p1-500.test"));
+    const l1Calls = receivedCalls.filter((c) => c.url.includes("p2-500.test"));
+    expect(l0Calls.length).toBe(6);
+    expect(l1Calls.length).toBe(1);
+    expect(l1Calls[0].model).toBe("kimi-k2.5");
+
+    // Must not surface the null-responseData internal error
+    expect(JSON.stringify(resBody)).not.toContain("网关内部错误");
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel500-p%'`);
+    await db.delete(providerModels).where(sql`providerId LIKE 'funnel500-p%'`);
+    await db.delete(providers).where(sql`id LIKE 'funnel500-p%'`);
   });
 });
 
