@@ -122,14 +122,23 @@ export function appendRoutingTraceToOutput(
 }
 
 /**
- * Extract the client session ID from request headers.
+ * Extract the client session ID from request headers or body.
  */
-export function extractClientSessionId(request: FastifyRequest): string {
-  return (
+export function extractClientSessionId(request: FastifyRequest, body?: any): string {
+  const fromHeader = (
     request.headers["x-client-session-id"] ||
     request.headers["x-conversation-id"] ||
     request.headers["x-session-id"]
   ) as string;
+
+  if (fromHeader) return fromHeader;
+
+  if (body && typeof body === "object") {
+    if (typeof body.session_id === "string" && body.session_id) return body.session_id;
+    if (typeof body.conversation_id === "string" && body.conversation_id) return body.conversation_id;
+  }
+
+  return "";
 }
 
 /**

@@ -48,8 +48,10 @@ import {
   isAuditExemptUser,
   emitAuditEvent,
   appendRoutingTraceToOutput,
+  extractClientSessionId,
 } from "./logging";
 import { getGlobalQueue, getApiKeyQueue, getProviderQueue } from "./concurrency";
+import { globalSessionQueueManager, SessionQueueTimeoutError } from "./sessionQueueManager";
 import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
 import { modelsHandler } from "./models";
 import { executeGatewayRequest } from "./gatewayExecutor";
@@ -217,11 +219,48 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
 
     logAction({ ...baseActionLog, level: "INFO", code: "request.started" });
 
-    // --- 7. Concurrency Queues ---
+    // --- 7. Session Queueing & Concurrency Queues ---
+    const clientSessionId = extractClientSessionId(request, body);
+    let sessionLock: { release: () => void } | null = null;
+
+    if (clientSessionId) {
+      try {
+        sessionLock = await globalSessionQueueManager.acquireLock(clientSessionId);
+      } catch (err: any) {
+        if (err instanceof SessionQueueTimeoutError || err?.message?.includes("capacity exceeded")) {
+          return reply.code(429).send({
+            error: {
+              message: err.message || "Session concurrency queue timeout",
+              type: "session_concurrency_error",
+              code: "session_busy",
+            },
+          });
+        }
+        throw err;
+      }
+    }
+
+    let isSessionLockReleased = false;
+    const releaseSessionLock = () => {
+      if (sessionLock && !isSessionLockReleased) {
+        isSessionLockReleased = true;
+        sessionLock.release();
+      }
+    };
+
+    reply.raw.on("finish", releaseSessionLock);
+    reply.raw.on("close", releaseSessionLock);
+
     const processQueue = await getGlobalQueue();
     const userQueue = getApiKeyQueue(authCtx.apiKeyRecord.id, authCtx.apiKeyRecord.concurrencyLimit);
     const triedKeys = new Set<string>();
 
     const abortHandlers = { abortUpstream, abortOnRequestClose, abortOnReplyClose };
-    await executeGatewayRequest(ctx, controller, maxAttempts, logAction, abortHandlers);
+    try {
+      await executeGatewayRequest(ctx, controller, maxAttempts, logAction, abortHandlers);
+    } finally {
+      if (reply.raw.writableEnded) {
+        releaseSessionLock();
+      }
+    }
 };
