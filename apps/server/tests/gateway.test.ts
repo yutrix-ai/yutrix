@@ -1197,10 +1197,9 @@ describe("Gateway Models Endpoint", () => {
     await db.delete(providers).where(sql`id LIKE 'funnel-p%'`);
   });
 
-  it("still falls through to L1 after same-provider transient 500 retries exhaust the attempt budget", async () => {
-    // Reproduces production bug: L0 returns 500 (e.g. 当前无可用凭证) for every same-key
-    // retry until attemptCount == maxAttempts; funnel then logged 路由错误降级 but never
-    // called L1, and the client saw 网关内部错误 (null responseData).
+  it("falls through to L1 immediately on 当前无可用凭证 without burning same-key 5xx budget", async () => {
+    // Credential-pool empty is non-transient: do NOT same-key retry until maxAttempts.
+    // Still must invoke L1 via 路由错误降级 (and never surface 网关内部错误).
     const now = new Date();
     const endpointId = "funnel-500-endpoint";
     const routeId = "funnel-500-route";
@@ -1390,10 +1389,10 @@ describe("Gateway Models Endpoint", () => {
     const resBody = JSON.parse(response.body);
     expect(resBody.choices[0].message.content).toBe("l1 fallback success");
 
-    // L0 burned the full attempt budget (6), then L1 must still be invoked once
+    // L0 is hit once (no same-key blind retries), then L1 succeeds
     const l0Calls = receivedCalls.filter((c) => c.url.includes("p1-500.test"));
     const l1Calls = receivedCalls.filter((c) => c.url.includes("p2-500.test"));
-    expect(l0Calls.length).toBe(6);
+    expect(l0Calls.length).toBe(1);
     expect(l1Calls.length).toBe(1);
     expect(l1Calls[0].model).toBe("kimi-k2.5");
 

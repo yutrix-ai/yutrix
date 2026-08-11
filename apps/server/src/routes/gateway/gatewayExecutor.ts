@@ -19,7 +19,7 @@ import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
 import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
-import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch } from "./gatewayExecutorUtils";
+import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError } from "./gatewayExecutorUtils";
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit } from "./inputTokenLimitGuard";
@@ -1756,7 +1756,16 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
             }
 
-            if (!capacityRetryState.exhausted && !responseData.isStream && [500, 502, 503, 504, 529].includes(responseData.status) && attemptCount < maxAttempts) {
+            // Secondary same-key 5xx path (when processErrorRetryLogic did not already retry).
+            // Credential-pool empty must not burn remaining budget here either — fall through
+            // so the client gets the upstream error (or a later layer if fallback already ran).
+            if (
+              !capacityRetryState.exhausted &&
+              !responseData.isStream &&
+              [500, 502, 503, 504, 529].includes(responseData.status) &&
+              attemptCount < maxAttempts &&
+              !isUpstreamCredentialUnavailableError(responseData)
+            ) {
               logAction({
                 ...baseActionLog,
                 level: "WARN",

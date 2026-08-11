@@ -22,6 +22,36 @@ export function reserveAttemptBudgetForLayerSwitch(attemptCount: number, maxAtte
   return attemptCount;
 }
 
+/**
+ * Upstream proxy/gateway reported that its credential/token pool is empty
+ * (e.g. gcli2api / Antigravity: `{"error":"当前无可用凭证"}`).
+ *
+ * This is a configuration / capacity-pool failure, not a transient network blip.
+ * Same-key blind 5xx retries waste the attempt budget and delay funnel fallback.
+ * Key rotation and error-fallback must still be allowed.
+ */
+export function isUpstreamCredentialUnavailableError(responseData: any): boolean {
+  if (!responseData || typeof responseData.status !== "number" || responseData.status < 400) {
+    return false;
+  }
+  const bodyStr =
+    typeof responseData.data === "string"
+      ? responseData.data
+      : JSON.stringify(responseData.data ?? "");
+  if (!bodyStr) return false;
+
+  if (bodyStr.includes("当前无可用凭证")) return true;
+
+  const lower = bodyStr.toLowerCase();
+  return (
+    lower.includes("no available credential") ||
+    lower.includes("no available credentials") ||
+    lower.includes("no credentials available") ||
+    lower.includes("no usable credential") ||
+    lower.includes("no usable credentials")
+  );
+}
+
 export async function processErrorRetryLogic(params: {
   responseData: any;
   activeKeyId: string | null;
@@ -55,7 +85,11 @@ export async function processErrorRetryLogic(params: {
     const bodyStr = typeof responseData.data === "string" ? responseData.data : JSON.stringify(responseData.data);
     let isExhausted = false;
     let isRateLimit = false;
-    const isTransientUpstreamError = [500, 502, 503, 504, 529].includes(responseData.status);
+    // Credential-pool empty is often returned as HTTP 500, but must NOT be treated
+    // as a transient same-key 5xx (burns budget before L1 funnel can run).
+    const isCredentialUnavailable = isUpstreamCredentialUnavailableError(responseData);
+    const isTransientUpstreamError =
+      [500, 502, 503, 504, 529].includes(responseData.status) && !isCredentialUnavailable;
 
     if (
       bodyStr.includes("\"insufficient_quota\"") ||
@@ -81,7 +115,9 @@ export async function processErrorRetryLogic(params: {
       await db.update(providerApiKeys).set({ status: "exhausted" }).where(eq(providerApiKeys.id, activeKeyId));
     }
 
-    if ((isExhausted || isRateLimit || isTransientUpstreamError)) {
+    // Credential-unavailable still participates in key rotation (other keys may work)
+    // and marks the active key tried, but never enters same-key transient 5xx retries.
+    if (isExhausted || isRateLimit || isTransientUpstreamError || isCredentialUnavailable) {
       if (activeKeyId) {
         triedKeys.add(activeKeyId);
       }
@@ -98,6 +134,8 @@ export async function processErrorRetryLogic(params: {
           triedKeys.delete(activeKeyId);
         }
       }
+      // isCredentialUnavailable + no untried keys → shouldRetrySameProvider stays false
+      // so the executor falls through to checkErrorFallback (路由错误降级) immediately.
     }
   }
   return { shouldRetrySameProvider, preserveAttemptCount, reason, isAuthenticationError };
