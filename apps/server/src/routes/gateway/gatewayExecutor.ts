@@ -31,6 +31,11 @@ import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
 import { buildUpstreamRequestDiagnostic } from "./diagnostics";
 import { applyProviderCompatibility } from "./providerCompatibility";
+import {
+  applyConstraintMutators,
+  planConstraintRecovery,
+  type ConstraintMutator,
+} from "./providerConstraintRecovery";
 import { parseAndNormalizeUrl } from "./providerAdapters/urlMatcher";
 import { resolveProviderAdapterDetailed } from "./providerAdapters/registry";
 import { ProviderAdapter } from "./providerAdapters/types";
@@ -91,6 +96,10 @@ export interface TargetKeyAttemptState {
   triedKeyIds: Set<string>;
   preferredKeyId: string | null;
   lastUpstreamError?: any;
+  /** Codes of constraint rewrites already applied for this target (de-dupe). */
+  appliedConstraintRewrites?: Set<string>;
+  /** Mutators re-applied to every outbound body for this target after a recovery plan. */
+  constraintMutators?: ConstraintMutator[];
 }
 
 export async function executeGatewayRequest(ctx: GatewayRequestContext, controller: AbortController, maxAttempts: number, logAction: any, abortHandlers: any) {
@@ -107,6 +116,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         modelId,
         triedKeyIds: new Set<string>(),
         preferredKeyId: null,
+        appliedConstraintRewrites: new Set<string>(),
+        constraintMutators: [],
       };
       targetKeyStates.set(key, state);
     }
@@ -1168,6 +1179,9 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               });
             }
 
+            // Re-apply learned constraint rewrites for this provider:model (error-driven recovery).
+            applyConstraintMutators(finalBody, targetState.constraintMutators);
+
             const googleNativeRequest = buildGoogleNativeRequest({
               body: finalBody,
               baseUrl,
@@ -1609,6 +1623,62 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 continue;
               } else {
                 break;
+              }
+            }
+
+            // --- 15.1 Parameter-constraint recovery (same target, rewrite body, retry) ---
+            // Driven by upstream 400/422 message + outbound body shape — not model names.
+            // Example: "tool_choice ... required or object in thinking mode".
+            if (
+              responseData &&
+              !responseData.isStream &&
+              (responseData.status === 400 || responseData.status === 422)
+            ) {
+              const recoveryBody =
+                responseData.roundRequestBody ||
+                usageRequestBody ||
+                null;
+              const errMsg =
+                responseData.terminalError?.message ||
+                responseData.data?.error?.message ||
+                (typeof responseData.data === "string" ? responseData.data : undefined);
+              if (!targetState.appliedConstraintRewrites) {
+                targetState.appliedConstraintRewrites = new Set();
+              }
+              if (!targetState.constraintMutators) {
+                targetState.constraintMutators = [];
+              }
+              const recoveryPlan = planConstraintRecovery({
+                statusCode: responseData.status,
+                errorMessage: errMsg,
+                errorCode: responseData.terminalError?.code || responseData.data?.error?.code,
+                body: recoveryBody,
+                alreadyApplied: targetState.appliedConstraintRewrites,
+              });
+              if (recoveryPlan) {
+                targetState.appliedConstraintRewrites.add(recoveryPlan.code);
+                targetState.constraintMutators.push(recoveryPlan.mutate);
+                // Keep the same key: this is a body fix, not a key problem.
+                if (activeKeyId) {
+                  targetState.preferredKeyId = activeKeyId;
+                }
+                logAction({
+                  ...baseActionLog,
+                  level: "WARN",
+                  code: "request.constraint_recovery",
+                  providerName: provider.name,
+                  modelId: currentAttempt.modelId,
+                  statusCode: responseData.status,
+                  message: recoveryPlan.summary,
+                  rewriteCode: recoveryPlan.code,
+                  attempt: attemptCount,
+                  maxAttempts,
+                });
+                // Do not consume attempt budget for a body rewrite on the same target.
+                attemptCount--;
+                responseData = null;
+                releaseAttemptResources();
+                continue;
               }
             }
             

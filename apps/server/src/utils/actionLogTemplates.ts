@@ -69,6 +69,10 @@ export function renderActionLogServerLine(
     return `${timestamp} ${event.level} Provider compatibility applied requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} changes=${event.message}`;
   }
 
+  if (code === "request.constraint_recovery") {
+    return `${timestamp} ${event.level} Constraint recovery retry requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} rewrite=${event.rewriteCode} changes=${event.message} attempt=${event.attempt}/${event.maxAttempts}`;
+  }
+
   if (code === "request.google_native_adapter") {
     return `${timestamp} ${event.level} Google native adapter enabled requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} upstreamPath=${event.upstreamPath} streaming=${event.streaming}`;
   }
