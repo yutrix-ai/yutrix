@@ -254,3 +254,53 @@ describe("streamForwarder keep-alive", () => {
     expect(observedChunks[0].choices[0].delta.content).toBe("visible answer");
   });
 });
+
+describe("stripNullOpenAIDeltaContent (OpenCode + GLM-5)", () => {
+  it("drops content:null so OpenCode does not treat the turn as empty", async () => {
+    const { reply, writes } = createReply();
+    const upstream = createControlledStream();
+    const result = forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+    );
+
+    upstream.enqueueSse({
+      id: "chatcmpl-glm",
+      object: "chat.completion.chunk",
+      model: "glm-5",
+      choices: [{
+        index: 0,
+        delta: { content: null, reasoning_content: "让我思考", role: "assistant" },
+        finish_reason: null,
+      }],
+    });
+    upstream.enqueueSse({
+      id: "chatcmpl-glm",
+      object: "chat.completion.chunk",
+      model: "glm-5",
+      choices: [{
+        index: 0,
+        delta: { content: "我是GLM。", reasoning_content: null },
+        finish_reason: null,
+      }],
+    });
+    upstream.enqueueSse({
+      id: "chatcmpl-glm",
+      object: "chat.completion.chunk",
+      model: "glm-5",
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+    });
+    await flushMicrotasks();
+    upstream.close();
+    await result;
+
+    const output = writes.join("");
+    expect(output).not.toContain('"content":null');
+    expect(output).toContain("我是GLM。");
+    expect(output).toContain("reasoning_content");
+  });
+});

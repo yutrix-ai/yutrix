@@ -229,6 +229,21 @@ export function hasVisibleAnswerEvent(chunk: string, protocol: string | undefine
   return false;
 }
 
+/** GLM-5/DashScope emit `"content":null` on reasoning deltas. OpenCode treats that as an empty turn. */
+export function stripNullOpenAIDeltaContent(data: any): boolean {
+  if (!data?.choices || !Array.isArray(data.choices)) return false;
+  let changed = false;
+  for (const ch of data.choices) {
+    const delta = ch?.delta;
+    if (!delta || typeof delta !== "object") continue;
+    if (Object.prototype.hasOwnProperty.call(delta, "content") && (delta.content === null || delta.content === undefined)) {
+      delete delta.content;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function createDownstreamWriter(
   reply: FastifyReply,
   protocol: string | undefined,
@@ -525,6 +540,7 @@ export async function forwardSSEStreamTransparent(
       let eventChunkFinishReason: string | null = null;
       let originalEventStr = "";
       let skippedDoneLine = false;
+      let eventSanitized = false;
 
       const lineRegex = /([^\r\n]*)(\r?\n)?/g;
       let lineMatch;
@@ -563,6 +579,10 @@ export async function forwardSSEStreamTransparent(
           }
 
              if (dataCopy) {
+             if (incomingProtocol !== "anthropic" && stripNullOpenAIDeltaContent(dataCopy)) {
+               outputLine = `data: ${JSON.stringify(dataCopy)}`;
+               eventSanitized = true;
+             }
              let chunkHasUsage = false;
              if (dataCopy.usage && dataCopy.type !== "message_delta") {
                eventHasUsage = true;
@@ -790,7 +810,7 @@ export async function forwardSSEStreamTransparent(
 
       if (!shouldSkipWrite && modifiedEventStr) {
          // Strict byte equality for completely transparent mode without cutoff
-         if (isTransparentNoStitch && !hadLengthCutoff) {
+         if (isTransparentNoStitch && !hadLengthCutoff && !eventSanitized) {
            downstream.write(originalEventStr);
            if (eventHasUsage) stitchState!.terminalReplayState!.usageForwarded = true;
          } else {
