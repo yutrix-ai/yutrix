@@ -76,6 +76,11 @@ export async function ensureProviderModelContextWindowColumn() {
 export async function ensureFunnelRoutingColumns() {
   await addColumnIfMissing("provider_models", "alias", "ALTER TABLE provider_models ADD COLUMN alias text");
   await addColumnIfMissing("endpoint_routes", "targets", "ALTER TABLE endpoint_routes ADD COLUMN targets text");
+  await addColumnIfMissing(
+    "user_route_overrides",
+    "useClientModel",
+    "ALTER TABLE user_route_overrides ADD COLUMN useClientModel integer DEFAULT 0 NOT NULL",
+  );
 
   // Data migration: convert old route target logic to the targets JSON array
   if (await tableExists("endpoint_routes")) {

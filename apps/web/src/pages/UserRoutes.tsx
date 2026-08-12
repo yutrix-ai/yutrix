@@ -48,11 +48,15 @@ interface UserRoute {
   defaultModelId?: string;
   defaultModelName?: string;
   overrideModelId?: string | null;
+  /** Client Override: match request body.model against L0; exclusive with overrideModelId */
+  useClientModel?: boolean;
   overrideStrategyRules?: string | null;
   strategyRoutingEnabled?: boolean;
   strategyRoutingRules?: string;
   providerProtocol?: string;
 }
+
+type OverrideMode = "default" | "fixed" | "strategy" | "client";
 
 interface ProviderModel {
   modelId: string;
@@ -72,7 +76,7 @@ export default function UserRoutes() {
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
-  const [overrideMode, setOverrideMode] = useState<"default" | "fixed" | "strategy">("default");
+  const [overrideMode, setOverrideMode] = useState<OverrideMode>("default");
   const [strategyRules, setStrategyRules] = useState<StrategyRoutingRule[]>([]);
 
   useEffect(() => {
@@ -96,10 +100,14 @@ export default function UserRoutes() {
     
     setEditingRoute(route);
     
-    let mode: "default" | "fixed" | "strategy" = "default";
+    let mode: OverrideMode = "default";
     let initialRules: StrategyRoutingRule[] = [];
     
-    if (route.overrideStrategyRules) {
+    // Mutual exclusion: client > strategy > fixed > default
+    if (route.useClientModel) {
+      mode = "client";
+      setSelectedModel("default");
+    } else if (route.overrideStrategyRules) {
       mode = "strategy";
       setSelectedModel("default");
       try {
@@ -143,13 +151,20 @@ export default function UserRoutes() {
     if (!editingRoute) return;
 
     try {
+      // Mutual exclusion: only one of client / fixed / strategy / default
       let body: any = {};
       if (overrideMode === "default") {
-        body = { modelId: null, strategyRoutingRules: null };
+        body = { modelId: null, strategyRoutingRules: null, useClientModel: false };
+      } else if (overrideMode === "client") {
+        body = { modelId: null, strategyRoutingRules: null, useClientModel: true };
       } else if (overrideMode === "fixed") {
-        body = { modelId: selectedModel === "default" || selectedModel === "" ? null : selectedModel, strategyRoutingRules: null };
+        body = {
+          modelId: selectedModel === "default" || selectedModel === "" ? null : selectedModel,
+          strategyRoutingRules: null,
+          useClientModel: false,
+        };
       } else if (overrideMode === "strategy") {
-        body = { modelId: null, strategyRoutingRules: JSON.stringify(strategyRules) };
+        body = { modelId: null, strategyRoutingRules: JSON.stringify(strategyRules), useClientModel: false };
       }
 
       await fetchApi(`/user/routes/${editingRoute.id}/override`, {
@@ -184,23 +199,41 @@ export default function UserRoutes() {
           </DialogHeader>
 
           <form onSubmit={handleSave} className="space-y-4 pt-4">
-            {editingRoute?.strategyRoutingEnabled && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">{t("routes.userRoutes.overrideMode", "覆盖模式")}</Label>
-                <Select value={overrideMode} onValueChange={(val: any) => { setOverrideMode(val); if (val === "default") setSelectedModel("default"); }} disabled={loadingModels}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="default">{t("routes.userRoutes.modeDefault", "默认策略")}</SelectItem>
-                    <SelectItem value="fixed">{t("routes.userRoutes.modeFixed", "全局固定模型")}</SelectItem>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{t("routes.userRoutes.overrideMode", "覆盖模式")}</Label>
+              <Select
+                value={overrideMode}
+                onValueChange={(val: OverrideMode) => {
+                  setOverrideMode(val);
+                  if (val === "default" || val === "client" || val === "strategy") {
+                    setSelectedModel("default");
+                  }
+                }}
+                disabled={loadingModels}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">{t("routes.userRoutes.modeDefault", "默认策略")}</SelectItem>
+                  <SelectItem value="client">{t("routes.userRoutes.modeClient", "客户端覆盖")}</SelectItem>
+                  <SelectItem value="fixed">{t("routes.userRoutes.modeFixed", "全局固定模型")}</SelectItem>
+                  {editingRoute?.strategyRoutingEnabled && (
                     <SelectItem value="strategy">{t("routes.userRoutes.modeStrategy", "自定义策略映射")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+                  )}
+                </SelectContent>
+              </Select>
+              {overrideMode === "client" && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {t(
+                    "routes.userRoutes.modeClientHint",
+                    "按客户端请求中的模型名匹配本路由 L0 层配置；无法命中时走 General 兜底。与页面指定模型互斥。",
+                  )}
+                </p>
+              )}
+            </div>
 
-            {(!editingRoute?.strategyRoutingEnabled || overrideMode === "fixed") && (
+            {overrideMode === "fixed" && (
               <div className="space-y-2">
                 <Label className="text-sm font-medium">{t("routes.userRoutes.modelLabel", "模型")}</Label>
                 <Select value={selectedModel} onValueChange={setSelectedModel} disabled={loadingModels}>
@@ -224,7 +257,7 @@ export default function UserRoutes() {
               </div>
             )}
 
-            {editingRoute?.strategyRoutingEnabled && overrideMode === "strategy" && (
+            {overrideMode === "strategy" && editingRoute?.strategyRoutingEnabled && (
               <div className="space-y-2 pt-2 border-t mt-4">
                 <UserStrategyEditor
                   rules={strategyRules}
@@ -276,7 +309,12 @@ export default function UserRoutes() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        {r.overrideStrategyRules ? (
+                        {r.useClientModel ? (
+                          <span className="text-sm flex items-center text-violet-600 dark:text-violet-400 font-medium">
+                            <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />
+                            {t("routes.userRoutes.clientOverride", "客户端覆盖")}
+                          </span>
+                        ) : r.overrideStrategyRules ? (
                           <span className="text-sm flex items-center text-blue-600 dark:text-blue-500 font-medium">
                             <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />
                             {t("routes.userRoutes.customStrategy", "已覆盖个人策略")}
@@ -295,9 +333,14 @@ export default function UserRoutes() {
                             {r.defaultModelName || t("routes.userRoutes.unknownModel", "未知模型")}
                           </span>
                         )}
-                        {r.overrideModelId && (
+                        {r.overrideModelId && !r.useClientModel && (
                           <span className="text-xs text-blue-500 font-medium flex items-center mt-0.5">
                             {t("routes.userRoutes.overridden", "已覆盖默认模型")}
+                          </span>
+                        )}
+                        {r.useClientModel && (
+                          <span className="text-xs text-violet-500 font-medium flex items-center mt-0.5">
+                            {t("routes.userRoutes.clientOverrideHint", "按请求模型匹配 L0")}
                           </span>
                         )}
                       </div>

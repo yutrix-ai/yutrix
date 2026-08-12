@@ -872,7 +872,17 @@
       "overridden": "已覆盖默认模型",
       "supportsCustom": "支持自定义",
       "customize": "自定义",
-      "notConfigurable": "不可配置"
+      "notConfigurable": "不可配置",
+      "overrideMode": "覆盖模式",
+      "modeDefault": "默认策略",
+      "modeClient": "客户端覆盖",
+      "modeClientHint": "按客户端请求中的模型名匹配本路由 L0 层配置；无法命中时走 General 兜底。与页面指定模型互斥。",
+      "modeFixed": "全局固定模型",
+      "modeStrategy": "自定义策略映射",
+      "clientOverride": "客户端覆盖",
+      "clientOverrideHint": "按请求模型匹配 L0",
+      "customStrategy": "已覆盖个人策略",
+      "strategyDefault": "策略路由 (默认)"
     },
     "schedule": {
       "title": "计划任务",

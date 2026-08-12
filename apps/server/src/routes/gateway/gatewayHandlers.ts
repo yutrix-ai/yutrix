@@ -115,7 +115,14 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
     );
 
     let currentAttempt = createInitialAttemptState(route);
-    await resolveUserRouteOverride(authCtx.userId, route, currentAttempt, baseActionLog);
+    // Pass client-requested model for Client Override mode (L0 name match / General)
+    await resolveUserRouteOverride(
+      authCtx.userId,
+      route,
+      currentAttempt,
+      baseActionLog,
+      typeof body?.model === "string" ? body.model : null,
+    );
 
     // --- 5. Request State Init ---
     let attemptCount = 0;

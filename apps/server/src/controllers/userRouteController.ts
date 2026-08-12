@@ -16,6 +16,7 @@ import {
   getDailyStartTime,
 } from "../utils/scheduleEvaluator";
 import { getUserAuthorizedRouteIds } from "../services/routeService";
+import { normalizeUserRouteOverridePayload } from "../services/clientModelOverride";
 
 export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -95,6 +96,9 @@ export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply
          finalOverrideModelId = null;
       }
 
+      // Client override is exclusive with a fixed page modelId
+      const useClientModel = !!(override as any)?.useClientModel && !finalOverrideModelId;
+
       return {
         id: route.id,
         name: route.name || endpoint?.name || "未命名规则",
@@ -107,8 +111,9 @@ export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply
         providerProtocol: activeProviderProtocol || "openai",
         defaultModelId: activeModelId,
         defaultModelName: activeModelName,
-        overrideModelId: finalOverrideModelId,
-        overrideStrategyRules: override?.strategyRoutingRules || null,
+        overrideModelId: useClientModel ? null : finalOverrideModelId,
+        useClientModel,
+        overrideStrategyRules: useClientModel ? null : (override?.strategyRoutingRules || null),
         strategyRoutingEnabled: activeSchedule ? false : (route.strategyRoutingEnabled || false),
         strategyRoutingRules: route.strategyRoutingRules,
       };
@@ -125,7 +130,11 @@ export async function getProviderModels(request: FastifyRequest, reply: FastifyR
 export async function overrideUserRoute(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
   const { id } = request.params as { id: string };
-  const { modelId, strategyRoutingRules } = request.body as { modelId: string | null; strategyRoutingRules?: string | null };
+  const body = request.body as {
+    modelId?: string | null;
+    strategyRoutingRules?: string | null;
+    useClientModel?: boolean | null;
+  };
 
   const authorizedRouteIds = await getUserAuthorizedRouteIds(user.id);
   if (!authorizedRouteIds.has(id)) {
@@ -154,21 +163,28 @@ export async function overrideUserRoute(request: FastifyRequest, reply: FastifyR
     return reply.code(403).send({ error: "This route does not allow client model override" });
   }
 
-  if (!modelId && !strategyRoutingRules) {
+  // Enforce mutual exclusion: client mode vs fixed modelId vs custom strategy
+  const normalized = normalizeUserRouteOverridePayload({
+    useClientModel: body.useClientModel,
+    modelId: body.modelId,
+    strategyRoutingRules: body.strategyRoutingRules,
+  });
+
+  if (normalized.mode === "default") {
     // Clear override
     await db.delete(userRouteOverrides).where(and(
       eq(userRouteOverrides.routeId, id),
       eq(userRouteOverrides.userId, user.id)
     ));
-    return reply.send({ success: true });
+    return reply.send({ success: true, mode: "default" });
   }
 
-  // Validate modelId if provided
-  if (modelId) {
+  // Validate fixed modelId if provided (not used in client mode)
+  if (normalized.modelId) {
     const models = await db.select().from(providerModels).where(
       and(
         eq(providerModels.providerId, activeProviderId),
-        eq(providerModels.modelId, modelId)
+        eq(providerModels.modelId, normalized.modelId)
       )
     );
 
@@ -178,9 +194,9 @@ export async function overrideUserRoute(request: FastifyRequest, reply: FastifyR
   }
 
   // Validate strategyRoutingRules if provided
-  if (strategyRoutingRules) {
+  if (normalized.strategyRoutingRules) {
     try {
-      const rules = JSON.parse(strategyRoutingRules);
+      const rules = JSON.parse(normalized.strategyRoutingRules);
       if (!Array.isArray(rules)) throw new Error("Rules must be an array");
       const validModels = await db.select().from(providerModels).where(eq(providerModels.providerId, activeProviderId));
       const validModelIds = new Set(validModels.map(m => m.modelId));
@@ -194,25 +210,33 @@ export async function overrideUserRoute(request: FastifyRequest, reply: FastifyR
     }
   }
 
-  // Upsert override
+  // Upsert override — never store fixed modelId together with useClientModel
   const existing = await db.select().from(userRouteOverrides).where(and(
     eq(userRouteOverrides.routeId, id),
     eq(userRouteOverrides.userId, user.id)
   ));
 
+  const overrideValues = {
+    modelId: normalized.modelId,
+    useClientModel: normalized.useClientModel,
+    strategyRoutingRules: normalized.strategyRoutingRules,
+    updatedAt: new Date(),
+  };
+
   if (existing.length > 0) {
     await db.update(userRouteOverrides)
-      .set({ modelId: modelId || null, strategyRoutingRules: strategyRoutingRules || null, updatedAt: new Date() })
+      .set(overrideValues)
       .where(eq(userRouteOverrides.id, existing[0].id));
   } else {
     await db.insert(userRouteOverrides).values({
       id: crypto.randomUUID(),
       userId: user.id,
       routeId: id,
-      modelId: modelId || null,
-      strategyRoutingRules: strategyRoutingRules || null,
+      modelId: overrideValues.modelId,
+      useClientModel: overrideValues.useClientModel,
+      strategyRoutingRules: overrideValues.strategyRoutingRules,
       createdAt: new Date(),
-      updatedAt: new Date(),
+      updatedAt: overrideValues.updatedAt,
     });
   }
 
@@ -222,8 +246,10 @@ export async function overrideUserRoute(request: FastifyRequest, reply: FastifyR
     username: user.username,
     routeId: id,
     routeName: route.name as string | undefined,
-    modelId: modelId as string | undefined,
+    modelId: normalized.modelId as string | undefined,
+    useClientModel: normalized.useClientModel,
+    mode: normalized.mode,
   });
 
-  return reply.send({ success: true });
+  return reply.send({ success: true, mode: normalized.mode });
 }

@@ -169,6 +169,8 @@ export const userRouteOverrides = sqliteTable("user_route_overrides", {
   userId: text("userId").notNull(),
   routeId: text("routeId").notNull(),
   modelId: text("modelId"),
+  /** When true, gateway matches request body.model against L0; exclusive with modelId. */
+  useClientModel: integer("useClientModel", { mode: "boolean" }).notNull().default(false),
   strategyRoutingRules: text("strategyRoutingRules"),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),

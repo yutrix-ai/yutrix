@@ -875,7 +875,17 @@
       "overridden": "Default model overridden",
       "supportsCustom": "Customizable",
       "customize": "Customize",
-      "notConfigurable": "Not configurable"
+      "notConfigurable": "Not configurable",
+      "overrideMode": "Override mode",
+      "modeDefault": "Default strategy",
+      "modeClient": "Client Override",
+      "modeClientHint": "Match the model name from the client request against this route's L0 configuration. If nothing matches, use General. Mutually exclusive with a page-specified model.",
+      "modeFixed": "Fixed model (global)",
+      "modeStrategy": "Custom strategy mapping",
+      "clientOverride": "Client Override",
+      "clientOverrideHint": "Match request model against L0",
+      "customStrategy": "Personal strategy overridden",
+      "strategyDefault": "Strategy routing (default)"
     },
     "schedule": {
       "title": "Route Schedule",

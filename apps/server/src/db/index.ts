@@ -81,6 +81,7 @@ async function runAutoMigrations() {
 
     // ── user_route_overrides ──
     "ALTER TABLE user_route_overrides ADD COLUMN strategyRoutingRules text;",
+    "ALTER TABLE user_route_overrides ADD COLUMN useClientModel integer DEFAULT 0 NOT NULL;",
 
     // ── chat_logs ──
     "ALTER TABLE chat_logs ADD COLUMN conversationRootHash text;",
@@ -128,6 +129,7 @@ async function ensureTablesExist() {
       userId text NOT NULL,
       routeId text NOT NULL,
       modelId text,
+      useClientModel integer DEFAULT 0 NOT NULL,
       strategyRoutingRules text,
       createdAt integer NOT NULL,
       updatedAt integer NOT NULL

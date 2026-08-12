@@ -142,47 +142,97 @@ export function createInitialAttemptState(route: any): AttemptState {
 
 /**
  * If the route allows client-chosen models (`allowClientModel`), look up the
- * user's route override and – when the override model is valid for the
- * route's provider – mutate `currentAttempt.modelId`.
+ * user's route override and apply it:
+ * - **Client Override** (`useClientModel`): match `clientModelId` (request body
+ *   model) against L0 strategy/base models; miss → General. Disables content
+ *   strategy for this request so the match is final.
+ * - **Fixed model** (`modelId`): force that model and disable strategy.
+ * - **Custom strategy rules**: replace route strategy rules (no fixed model).
+ *
+ * Fixed modelId and Client Override are mutually exclusive at persistence;
+ * if both appear, Client Override wins only when modelId is empty.
  */
 export async function resolveUserRouteOverride(
   userId: string,
   route: any,
   currentAttempt: AttemptState,
   baseActionLog: BaseActionLog,
+  clientModelId?: string | null,
 ): Promise<void> {
-  // Trigger restart for db schema changes
-  if (route.allowClientModel) {
-    const overrideList = await db.select().from(userRouteOverrides).where(
-      and(eq(userRouteOverrides.userId, userId), eq(userRouteOverrides.routeId, route.id))
+  if (!route.allowClientModel) return;
+
+  const overrideList = await db.select().from(userRouteOverrides).where(
+    and(eq(userRouteOverrides.userId, userId), eq(userRouteOverrides.routeId, route.id))
+  );
+  if (overrideList.length === 0) return;
+
+  const override = overrideList[0] as typeof overrideList[0] & {
+    useClientModel?: boolean;
+  };
+
+  // Client Override: match request model against L0 (exclusive with fixed modelId)
+  if (override.useClientModel && !override.modelId) {
+    const { applyClientModelOverrideToAttempt } = await import(
+      "../../services/clientModelOverride"
     );
-    if (overrideList.length > 0) {
-      const override = overrideList[0];
+    const resolved = applyClientModelOverrideToAttempt({
+      route,
+      clientModelId,
+      currentAttempt,
+    });
+    logAction({
+      ...baseActionLog,
+      level: "INFO",
+      code: "request.client_model_override",
+      clientModelId: clientModelId || "",
+      matched: resolved.matched,
+      source: resolved.source,
+      modelId: resolved.modelId,
+      providerId: resolved.providerId,
+    });
+    return;
+  }
 
-      if (override.strategyRoutingRules) {
-        route.strategyRoutingRules = override.strategyRoutingRules;
-      }
+  if (override.strategyRoutingRules) {
+    route.strategyRoutingRules = override.strategyRoutingRules;
+  }
 
-      if (override.modelId) {
-        const validModel = await db.select().from(providerModels).where(
-          and(
-            eq(providerModels.providerId, route.providerId),
-            eq(providerModels.modelId, override.modelId)
-          )
-        );
-        if (validModel.length > 0) {
-          currentAttempt.modelId = override.modelId;
-          // Disable strategy routing if a fixed model is chosen
-          route.strategyRoutingEnabled = false;
-        } else {
-          logAction({
-            ...baseActionLog,
-            level: "INFO",
-            code: "request.override_ignored",
-            overrideModelId: override.modelId,
-          });
+  if (override.modelId) {
+    const validModel = await db.select().from(providerModels).where(
+      and(
+        eq(providerModels.providerId, route.providerId),
+        eq(providerModels.modelId, override.modelId)
+      )
+    );
+    if (validModel.length > 0) {
+      currentAttempt.modelId = override.modelId;
+      // Disable strategy routing if a fixed model is chosen
+      route.strategyRoutingEnabled = false;
+      // Also disable on L0 target so funnel target strategy cannot re-enable
+      if (route.targets) {
+        try {
+          const parsed =
+            typeof route.targets === "string"
+              ? JSON.parse(route.targets)
+              : route.targets;
+          if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === "object") {
+            parsed[0] = { ...parsed[0], strategyRoutingEnabled: false };
+            route.targets =
+              typeof route.targets === "string"
+                ? JSON.stringify(parsed)
+                : parsed;
+          }
+        } catch {
+          // ignore
         }
       }
+    } else {
+      logAction({
+        ...baseActionLog,
+        level: "INFO",
+        code: "request.override_ignored",
+        overrideModelId: override.modelId,
+      });
     }
   }
 }
