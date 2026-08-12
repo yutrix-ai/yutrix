@@ -422,7 +422,6 @@ export async function forwardSSEStreamTransparent(
   let streamTimeoutId: NodeJS.Timeout | undefined;
   const translatorState: TranslatorState = {};
   let hadLengthCutoff = false;
-  let hadEmptyVisibleOutput = false;
   let meaningfulClientOutputSent = false;
   let visibleClientOutputSent = false;
   let streamHadDoneEvent = false;
@@ -528,7 +527,7 @@ export async function forwardSSEStreamTransparent(
 
         if (dataText === "[DONE]") {
           eventIsDone = true;
-          if (!isTransparentNoStitch || hadLengthCutoff || hadEmptyVisibleOutput) {
+          if (!isTransparentNoStitch || hadLengthCutoff) {
             skipThisLine = true;
             skippedDoneLine = true;
           }
@@ -570,11 +569,6 @@ export async function forwardSSEStreamTransparent(
             }
             if (dataCopy?.choices?.[0]?.finish_reason === "length") {
               isLengthCutoff = true;
-            } else if (
-              (dataCopy?.choices?.[0]?.finish_reason === "stop" || dataCopy?.choices?.[0]?.finish_reason === "end_turn")
-              && !visibleClientOutputSent
-            ) {
-              hadEmptyVisibleOutput = true;
             } else if (dataCopy?.type === "message_delta" && dataCopy?.delta?.stop_reason === "max_tokens" && sourceProtocol === "anthropic") {
               logAction?.({
                 ...(baseActionLog || {}),
@@ -720,12 +714,8 @@ export async function forwardSSEStreamTransparent(
          }
       }
 
-      if (hadEmptyVisibleOutput && (eventChunkFinishReason === "stop" || eventChunkFinishReason === "end_turn") && !visibleClientOutputSent) {
-         shouldSkipWrite = true;
-      }
-
-      if (hadLengthCutoff || hadEmptyVisibleOutput) {
-         // Drop everything if it's DONE or usage only (or empty stop held for EmptyOutput)
+      if (hadLengthCutoff) {
+         // Drop everything if it's DONE or usage only
          if (eventIsDone || (eventHasUsage && !eventHasSemanticContent && !eventChunkFinishReason)) {
            shouldSkipWrite = true;
          }
@@ -774,7 +764,7 @@ export async function forwardSSEStreamTransparent(
 
         if (done) {
       // Flush any pending usage events that were held waiting for a potential length cutoff
-      if (!hadLengthCutoff && !hadEmptyVisibleOutput && pendingUsageEvents.length > 0) {
+      if (!hadLengthCutoff && pendingUsageEvents.length > 0) {
         for (const ev of pendingUsageEvents) {
           if (isTransparentNoStitch) {
             downstream.write(ev);

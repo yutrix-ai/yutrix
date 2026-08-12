@@ -184,7 +184,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
   }
 
-  it("recovers seamlessly when upstream returns 0-token empty output on turn 1 and valid output on turn 2", async () => {
+  it("does not auto-continue empty JSON while EmptyOutput is unregistered (OpenCode regression)", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -258,17 +258,11 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
 
-    // Verify client receives valid output
-    expect(body.choices[0].message.content).toBe("export const getRecordList = () => {}");
-    expect(callCount).toBe(2);
-
-    // Verify turn 2 request had the injected continuation guard message
-    expect(receivedBodies[1].messages.length).toBe(2);
-    expect(receivedBodies[1].messages[1].role).toBe("user");
-    expect(receivedBodies[1].messages[1].content).toContain("System Guard Note");
+    expect(body.choices[0].message.content).toBe("");
+    expect(callCount).toBe(1);
   });
 
-  it("appends fallback notice when upstream repeatedly returns 0-token empty responses and exhausts retries", async () => {
+  it("does not inject EmptyOutput fallback while the strategy is unregistered", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -313,13 +307,11 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
 
-    // Client should receive the fallback notice instead of a blank response
-    expect(body.choices[0].message.content).toContain("模型响应结果为空 [0-Token]");
-    // Initial call + 2 retries (maxRetries = 2) = 3 total attempts
-    expect(callCount).toBe(3);
+    expect(body.choices[0].message.content).toBe("");
+    expect(callCount).toBe(1);
   });
 
-  it("stream=true recovers via Stage 1 when upstream returns empty JSON (fake-stream) then valid content", async () => {
+  it("stream=true forwards empty JSON fake-stream once without EmptyOutput retry", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -389,9 +381,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(callCount).toBe(2);
-    expect(receivedBodies[1].messages.length).toBe(2);
-    expect(receivedBodies[1].messages[1].content).toContain("System Guard Note");
+    expect(callCount).toBe(1);
 
     // Client SSE should carry recovered content and a single terminal stop/[DONE]
     // without a premature empty terminal completion from turn 1.
@@ -428,13 +418,13 @@ describe("Empty Output Auto-Continuation Integration", () => {
       }
     }
 
-    expect(text).toBe("export const getRecordList = () => {}");
+    expect(text).toBe("");
     expect(finishReasons.at(-1)).toBe("stop");
     expect(doneFound).toBe(true);
-    expect(emptyStopBeforeContent).toBe(false);
+    expect(callCount).toBe(1);
   });
 
-  it("stream=true holds empty native SSE stop/[DONE] and recovers visible content on retry", async () => {
+  it("stream=true forwards empty native SSE stop/[DONE] without holding the stream", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -483,42 +473,12 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(callCount).toBe(2);
-    expect(receivedBodies[1].messages.at(-1).content).toContain("System Guard Note");
-
-    const lines = res.body.split("\n").filter((l) => l.startsWith("data: "));
-    let text = "";
-    let emptyStopBeforeContent = false;
-    let sawContent = false;
-    let doneCount = 0;
-    for (const line of lines) {
-      const payload = line.replace("data: ", "").trim();
-      if (payload === "[DONE]") {
-        doneCount++;
-        continue;
-      }
-      let chunk: any;
-      try {
-        chunk = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      const deltaContent = chunk.choices?.[0]?.delta?.content;
-      if (typeof deltaContent === "string" && deltaContent.length > 0) {
-        text += deltaContent;
-        sawContent = true;
-      }
-      if (chunk.choices?.[0]?.finish_reason === "stop" && !sawContent) {
-        emptyStopBeforeContent = true;
-      }
-    }
-
-    expect(text).toBe("你好，我是数字员工助手。");
-    expect(emptyStopBeforeContent).toBe(false);
-    expect(doneCount).toBe(1);
+    expect(callCount).toBe(1);
+    expect(res.body).toContain("finish_reason");
+    expect(res.body).toContain("[DONE]");
   });
 
-  it("stream=true holds reasoning-only native SSE and recovers visible content on retry", async () => {
+  it("stream=true forwards reasoning-only native SSE without EmptyOutput retry", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -561,33 +521,9 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(callCount).toBe(2);
-
-    const lines = res.body.split("\n").filter((l) => l.startsWith("data: "));
-    let text = "";
-    let emptyStopBeforeContent = false;
-    let sawContent = false;
-    for (const line of lines) {
-      const payload = line.replace("data: ", "").trim();
-      if (payload === "[DONE]") continue;
-      let chunk: any;
-      try {
-        chunk = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      const deltaContent = chunk.choices?.[0]?.delta?.content;
-      if (typeof deltaContent === "string" && deltaContent.length > 0) {
-        text += deltaContent;
-        sawContent = true;
-      }
-      if (chunk.choices?.[0]?.finish_reason === "stop" && !sawContent) {
-        emptyStopBeforeContent = true;
-      }
-    }
-
-    expect(text).toBe("我是助手。");
-    expect(emptyStopBeforeContent).toBe(false);
+    expect(callCount).toBe(1);
+    expect(res.body).toContain("reasoning_content");
+    expect(res.body).toContain("[DONE]");
   });
 
   it("stream=true OpenAI client receives visible text when upstream JSON has type=message", async () => {
