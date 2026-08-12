@@ -1529,7 +1529,9 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                // Stage 1: Non-streaming / fake-stream candidate early continuity check
                if (!ctx.isStreaming || responseData.isFakeStream) {
                   let textFromThisRound = "";
-                  if (responseData.data?.choices?.[0]?.message?.content) {
+                  if (responseData.isFakeStream && responseData.fakeStreamText) {
+                     textFromThisRound = responseData.fakeStreamText;
+                  } else if (responseData.data?.choices?.[0]?.message?.content) {
                      textFromThisRound = responseData.data.choices[0].message.content;
                   } else if (responseData.data?.content && Array.isArray(responseData.data.content)) {
                      textFromThisRound = responseData.data.content.map((b: any) => b.text || "").join("");
@@ -1581,11 +1583,13 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                      ctx.continuity.hiddenContinuityText += textFromThisRound;
                      ctx.continuity.accumulatedCompletionText = ctx.continuity.forwardedStreamText + ctx.continuity.hiddenContinuityText;
                      const accum = ctx.continuity.accumulatedCompletionText;
-                     if (responseData.data.choices?.[0]?.message?.content !== undefined) {
-                        responseData.data.choices[0].message.content = accum;
-                     } else if (responseData.data.content && Array.isArray(responseData.data.content)) {
-                        const lastText = responseData.data.content.find((b: any) => b.type === "text" || !b.type);
-                        if (lastText) lastText.text = accum;
+                     if (continuityCycles > 0 && accum) {
+                        if (responseData.data.choices?.[0]?.message?.content !== undefined) {
+                           responseData.data.choices[0].message.content = accum;
+                        } else if (responseData.data.content && Array.isArray(responseData.data.content)) {
+                           const lastText = responseData.data.content.find((b: any) => b.type === "text" || !b.type);
+                           if (lastText) lastText.text = accum;
+                        }
                      }
                      if (ctx.continuity.committedRoundIds.size > 1 || ctx.continuity.usageStatus !== "success") {
                         updateResponseDataUsage(ctx, responseData);

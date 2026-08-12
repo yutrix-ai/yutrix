@@ -12,6 +12,10 @@ export class MaxTokensTruncationStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
+    if (responseData?.isStream && !streamResult) {
+      return { shouldIntervene: false };
+    }
+
     let isTruncated = false;
     if (streamResult) {
       isTruncated = streamResult.isLengthTruncated;

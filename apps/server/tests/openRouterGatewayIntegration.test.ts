@@ -6,7 +6,10 @@ import crypto from "crypto";
 import { eq } from "drizzle-orm";
 import { parseAndNormalizeUrl } from "../src/routes/gateway/providerAdapters/urlMatcher";
 
+import { initTestDatabase, closeAndCleanup } from "./helpers/testDatabase";
+
 let db: any;
+let client: any;
 let apiKeys: any;
 let endpoints: any;
 let endpointRoutes: any;
@@ -19,13 +22,15 @@ let users: any;
 let gatewayRoutes: any;
 let encryptText: any;
 
+const dbFile = "data/promptgate-test-openrouter-gw.sqlite";
+
 describe("OpenRouter Gateway Integration", () => {
   const fastify = Fastify();
   let apiKey = "";
   let userId = "";
 
   beforeAll(async () => {
-    ({ db } = await import("../src/db"));
+    ({ db, client } = await initTestDatabase({ dbFilePath: dbFile }));
     ({
       apiKeys,
       endpoints,
@@ -228,5 +233,12 @@ describe("OpenRouter Gateway Integration", () => {
     expect(capturedUpstreamBody.messages[0].reasoning).toBe("previous thinking");
     expect(capturedUpstreamBody.messages[0].reasoning_details).toStrictEqual([{ type: "text", text: "previous thought details" }]);
     expect(capturedUpstreamBody.messages[1].reasoning).toBeUndefined();
+  });
+
+  afterAll(async () => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    await fastify.close();
+    await closeAndCleanup(client, dbFile);
   });
 });

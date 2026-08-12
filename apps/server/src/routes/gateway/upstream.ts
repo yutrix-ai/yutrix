@@ -295,6 +295,8 @@ export async function executeUpstreamFetch(
             const contentBlocks: any[] = [];
             if (msg?.content) {
               contentBlocks.push({ type: "text", text: msg.content });
+            } else if (mappedData?.content && Array.isArray(mappedData.content)) {
+              contentBlocks.push(...mappedData.content);
             }
             if (msg?.tool_calls && Array.isArray(msg.tool_calls)) {
               for (const tc of msg.tool_calls) {
@@ -574,7 +576,7 @@ export async function executeUpstreamFetch(
         const fakeStreamPolicy = adapter?.getRequestPolicy?.(adapterContext)?.preserveFakeStreamFields
           ? { preserveFields: adapter.getRequestPolicy!(adapterContext).preserveFakeStreamFields }
           : undefined;
-        const upstreamResponseProtocol = isAnthropicUpstream ? "anthropic" : "openai";
+        const upstreamResponseProtocol = (isAnthropicUpstream || dataObj?.type === "message" || (dataObj?.content && !dataObj?.choices)) ? "anthropic" : "openai";
         const { fakeStream, textToEmit } = createFakeStreamFromData(dataObj, modelId, upstreamResponseProtocol, fakeStreamPolicy);
 
         const releaseProv = holdProv();
@@ -658,10 +660,12 @@ export async function executeUpstreamFetch(
     // Anthropic message format when the incoming protocol is anthropic but the
     // upstream is not.
     if (incomingProtocol === "anthropic" && !isAnthropicUpstream && !isStreaming) {
-      const msg = data.choices?.[0]?.message;
-      let contentBlocks: any[] = [];
+      const msg = data?.choices?.[0]?.message;
+      const contentBlocks: any[] = [];
       if (msg?.content) {
         contentBlocks.push({ type: "text", text: msg.content });
+      } else if (data?.content && Array.isArray(data.content)) {
+        contentBlocks.push(...data.content);
       }
       if (msg?.tool_calls && Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls) {

@@ -1,6 +1,7 @@
 import { ContinuityStrategy, ContinuityContext, ContinuityDecision } from "./types";
 import { MaxTokensTruncationStrategy } from "./strategies/MaxTokensTruncationStrategy";
 import { ReasoningExhaustionStrategy } from "./strategies/ReasoningExhaustionStrategy";
+import { EmptyOutputStrategy } from "./strategies/EmptyOutputStrategy";
 
 export class ContinuityEngine {
   private strategies: ContinuityStrategy[] = [];
@@ -12,6 +13,7 @@ export class ContinuityEngine {
     // Register strategies
     this.strategies.push(new MaxTokensTruncationStrategy());
     this.strategies.push(new ReasoningExhaustionStrategy());
+    this.strategies.push(new EmptyOutputStrategy());
   }
 
   /**

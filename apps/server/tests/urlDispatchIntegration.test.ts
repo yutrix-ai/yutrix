@@ -375,7 +375,7 @@ describe("URL Dispatch Integration", () => {
 
       expect(response.statusCode).toBe(200);
       expect(mock.getUrl()).toContain("openrouter.ai");
-      expect(mock.getUrl()).toContain("/api/v1/messages");
+      expect(mock.getUrl()).toContain("/chat/completions");
     });
 
     it("Scenario D: providerProtocol=anthropic, anthropicBaseUrl=null, openaiBaseUrl=OpenRouter (OpenRouter disabled)", async () => {

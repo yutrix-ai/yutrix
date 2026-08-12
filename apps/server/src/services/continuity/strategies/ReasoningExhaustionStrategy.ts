@@ -5,7 +5,11 @@ export class ReasoningExhaustionStrategy implements ContinuityStrategy {
   maxRetries = 3;
 
   async evaluate(context: ContinuityContext): Promise<ContinuityDecision> {
-    const { responseData, originalBody, accumulatedCompletionText } = context;
+    const { responseData, originalBody, accumulatedCompletionText, streamResult } = context;
+
+    if (responseData?.isStream && !streamResult) {
+      return { shouldIntervene: false };
+    }
 
     let hasToolCalls = false;
     let parsedData = responseData?.data;
