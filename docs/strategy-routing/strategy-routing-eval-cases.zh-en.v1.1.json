@@ -1,0 +1,2554 @@
+{
+  "_meta": {
+    "schemaVersion": 1,
+    "version": "1.1.0",
+    "generatedAt": "2026-08-03",
+    "purpose": "Independent positive, boundary, resolution, and compatibility fixtures for strategy routing v1.1",
+    "supportedLocales": ["zh-Hans", "en"],
+    "defaultContext": {
+      "hasImageInput": false,
+      "estimatedTotalTokens": 256,
+      "requestedOutputTokens": 0,
+      "activeContextKind": "total_context",
+      "activeContextLimit": 128000,
+      "origin": "user",
+      "internalPurpose": null,
+      "isAgenticContinuation": false,
+      "previousDecision": null
+    },
+    "resolutionFixtureEncoding": {
+      "string": "Enabled target with modelId equal to the string, providerId=fixture-provider, providerProtocol=openai, promptPolicyId=null, targetAvailable=true, contextKind=total_context, contextLimit=128000.",
+      "null": "None / disabled rule with no target fields.",
+      "object": "Override the string defaults; target is modelId, valid maps to targetAvailable, enabled maps to rule.enabled, and contextLimit without contextKind uses total_context.",
+      "missingKey": "Missing rule, equivalent to None at runtime.",
+      "requiredTokens": "Maps to resolveTarget.estimatedTotalTokens."
+    },
+    "resolutionDefaults": {
+      "startLayerIndex": 0,
+      "hardGate": null,
+      "requiresLongContext": false,
+      "requestedOutputTokens": 0,
+      "userOverrideAttempted": false
+    },
+    "userOverrideFixtureEncoding": "userOverride keys are legacy six-class slots and use resolutionFixtureEncoding; the snapshot is synthetic U0 and all object fields, including final promptPolicyId and capacity, are already resolved.",
+    "validationFixtureEncoding": {
+      "targetString": "Expands to providerId=fixture-provider, providerProtocol from the rule or openai, modelId=the target string, targetAvailable=true.",
+      "missingTarget": "No providerId/modelId target fields are populated.",
+      "disabledRule": "Any stale target fields are ignored and stripped before persistence."
+    },
+    "apiFixtureBasePayload": {
+      "name": "strategy-routing-fixture",
+      "hostInput": "*",
+      "path": "/v1/strategy-routing-fixture",
+      "incomingProtocol": "openai",
+      "enabled": true,
+      "retryCount": 3,
+      "targets": [
+        {
+          "providerId": "fixture-provider",
+          "providerProtocol": "openai",
+          "modelId": "fixture-general",
+          "bestEffort": false,
+          "strategyRoutingEnabled": true,
+          "strategyRoutingRules": [
+            {
+              "taskType": "general",
+              "enabled": true,
+              "providerId": "fixture-provider",
+              "providerProtocol": "openai",
+              "modelId": "fixture-general"
+            }
+          ]
+        }
+      ]
+    },
+    "apiFixtureContract": "Merge each validation case payload over apiFixtureBasePayload; fixture-provider and fixture-general exist and are enabled. updateRoute starts from a persisted copy of the base plus existingTemplate.",
+    "classificationExpectedDefaults": {
+      "expectedHardGate": null,
+      "expectedRequiresLongContext": false,
+      "expectedContinuationTarget": null
+    },
+    "expectedFieldContract": {
+      "classification.expectedReason": "Assert ClassificationResult.reasons contains the value.",
+      "classification.expectedContinuationTarget": "Deep-equal every field after applying classificationExpectedDefaults.",
+      "resolution.expected.outcome/source/layer/resolvedTaskType/target/errorCode": "Strict equality for every field present.",
+      "resolution.expected.traceIncludes": "At least one trace reason or fallbackPath outcome equals the value.",
+      "resolution.expected.mustNotSelect": "During this fixture invocation, the value appears in neither selected target nor any new upstream-attempt target.",
+      "resolution.expected.upstreamAttemptsBeforeSelection": "Exact count of network/upstream attempts before the selection or terminal result.",
+      "resolution.expected.bestEffortApplied/reclassified/inherited": "Strict boolean equality; absent fields are not asserted.",
+      "resolution.expected.reason": "Assert result reasons contains the value.",
+      "compatibility/validation": "Strict equality for every expected-prefixed field present; expectedStatus is the HTTP status."
+    },
+    "fallbackMatrixExpansion": {
+      "direct": "For every row, create L1 with chain[0] and general enabled (deduplicate when equal); assert chain[0] is selected at L1.",
+      "sameLayerAlias": "Only when chain.length > 1, create L1 with chain[0]=None and chain[1] plus general enabled (deduplicate when equal); assert chain[1] is selected at L1.",
+      "crossLayer": "For every row, create L1 with every chain member=None and L2 with chain[0] plus general enabled (deduplicate when equal); assert chain[0] is selected at L2.",
+      "assertionCountFormula": "rows*2 + rowsWhereChainLengthGreaterThanOne = 39"
+    },
+    "arbitrationCaseContract": "Each arbitration case produces two assertions: every expectedEvidenceTaskType must match before arbitration, then templatePriority must select expectedTaskType.",
+    "notes": [
+      "Classification cases are intentionally not copied from the seed utterance file.",
+      "Case context is merged over defaultContext.",
+      "When expectedContinuationTarget is present, compare every object field; omitted expected output fields use classificationExpectedDefaults.",
+      "Fixture shorthand hasImageInput sets both currentUserTurnHasImage and outboundPayloadHasImage unless either explicit field overrides it.",
+      "origin is harness-only trust provenance; only origin=internal may populate ClassificationInput.internalPurpose.",
+      "Resolution layer indexes in expected results are one-based.",
+      "startLayerIndex is zero-based.",
+      "These fixtures specify behavior; they do not authorize implementation."
+    ]
+  },
+  "classificationCases": [
+    {
+      "id": "vision-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "请检查附件中这张报表截图",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "这个图片里的表格是否完整",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-zh-003",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "看看我上传的流程图",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-zh-004",
+      "lang": "zh-Hans",
+      "template": "legacy",
+      "text": "读取照片上的序列号",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Inspect the dashboard image I attached",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Tell me whether this diagram is correct",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-en-003",
+      "lang": "en",
+      "template": "general",
+      "text": "Read the serial number from the uploaded photo",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+    {
+      "id": "vision-en-004",
+      "lang": "en",
+      "template": "legacy",
+      "text": "Compare the two attached screen images",
+      "context": { "hasImageInput": true },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision"
+    },
+
+    {
+      "id": "long-context-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "对全部历史日志做根因时间线",
+      "context": {
+        "estimatedTotalTokens": 1200000,
+        "activeContextLimit": 200000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "综合这些完整素材库后给结论",
+      "context": {
+        "estimatedTotalTokens": 1400000,
+        "activeContextLimit": 500000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-zh-003",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "通读所有归档记录并整理争议",
+      "context": {
+        "estimatedTotalTokens": 1000001,
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-zh-004",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "分析整套仓库快照的演进过程",
+      "context": {
+        "estimatedTotalTokens": 1800000,
+        "activeContextLimit": 1000000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Build a timeline from the complete service archive",
+      "context": {
+        "estimatedTotalTokens": 1200000,
+        "activeContextLimit": 200000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Synthesize the full content library into one report",
+      "context": {
+        "estimatedTotalTokens": 1400000,
+        "activeContextLimit": 500000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-en-003",
+      "lang": "en",
+      "template": "general",
+      "text": "Review every archived record and extract disagreements",
+      "context": {
+        "estimatedTotalTokens": 1000001,
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "long-context-en-004",
+      "lang": "en",
+      "template": "media",
+      "text": "Analyze the evolution of the complete repository snapshot",
+      "context": {
+        "estimatedTotalTokens": 1800000,
+        "activeContextLimit": 1000000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+
+    {
+      "id": "plan-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "先评估这次改造会影响哪些模块",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-zh-002",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "把迁移拆成几个可回滚阶段",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-zh-003",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "在写实现前给我一份技术路线",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-zh-004",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "整理依赖、风险、里程碑和验收口径",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Assess the blast radius before changing anything",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-en-002",
+      "lang": "en",
+      "template": "coding",
+      "text": "Break the migration into reversible phases",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-en-003",
+      "lang": "en",
+      "template": "coding",
+      "text": "Propose the technical approach before implementation",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "plan-en-004",
+      "lang": "en",
+      "template": "coding",
+      "text": "List dependencies risks milestones and acceptance gates",
+      "expectedTaskType": "plan"
+    },
+
+    {
+      "id": "code-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "为订单查询增加游标分页",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-zh-002",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "把重复校验抽成共享中间件",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-zh-003",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "给命令行工具增加导出子命令",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-zh-004",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "把这个同步流程改成异步队列",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Add cursor pagination to the order query",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-en-002",
+      "lang": "en",
+      "template": "coding",
+      "text": "Extract the repeated validation into shared middleware",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-en-003",
+      "lang": "en",
+      "template": "coding",
+      "text": "Add an export subcommand to the CLI",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "code-en-004",
+      "lang": "en",
+      "template": "coding",
+      "text": "Move this synchronous flow onto an async queue",
+      "expectedTaskType": "code"
+    },
+
+    {
+      "id": "debug-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "发布后接口偶发返回网关 502",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-zh-002",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "进程运行半小时后内存持续上涨",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-zh-003",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "两个线程互相等待导致服务卡死",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-zh-004",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "浏览器预检请求被服务拒绝了",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "The endpoint intermittently returns gateway 502 after release",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-en-002",
+      "lang": "en",
+      "template": "coding",
+      "text": "Memory usage keeps growing after the process runs for an hour",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-en-003",
+      "lang": "en",
+      "template": "coding",
+      "text": "Two threads wait on each other and the service freezes",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "debug-en-004",
+      "lang": "en",
+      "template": "coding",
+      "text": "The browser preflight request is being rejected",
+      "expectedTaskType": "debug"
+    },
+
+    {
+      "id": "test-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "给支付回调补一组契约测试",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-zh-002",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "用端到端用例覆盖完整注册流程",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-zh-003",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "为这个解析器增加属性测试",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-zh-004",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "先写能复现边界问题的回归用例",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Add contract coverage for the payment callback",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-en-002",
+      "lang": "en",
+      "template": "coding",
+      "text": "Cover the complete signup flow end to end",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-en-003",
+      "lang": "en",
+      "template": "coding",
+      "text": "Add property based checks for this parser",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "test-en-004",
+      "lang": "en",
+      "template": "coding",
+      "text": "Start with a regression case that reproduces the edge condition",
+      "expectedTaskType": "test"
+    },
+
+    {
+      "id": "topic-zh-001",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "围绕新手妈妈规划三个内容支柱",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "从评论区痛点整理下月选题库",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-zh-003",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "找出竞品没有覆盖的内容空白",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-zh-004",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "按受众搜索意图给主题排优先级",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-en-001",
+      "lang": "en",
+      "template": "media",
+      "text": "Plan three content pillars for first time parents",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Turn comment pain points into next month's topic backlog",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-en-003",
+      "lang": "en",
+      "template": "media",
+      "text": "Identify content gaps our competitors have missed",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "topic-en-004",
+      "lang": "en",
+      "template": "media",
+      "text": "Rank themes by audience search intent",
+      "expectedTaskType": "topic"
+    },
+
+    {
+      "id": "script-zh-001",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "给新品发布直播写主持流程和口播",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "把访谈提纲展开成播客对话稿",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-zh-003",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "为产品演示安排镜头、旁白和 CTA",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-zh-004",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "写一段三十秒广告的分镜和台词",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-en-001",
+      "lang": "en",
+      "template": "media",
+      "text": "Draft the host flow and narration for a product launch livestream",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Expand this interview outline into a podcast dialogue",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-en-003",
+      "lang": "en",
+      "template": "media",
+      "text": "Plan shots narration and a CTA for the product demo",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "script-en-004",
+      "lang": "en",
+      "template": "media",
+      "text": "Draft a thirty second ad with shots and dialogue",
+      "expectedTaskType": "script"
+    },
+
+    {
+      "id": "writing-zh-001",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "把访谈记录整理成一篇人物故事",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "为新品撰写一封客户通知邮件",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-zh-003",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "把会议讨论整理成正式纪要",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-zh-004",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "将产品资料编成常见问题文档",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-en-001",
+      "lang": "en",
+      "template": "media",
+      "text": "Turn the interview notes into a profile story",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Draft a customer announcement email for the launch",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-en-003",
+      "lang": "en",
+      "template": "media",
+      "text": "Convert the meeting discussion into formal minutes",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "writing-en-004",
+      "lang": "en",
+      "template": "media",
+      "text": "Compile the product material into an FAQ document",
+      "expectedTaskType": "writing"
+    },
+
+    {
+      "id": "rewrite-zh-001",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "把这篇长文适配成知乎回答",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "同一内容分别生成高管版和新手版",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-zh-003",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "保留事实并改成适合职场社交平台发布的版本",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-zh-004",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "把产品文章改造成邮件简报",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-en-001",
+      "lang": "en",
+      "template": "media",
+      "text": "Adapt this long article into a Q and A community post",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Create executive and beginner variants of the same content",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-en-003",
+      "lang": "en",
+      "template": "media",
+      "text": "Keep the facts but adapt the piece for a professional social network",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "rewrite-en-004",
+      "lang": "en",
+      "template": "media",
+      "text": "Convert the product article into an email newsletter",
+      "expectedTaskType": "rewrite"
+    },
+
+    {
+      "id": "background-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "生成供下一处理阶段使用的上下文摘要",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "为内部任务提取本轮核心状态",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-zh-003",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "创建用于会话交接的简短摘要",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-zh-004",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "给内部会话生成一个短标题",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Create a context digest for the next processing stage",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "Extract the current state for an internal follow-up task",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-en-003",
+      "lang": "en",
+      "template": "general",
+      "text": "Prepare a short internal handoff summary",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+    {
+      "id": "background-en-004",
+      "lang": "en",
+      "template": "coding",
+      "text": "Generate a concise title for the internal session",
+      "context": { "origin": "internal", "internalPurpose": "background" },
+      "expectedTaskType": "background"
+    },
+
+    {
+      "id": "general-zh-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "解释一下幂等这个概念",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-zh-002",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "今天上海是什么节气",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-zh-003",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "给我一个简单的思考建议",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-zh-004",
+      "lang": "zh-Hans",
+      "template": "legacy",
+      "text": "我们先聊点别的",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-en-001",
+      "lang": "en",
+      "template": "coding",
+      "text": "Explain the concept of idempotency in plain language",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-en-002",
+      "lang": "en",
+      "template": "media",
+      "text": "What is the difference between weather and climate",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-en-003",
+      "lang": "en",
+      "template": "general",
+      "text": "Give me a simple way to think about this",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "general-en-004",
+      "lang": "en",
+      "template": "legacy",
+      "text": "Let's talk about something else",
+      "expectedTaskType": "general"
+    },
+
+    {
+      "id": "boundary-001",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "实现截图上传和 image_url 序列化",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "boundary-002",
+      "lang": "en",
+      "template": "coding",
+      "text": "Implement image upload and serialize the image_url field",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "boundary-003",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "新增错误提示和超时处理逻辑",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "boundary-004",
+      "lang": "en",
+      "template": "coding",
+      "text": "Add error messages and timeout handling to the form",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "boundary-005",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "一运行测试进程就崩了",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "boundary-006",
+      "lang": "en",
+      "template": "coding",
+      "text": "The test process crashes as soon as it starts",
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "boundary-007",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "生成一个覆盖失败分支的测试用例",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "boundary-008",
+      "lang": "en",
+      "template": "coding",
+      "text": "Generate a test case that covers the failure branch",
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "boundary-009",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "先规划数据迁移，再决定是否实现",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "boundary-010",
+      "lang": "en",
+      "template": "coding",
+      "text": "Plan the data migration before deciding whether to implement it",
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "boundary-011",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "按已经批准的方案直接完成迁移实现",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "boundary-012",
+      "lang": "en",
+      "template": "coding",
+      "text": "Implement the migration according to the approved plan",
+      "expectedTaskType": "code"
+    },
+    {
+      "id": "boundary-013",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "润色这篇小红书笔记但不要换平台",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "boundary-014",
+      "lang": "en",
+      "template": "media",
+      "text": "Polish this social post without adapting it to another channel",
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "boundary-015",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "把现有文章改成小红书平台版本",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "boundary-016",
+      "lang": "en",
+      "template": "media",
+      "text": "Adapt the existing article for a different social channel",
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "boundary-017",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "想几个关于露营的视频主题",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "boundary-018",
+      "lang": "en",
+      "template": "media",
+      "text": "Suggest several video themes about camping",
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "boundary-019",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "为露营主题写完整视频分镜",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "boundary-020",
+      "lang": "en",
+      "template": "media",
+      "text": "Write the complete storyboard for the camping video",
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "boundary-021",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "分析这段很短的失败日志",
+      "context": { "estimatedTotalTokens": 800, "activeContextLimit": 128000 },
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "boundary-022",
+      "lang": "en",
+      "template": "coding",
+      "text": "Find the cause in this short failure log",
+      "context": { "estimatedTotalTokens": 800, "activeContextLimit": 128000 },
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "boundary-023",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "整理全部记录",
+      "context": {
+        "estimatedTotalTokens": 1000000,
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-024",
+      "lang": "en",
+      "template": "general",
+      "text": "Review every record",
+      "context": {
+        "estimatedTotalTokens": 1000000,
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-025",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "整理全部记录",
+      "context": {
+        "estimatedTotalTokens": 1000001,
+        "activeContextLimit": 2000000
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-026",
+      "lang": "en",
+      "template": "general",
+      "text": "Review every record",
+      "context": {
+        "estimatedTotalTokens": 1000001,
+        "activeContextLimit": 2000000
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-027",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "整理全部记录",
+      "context": {
+        "estimatedTotalTokens": 1300000,
+        "activeContextLimit": null
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-028",
+      "lang": "en",
+      "template": "general",
+      "text": "Review every record",
+      "context": {
+        "estimatedTotalTokens": 1300000,
+        "activeContextLimit": null
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-029",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "这张附件图包含全部历史记录",
+      "context": {
+        "hasImageInput": true,
+        "estimatedTotalTokens": 1300000,
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "boundary-030",
+      "lang": "en",
+      "template": "general",
+      "text": "The attached image contains the complete archive",
+      "context": {
+        "hasImageInput": true,
+        "estimatedTotalTokens": 1300000,
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "boundary-031",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "实现一个缓存清理接口",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "boundary-032",
+      "lang": "en",
+      "template": "coding",
+      "text": "Plan next month's lifestyle content themes",
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "boundary-033",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "接着做",
+      "context": {
+        "previousDecision": {
+          "template": "coding",
+          "classifiedTaskType": "code",
+          "resolvedTaskType": "code",
+          "source": "admin_layer",
+          "layerIndex": 0,
+          "providerId": "fixture-provider",
+          "providerProtocol": "openai",
+          "modelId": "previous-code",
+          "promptPolicyId": null
+        }
+      },
+      "expectedTaskType": "code",
+      "expectedReason": "natural_continuation",
+      "expectedContinuationTarget": {
+        "resolvedTaskType": "code",
+        "source": "admin_layer",
+        "layerIndex": 0,
+        "providerId": "fixture-provider",
+        "providerProtocol": "openai",
+        "modelId": "previous-code",
+        "promptPolicyId": null
+      }
+    },
+    {
+      "id": "boundary-034",
+      "lang": "en",
+      "template": "media",
+      "text": "go on",
+      "context": {
+        "previousDecision": {
+          "template": "media",
+          "classifiedTaskType": "script",
+          "resolvedTaskType": "script",
+          "source": "admin_layer",
+          "layerIndex": 0,
+          "providerId": "fixture-provider",
+          "providerProtocol": "anthropic",
+          "modelId": "previous-script",
+          "promptPolicyId": "fixture-policy"
+        }
+      },
+      "expectedTaskType": "script",
+      "expectedReason": "natural_continuation",
+      "expectedContinuationTarget": {
+        "resolvedTaskType": "script",
+        "source": "admin_layer",
+        "layerIndex": 0,
+        "providerId": "fixture-provider",
+        "providerProtocol": "anthropic",
+        "modelId": "previous-script",
+        "promptPolicyId": "fixture-policy"
+      }
+    },
+    {
+      "id": "boundary-035",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "接着处理",
+      "context": { "previousDecision": null },
+      "expectedTaskType": "general"
+    },
+    {
+      "id": "boundary-036",
+      "lang": "en",
+      "template": "coding",
+      "text": "continue with the API implementation",
+      "context": {
+        "previousDecision": {
+          "template": "coding",
+          "classifiedTaskType": "plan",
+          "resolvedTaskType": "plan",
+          "source": "admin_layer",
+          "layerIndex": 0,
+          "providerId": "fixture-provider",
+          "providerProtocol": "openai",
+          "modelId": "previous-plan",
+          "promptPolicyId": null
+        }
+      },
+      "expectedTaskType": "code",
+      "expectedContinuationTarget": null
+    },
+    {
+      "id": "boundary-037",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "为这个会话撰写一段交接摘要",
+      "context": { "origin": "user" },
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "boundary-038",
+      "lang": "en",
+      "template": "media",
+      "text": "Write a handoff summary for this conversation",
+      "context": { "origin": "user" },
+      "expectedTaskType": "writing"
+    },
+    {
+      "id": "boundary-039",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "请检查我刚才提到的那张截图",
+      "context": { "hasImageInput": false },
+      "expectedTaskType": "vision",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-040",
+      "lang": "en",
+      "template": "media",
+      "text": "Please inspect the screenshot I mentioned earlier",
+      "context": { "hasImageInput": false },
+      "expectedTaskType": "vision",
+      "expectedHardGate": null
+    },
+    {
+      "id": "boundary-041",
+      "lang": "en",
+      "template": "coding",
+      "text": "Continue the previous step",
+      "context": {
+        "currentUserTurnHasImage": false,
+        "outboundPayloadHasImage": true
+      },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision",
+      "expectedReason": "historical_payload_image"
+    },
+    {
+      "id": "boundary-042",
+      "lang": "en",
+      "template": "general",
+      "text": "Review the supplied material",
+      "context": {
+        "estimatedTotalTokens": 1000001,
+        "requestedOutputTokens": 600000,
+        "activeContextKind": "max_input",
+        "activeContextLimit": 1500000
+      },
+      "expectedTaskType": "general",
+      "expectedHardGate": null,
+      "expectedRequiresLongContext": false
+    },
+    {
+      "id": "boundary-043",
+      "lang": "en",
+      "template": "general",
+      "text": "Review the supplied material",
+      "context": {
+        "estimatedTotalTokens": 1000001,
+        "requestedOutputTokens": 600000,
+        "activeContextKind": "total_context",
+        "activeContextLimit": 1500000
+      },
+      "expectedTaskType": "long_context",
+      "expectedHardGate": "long_context",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "boundary-044",
+      "lang": "zh-Hans",
+      "template": "general",
+      "text": "处理随请求发出的历史图片",
+      "context": {
+        "currentUserTurnHasImage": false,
+        "outboundPayloadHasImage": true,
+        "estimatedTotalTokens": 1200000,
+        "activeContextKind": "total_context",
+        "activeContextLimit": 128000
+      },
+      "expectedTaskType": "vision",
+      "expectedHardGate": "vision",
+      "expectedRequiresLongContext": true
+    },
+    {
+      "id": "boundary-045",
+      "lang": "en",
+      "template": "coding",
+      "text": "Generate an internal session title for the next turn",
+      "context": {
+        "origin": "internal",
+        "internalPurpose": "background",
+        "isAgenticContinuation": true,
+        "previousDecision": {
+          "template": "coding",
+          "classifiedTaskType": "code",
+          "resolvedTaskType": "code",
+          "source": "admin_layer",
+          "layerIndex": 0,
+          "providerId": "fixture-provider",
+          "providerProtocol": "openai",
+          "modelId": "previous-code",
+          "promptPolicyId": null
+        }
+      },
+      "expectedTaskType": "background",
+      "expectedReason": "background_internal",
+      "expectedContinuationTarget": null
+    },
+    {
+      "id": "boundary-046",
+      "lang": "en",
+      "template": "coding",
+      "text": "Process the next agentic turn",
+      "context": {
+        "isAgenticContinuation": true,
+        "previousDecision": {
+          "template": "coding",
+          "classifiedTaskType": "debug",
+          "resolvedTaskType": "code",
+          "source": "admin_layer",
+          "layerIndex": 1,
+          "providerId": "fixture-provider",
+          "providerProtocol": "anthropic",
+          "modelId": "previous-code-fallback",
+          "promptPolicyId": "fixture-policy"
+        }
+      },
+      "expectedTaskType": "code",
+      "expectedReason": "agentic_continuation",
+      "expectedContinuationTarget": {
+        "resolvedTaskType": "code",
+        "source": "admin_layer",
+        "layerIndex": 1,
+        "providerId": "fixture-provider",
+        "providerProtocol": "anthropic",
+        "modelId": "previous-code-fallback",
+        "promptPolicyId": "fixture-policy"
+      }
+    }
+  ],
+  "arbitrationCases": [
+    {
+      "id": "arbitration-coding-debug-plan-zh",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "线上部署失败了，请评估回滚风险和阶段",
+      "expectedEvidenceTaskTypes": ["debug", "plan"],
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "arbitration-coding-debug-plan-en",
+      "lang": "en",
+      "template": "coding",
+      "text": "The deployment failed; assess rollback risks and milestones",
+      "expectedEvidenceTaskTypes": ["debug", "plan"],
+      "expectedTaskType": "debug"
+    },
+    {
+      "id": "arbitration-coding-plan-test-zh",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "先规划并添加覆盖边界的回归测试，再列出验收标准",
+      "expectedEvidenceTaskTypes": ["plan", "test"],
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "arbitration-coding-plan-test-en",
+      "lang": "en",
+      "template": "coding",
+      "text": "Before implementing, plan and add regression tests for the acceptance gates",
+      "expectedEvidenceTaskTypes": ["plan", "test"],
+      "expectedTaskType": "plan"
+    },
+    {
+      "id": "arbitration-coding-test-code-zh",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "添加接口契约测试并实现 API 校验",
+      "expectedEvidenceTaskTypes": ["test", "code"],
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "arbitration-coding-test-code-en",
+      "lang": "en",
+      "template": "coding",
+      "text": "Add contract tests and implement API validation",
+      "expectedEvidenceTaskTypes": ["test", "code"],
+      "expectedTaskType": "test"
+    },
+    {
+      "id": "arbitration-media-topic-script-zh",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "规划视频主题并写视频脚本",
+      "expectedEvidenceTaskTypes": ["topic", "script"],
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "arbitration-media-topic-script-en",
+      "lang": "en",
+      "template": "media",
+      "text": "Plan content themes and write a video script",
+      "expectedEvidenceTaskTypes": ["topic", "script"],
+      "expectedTaskType": "topic"
+    },
+    {
+      "id": "arbitration-media-script-rewrite-zh",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "写视频脚本并改成小红书平台版本",
+      "expectedEvidenceTaskTypes": ["script", "rewrite"],
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "arbitration-media-script-rewrite-en",
+      "lang": "en",
+      "template": "media",
+      "text": "Write a video script and adapt it for LinkedIn",
+      "expectedEvidenceTaskTypes": ["script", "rewrite"],
+      "expectedTaskType": "script"
+    },
+    {
+      "id": "arbitration-media-rewrite-writing-zh",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "撰写文章后改成小红书平台版本",
+      "expectedEvidenceTaskTypes": ["rewrite", "writing"],
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "arbitration-media-rewrite-writing-en",
+      "lang": "en",
+      "template": "media",
+      "text": "Write an article and adapt it for LinkedIn",
+      "expectedEvidenceTaskTypes": ["rewrite", "writing"],
+      "expectedTaskType": "rewrite"
+    },
+    {
+      "id": "arbitration-coding-vision-business-zh",
+      "lang": "zh-Hans",
+      "template": "coding",
+      "text": "检查刚才那张截图，并实现上传接口",
+      "expectedEvidenceTaskTypes": ["vision", "code"],
+      "expectedTaskType": "vision"
+    },
+    {
+      "id": "arbitration-coding-vision-business-en",
+      "lang": "en",
+      "template": "coding",
+      "text": "Inspect the screenshot mentioned earlier and implement the upload endpoint",
+      "expectedEvidenceTaskTypes": ["vision", "code"],
+      "expectedTaskType": "vision"
+    },
+    {
+      "id": "arbitration-media-vision-business-zh",
+      "lang": "zh-Hans",
+      "template": "media",
+      "text": "检查刚才那张截图并写视频脚本",
+      "expectedEvidenceTaskTypes": ["vision", "script"],
+      "expectedTaskType": "vision"
+    },
+    {
+      "id": "arbitration-media-vision-business-en",
+      "lang": "en",
+      "template": "media",
+      "text": "Inspect the screenshot mentioned earlier and write a video script",
+      "expectedEvidenceTaskTypes": ["vision", "script"],
+      "expectedTaskType": "vision"
+    }
+  ],
+  "resolutionCases": [
+    {
+      "id": "resolve-001",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "layers": [
+        { "plan": "l1-plan", "code": "l1-code", "general": "l1-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "plan",
+        "target": "l1-plan",
+        "upstreamAttemptsBeforeSelection": 0
+      }
+    },
+    {
+      "id": "resolve-002",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "layers": [{ "plan": null, "code": "l1-code", "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-code",
+        "upstreamAttemptsBeforeSelection": 0
+      }
+    },
+    {
+      "id": "resolve-003",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "layers": [{ "plan": null, "code": null, "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "general",
+        "target": "l1-general",
+        "upstreamAttemptsBeforeSelection": 0
+      }
+    },
+    {
+      "id": "resolve-004",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "layers": [
+        { "plan": null, "code": null, "general": null },
+        { "plan": "l2-plan", "code": "l2-code", "general": "l2-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 2,
+        "resolvedTaskType": "plan",
+        "target": "l2-plan",
+        "upstreamAttemptsBeforeSelection": 0
+      }
+    },
+    {
+      "id": "resolve-005",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "layers": [
+        {
+          "plan": { "target": "l1-plan", "valid": false },
+          "code": "l1-code",
+          "general": "l1-general"
+        }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-code",
+        "traceIncludes": "validation_failed"
+      }
+    },
+    {
+      "id": "resolve-006",
+      "template": "coding",
+      "classifiedTaskType": "test",
+      "layers": [{ "test": null, "code": "l1-code", "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-code"
+      }
+    },
+    {
+      "id": "resolve-007",
+      "template": "coding",
+      "classifiedTaskType": "debug",
+      "layers": [{ "debug": null, "code": "l1-code", "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-code"
+      }
+    },
+    {
+      "id": "resolve-008",
+      "template": "media",
+      "classifiedTaskType": "topic",
+      "layers": [
+        { "topic": null, "writing": "l1-writing", "general": "l1-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "writing",
+        "target": "l1-writing"
+      }
+    },
+    {
+      "id": "resolve-009",
+      "template": "media",
+      "classifiedTaskType": "rewrite",
+      "layers": [
+        { "rewrite": null, "writing": "l1-writing", "general": "l1-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "writing",
+        "target": "l1-writing"
+      }
+    },
+    {
+      "id": "resolve-010",
+      "template": "general",
+      "classifiedTaskType": "general",
+      "layers": [{ "general": null }, { "general": "l2-general" }],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 2,
+        "resolvedTaskType": "general",
+        "target": "l2-general",
+        "upstreamAttemptsBeforeSelection": 0
+      }
+    },
+    {
+      "id": "resolve-011",
+      "template": "coding",
+      "classifiedTaskType": "vision",
+      "hardGate": "vision",
+      "layers": [
+        { "vision": null, "general": "l1-general" },
+        { "vision": "l2-vision", "general": "l2-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 2,
+        "resolvedTaskType": "vision",
+        "target": "l2-vision"
+      }
+    },
+    {
+      "id": "resolve-012",
+      "template": "coding",
+      "classifiedTaskType": "vision",
+      "hardGate": "vision",
+      "layers": [
+        { "vision": null, "general": "l1-general" },
+        {
+          "vision": { "target": "l2-vision", "valid": false },
+          "general": "l2-general"
+        }
+      ],
+      "expected": {
+        "outcome": "unavailable",
+        "errorCode": "vision_unavailable",
+        "target": null
+      }
+    },
+    {
+      "id": "resolve-013",
+      "template": "general",
+      "classifiedTaskType": "long_context",
+      "hardGate": "long_context",
+      "requiresLongContext": true,
+      "requiredTokens": 1200000,
+      "layers": [
+        { "long_context": { "target": "l1-long", "contextLimit": 1000000 } },
+        { "long_context": { "target": "l2-long", "contextLimit": 2000000 } }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 2,
+        "resolvedTaskType": "long_context",
+        "target": "l2-long",
+        "traceIncludes": "capacity_insufficient"
+      }
+    },
+    {
+      "id": "resolve-014",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "bestEffortTarget": "l1-best-effort",
+      "layers": [{ "code": "l1-code", "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-code",
+        "bestEffortApplied": false
+      }
+    },
+    {
+      "id": "resolve-015",
+      "template": "media",
+      "classifiedTaskType": "script",
+      "startLayerIndex": 1,
+      "layers": [
+        {
+          "script": "l1-script",
+          "writing": "l1-writing",
+          "general": "l1-general"
+        },
+        { "script": null, "writing": "l2-writing", "general": "l2-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 2,
+        "resolvedTaskType": "writing",
+        "target": "l2-writing",
+        "reclassified": false
+      }
+    },
+    {
+      "id": "resolve-016",
+      "template": "coding",
+      "classifiedTaskType": "test",
+      "layers": [
+        { "test": null, "code": null, "general": null },
+        { "test": null, "code": null, "general": null }
+      ],
+      "expected": {
+        "outcome": "unavailable",
+        "errorCode": "strategy_no_available_target",
+        "target": null
+      }
+    },
+    {
+      "id": "resolve-017",
+      "template": "media",
+      "classifiedTaskType": "vision",
+      "hardGate": null,
+      "layers": [{ "vision": null, "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "general",
+        "target": "l1-general",
+        "reason": "vision_text_intent_soft_fallback"
+      }
+    },
+    {
+      "id": "resolve-018",
+      "template": "coding",
+      "classifiedTaskType": "vision",
+      "hardGate": "vision",
+      "requiresLongContext": true,
+      "requiredTokens": 1200000,
+      "layers": [
+        {
+          "vision": {
+            "target": "l1-vision",
+            "contextKind": "total_context",
+            "contextLimit": 1000000
+          }
+        },
+        {
+          "vision": {
+            "target": "l2-vision",
+            "contextKind": "total_context",
+            "contextLimit": 2000000
+          }
+        }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 2,
+        "resolvedTaskType": "vision",
+        "target": "l2-vision",
+        "traceIncludes": "capacity_insufficient"
+      }
+    },
+    {
+      "id": "resolve-019",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "layers": [
+        {
+          "plan": { "target": "stale-plan-target", "enabled": false },
+          "code": null,
+          "general": "l1-general"
+        }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 1,
+        "resolvedTaskType": "general",
+        "target": "l1-general",
+        "mustNotSelect": "stale-plan-target",
+        "traceIncludes": "none"
+      }
+    },
+    {
+      "id": "resolve-020",
+      "template": "general",
+      "classifiedTaskType": "long_context",
+      "hardGate": "long_context",
+      "requiresLongContext": true,
+      "requiredTokens": 1400000,
+      "layers": [
+        {
+          "long_context": {
+            "target": "l1-long",
+            "contextKind": "total_context",
+            "contextLimit": 1000000
+          }
+        },
+        {
+          "long_context": {
+            "target": "l2-long",
+            "contextKind": "total_context",
+            "contextLimit": 1200000
+          }
+        }
+      ],
+      "expected": {
+        "outcome": "unavailable",
+        "errorCode": "context_budget_insufficient",
+        "target": null
+      }
+    },
+    {
+      "id": "resolve-021",
+      "template": "general",
+      "classifiedTaskType": "long_context",
+      "hardGate": "long_context",
+      "requiresLongContext": true,
+      "requiredTokens": 1000001,
+      "requestedOutputTokens": 600000,
+      "layers": [
+        {
+          "long_context": {
+            "target": "l1-total",
+            "contextKind": "total_context",
+            "contextLimit": 1500000
+          }
+        },
+        {
+          "long_context": {
+            "target": "l2-max-input",
+            "contextKind": "max_input",
+            "contextLimit": 1100000
+          }
+        }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 2,
+        "resolvedTaskType": "long_context",
+        "target": "l2-max-input"
+      }
+    },
+    {
+      "id": "resolve-022",
+      "template": "general",
+      "classifiedTaskType": "general",
+      "layers": [
+        { "general": null },
+        { "general": null },
+        { "general": "l3-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "layer": 3,
+        "resolvedTaskType": "general",
+        "target": "l3-general",
+        "upstreamAttemptsBeforeSelection": 0
+      }
+    },
+    {
+      "id": "resolve-023",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "continuationTarget": {
+        "resolvedTaskType": "code",
+        "source": "admin_layer",
+        "layerIndex": 1,
+        "providerId": "fixture-provider",
+        "providerProtocol": "anthropic",
+        "modelId": "previous-code",
+        "promptPolicyId": "fixture-policy"
+      },
+      "layers": [
+        { "code": "l1-different-code", "general": "l1-general" },
+        {
+          "code": {
+            "target": "previous-code",
+            "providerId": "fixture-provider",
+            "providerProtocol": "anthropic",
+            "promptPolicyId": "fixture-policy"
+          },
+          "general": "l2-general"
+        }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 2,
+        "resolvedTaskType": "code",
+        "target": "previous-code",
+        "inherited": true
+      }
+    },
+    {
+      "id": "resolve-024",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "continuationTarget": {
+        "resolvedTaskType": "code",
+        "source": "admin_layer",
+        "layerIndex": 1,
+        "providerId": "fixture-provider",
+        "providerProtocol": "anthropic",
+        "modelId": "previous-code",
+        "promptPolicyId": "fixture-policy"
+      },
+      "layers": [
+        { "code": "l1-current-code", "general": "l1-general" },
+        {
+          "code": {
+            "target": "previous-code",
+            "providerId": "fixture-provider",
+            "providerProtocol": "anthropic",
+            "promptPolicyId": "fixture-policy",
+            "enabled": false
+          },
+          "general": "l2-general"
+        }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-current-code",
+        "inherited": false,
+        "traceIncludes": "continuation_target_unavailable"
+      }
+    },
+    {
+      "id": "resolve-025",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "startLayerIndex": 1,
+      "continuationTarget": {
+        "resolvedTaskType": "code",
+        "source": "admin_layer",
+        "layerIndex": 0,
+        "providerId": "fixture-provider",
+        "providerProtocol": "openai",
+        "modelId": "previous-l1-code",
+        "promptPolicyId": null
+      },
+      "layers": [
+        {
+          "code": {
+            "target": "previous-l1-code",
+            "providerId": "fixture-provider",
+            "providerProtocol": "openai",
+            "promptPolicyId": null
+          }
+        },
+        { "code": "l2-code", "general": "l2-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 2,
+        "resolvedTaskType": "code",
+        "target": "l2-code",
+        "inherited": false,
+        "mustNotSelect": "previous-l1-code",
+        "traceIncludes": "continuation_target_unavailable"
+      }
+    },
+    {
+      "id": "resolve-026",
+      "template": "general",
+      "classifiedTaskType": "long_context",
+      "hardGate": "long_context",
+      "requiresLongContext": true,
+      "requiredTokens": 1200000,
+      "layers": [
+        {
+          "long_context": {
+            "target": "unknown-capacity-long",
+            "contextKind": null,
+            "contextLimit": null
+          },
+          "general": "l1-general"
+        }
+      ],
+      "expected": {
+        "outcome": "unavailable",
+        "errorCode": "context_budget_unknown",
+        "target": null,
+        "traceIncludes": "capacity_unknown"
+      }
+    },
+    {
+      "id": "resolve-027",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "userOverride": { "general": "user-general" },
+      "layers": [
+        { "plan": "l1-plan", "code": "l1-code", "general": "l1-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "user_override",
+        "layer": null,
+        "resolvedTaskType": "general",
+        "target": "user-general"
+      }
+    },
+    {
+      "id": "resolve-028",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "userOverride": {
+        "code": { "target": "stale-user-code", "valid": false },
+        "general": "user-general"
+      },
+      "layers": [{ "code": "l1-code", "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "source": "user_override",
+        "layer": null,
+        "resolvedTaskType": "general",
+        "target": "user-general",
+        "traceIncludes": "validation_failed"
+      }
+    },
+    {
+      "id": "resolve-029",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "userOverride": { "code": null, "general": null },
+      "layers": [{ "code": "l1-code", "general": "l1-general" }],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 1,
+        "resolvedTaskType": "code",
+        "target": "l1-code"
+      }
+    },
+    {
+      "id": "resolve-030",
+      "template": "coding",
+      "classifiedTaskType": "vision",
+      "hardGate": "vision",
+      "userOverride": { "general": "user-general" },
+      "layers": [
+        { "vision": null, "general": "l1-general" },
+        { "vision": "l2-vision", "general": "l2-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 2,
+        "resolvedTaskType": "vision",
+        "target": "l2-vision",
+        "mustNotSelect": "user-general"
+      }
+    },
+    {
+      "id": "resolve-031",
+      "template": "coding",
+      "classifiedTaskType": "test",
+      "userOverrideAttempted": true,
+      "userOverride": { "code": "user-code", "general": "user-general" },
+      "layers": [
+        { "test": "l1-test", "code": "l1-code", "general": "l1-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 1,
+        "resolvedTaskType": "test",
+        "target": "l1-test",
+        "mustNotSelect": "user-code"
+      }
+    },
+    {
+      "id": "resolve-032",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "startLayerIndex": 1,
+      "userOverrideAttempted": true,
+      "userOverride": { "code": "user-code", "general": "user-general" },
+      "layers": [
+        { "code": "l1-code", "general": "l1-general" },
+        { "code": "l2-code", "general": "l2-general" }
+      ],
+      "expected": {
+        "outcome": "selected",
+        "source": "admin_layer",
+        "layer": 2,
+        "resolvedTaskType": "code",
+        "target": "l2-code",
+        "mustNotSelect": "user-code"
+      }
+    }
+  ],
+  "fallbackMatrixCases": [
+    {
+      "id": "matrix-coding-plan",
+      "template": "coding",
+      "classifiedTaskType": "plan",
+      "chain": ["plan", "code", "general"]
+    },
+    {
+      "id": "matrix-coding-code",
+      "template": "coding",
+      "classifiedTaskType": "code",
+      "chain": ["code", "general"]
+    },
+    {
+      "id": "matrix-coding-debug",
+      "template": "coding",
+      "classifiedTaskType": "debug",
+      "chain": ["debug", "code", "general"]
+    },
+    {
+      "id": "matrix-coding-test",
+      "template": "coding",
+      "classifiedTaskType": "test",
+      "chain": ["test", "code", "general"]
+    },
+    {
+      "id": "matrix-coding-background",
+      "template": "coding",
+      "classifiedTaskType": "background",
+      "chain": ["background", "general"]
+    },
+    {
+      "id": "matrix-coding-general",
+      "template": "coding",
+      "classifiedTaskType": "general",
+      "chain": ["general"]
+    },
+    {
+      "id": "matrix-media-topic",
+      "template": "media",
+      "classifiedTaskType": "topic",
+      "chain": ["topic", "writing", "general"]
+    },
+    {
+      "id": "matrix-media-script",
+      "template": "media",
+      "classifiedTaskType": "script",
+      "chain": ["script", "writing", "general"]
+    },
+    {
+      "id": "matrix-media-writing",
+      "template": "media",
+      "classifiedTaskType": "writing",
+      "chain": ["writing", "general"]
+    },
+    {
+      "id": "matrix-media-rewrite",
+      "template": "media",
+      "classifiedTaskType": "rewrite",
+      "chain": ["rewrite", "writing", "general"]
+    },
+    {
+      "id": "matrix-media-background",
+      "template": "media",
+      "classifiedTaskType": "background",
+      "chain": ["background", "general"]
+    },
+    {
+      "id": "matrix-media-general",
+      "template": "media",
+      "classifiedTaskType": "general",
+      "chain": ["general"]
+    },
+    {
+      "id": "matrix-general-background",
+      "template": "general",
+      "classifiedTaskType": "background",
+      "chain": ["background", "general"]
+    },
+    {
+      "id": "matrix-general-general",
+      "template": "general",
+      "classifiedTaskType": "general",
+      "chain": ["general"]
+    }
+  ],
+  "compatibilityCases": [
+    {
+      "id": "compat-001",
+      "configuration": "template-null-flat-rules",
+      "template": null,
+      "inputClass": "writing",
+      "legacyRules": {
+        "writing": "legacy-writing",
+        "general": "legacy-general"
+      },
+      "expectedTarget": "legacy-writing",
+      "expectedMode": "legacy"
+    },
+    {
+      "id": "compat-002",
+      "configuration": "template-null-flat-rules",
+      "template": null,
+      "inputClass": "code",
+      "legacyRules": { "code": "legacy-code", "general": "legacy-general" },
+      "expectedTarget": "legacy-code",
+      "expectedMode": "legacy"
+    },
+    {
+      "id": "compat-003",
+      "configuration": "template-null-target-rules",
+      "template": null,
+      "layers": [{ "writing": "l1-writing", "general": "l1-general" }],
+      "inputClass": "writing",
+      "expectedTarget": "l1-writing",
+      "expectedMode": "legacy"
+    },
+    {
+      "id": "compat-004",
+      "configuration": "legacy-fallback-rules",
+      "template": null,
+      "startLayerIndex": 1,
+      "layers": [
+        { "code": "l1-code" },
+        { "code": "l2-code", "general": "l2-general" }
+      ],
+      "inputClass": "code",
+      "expectedTarget": "l2-code",
+      "expectedMode": "legacy"
+    },
+    {
+      "id": "compat-005",
+      "configuration": "user-six-class-overlay",
+      "template": "coding",
+      "inputClass": "plan",
+      "userRules": { "code": "user-code", "general": "user-general" },
+      "adminLayers": [
+        {
+          "plan": "admin-plan",
+          "code": "admin-code",
+          "general": "admin-general"
+        }
+      ],
+      "expectedResolvedClass": "code",
+      "expectedTarget": "user-code"
+    },
+    {
+      "id": "compat-006",
+      "configuration": "user-six-class-overlay",
+      "template": "coding",
+      "inputClass": "test",
+      "userRules": { "code": "user-code", "general": "user-general" },
+      "adminLayers": [
+        {
+          "test": "admin-test",
+          "code": "admin-code",
+          "general": "admin-general"
+        }
+      ],
+      "expectedResolvedClass": "code",
+      "expectedTarget": "user-code"
+    },
+    {
+      "id": "compat-007",
+      "configuration": "user-six-class-overlay",
+      "template": "media",
+      "inputClass": "topic",
+      "userRules": { "writing": "user-writing", "general": "user-general" },
+      "adminLayers": [
+        {
+          "topic": "admin-topic",
+          "writing": "admin-writing",
+          "general": "admin-general"
+        }
+      ],
+      "expectedResolvedClass": "writing",
+      "expectedTarget": "user-writing"
+    },
+    {
+      "id": "compat-008",
+      "configuration": "user-six-class-overlay",
+      "template": "media",
+      "inputClass": "rewrite",
+      "userRules": { "writing": "user-writing", "general": "user-general" },
+      "adminLayers": [
+        {
+          "rewrite": "admin-rewrite",
+          "writing": "admin-writing",
+          "general": "admin-general"
+        }
+      ],
+      "expectedResolvedClass": "writing",
+      "expectedTarget": "user-writing"
+    },
+    {
+      "id": "compat-009",
+      "configuration": "fixed-user-override",
+      "template": "coding",
+      "inputClass": "debug",
+      "fixedModel": "user-fixed",
+      "adminLayers": [{ "debug": "admin-debug", "general": "admin-general" }],
+      "expectedTarget": "user-fixed",
+      "expectedStrategyRoutingEnabled": false
+    },
+    {
+      "id": "compat-010",
+      "configuration": "legacy-ruleset-isolation",
+      "template": null,
+      "expectedMode": "legacy",
+      "expectedRuleset": "strategyRouteUtterances.json@main-9a604da",
+      "expectedLegacyEntryCount": 201,
+      "mustNotLoad": "strategyRouteUtterances.v2.json"
+    }
+  ],
+  "validationCases": [
+    {
+      "id": "validation-duplicate-task",
+      "template": "coding",
+      "layers": [
+        {
+          "rules": [
+            { "taskType": "code", "enabled": true, "target": "code-a" },
+            { "taskType": "code", "enabled": true, "target": "code-b" },
+            { "taskType": "general", "enabled": true, "target": "general-a" }
+          ]
+        }
+      ],
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_duplicate_task_type"
+    },
+    {
+      "id": "validation-unknown-task",
+      "template": "coding",
+      "layers": [
+        {
+          "rules": [
+            { "taskType": "summarize", "enabled": true, "target": "bad-task" },
+            { "taskType": "general", "enabled": true, "target": "general-a" }
+          ]
+        }
+      ],
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_unknown_task_type"
+    },
+    {
+      "id": "validation-enabled-target-missing",
+      "template": "media",
+      "layers": [
+        {
+          "rules": [
+            { "taskType": "writing", "enabled": true },
+            { "taskType": "general", "enabled": true, "target": "general-a" }
+          ]
+        }
+      ],
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_enabled_target_required"
+    },
+    {
+      "id": "validation-all-none-layer",
+      "template": "coding",
+      "layers": [
+        {
+          "rules": [
+            { "taskType": "code", "enabled": false },
+            { "taskType": "general", "enabled": false },
+            {
+              "taskType": "writing",
+              "enabled": true,
+              "target": "hidden-writing"
+            }
+          ]
+        }
+      ],
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_empty_layer"
+    },
+    {
+      "id": "validation-route-general-required",
+      "template": "coding",
+      "layers": [
+        {
+          "rules": [
+            { "taskType": "code", "enabled": true, "target": "code-a" },
+            { "taskType": "general", "enabled": false }
+          ]
+        }
+      ],
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_general_required"
+    },
+    {
+      "id": "validation-prompt-policy-protocol",
+      "template": "coding",
+      "layers": [
+        {
+          "promptPolicy": {
+            "id": "anthropic-only-policy",
+            "protocol": "anthropic"
+          },
+          "rules": [
+            {
+              "taskType": "code",
+              "enabled": true,
+              "providerProtocol": "openai",
+              "target": "openai-code"
+            },
+            {
+              "taskType": "general",
+              "enabled": true,
+              "providerProtocol": "anthropic",
+              "target": "anthropic-general"
+            }
+          ]
+        }
+      ],
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_prompt_policy_protocol_mismatch"
+    },
+    {
+      "id": "validation-create-template-default",
+      "operation": "createRoute",
+      "payload": {},
+      "expectedStatus": 201,
+      "expectedPersistedTemplate": "coding"
+    },
+    {
+      "id": "validation-create-template-null",
+      "operation": "createRoute",
+      "payload": { "strategyRoutingTemplate": null },
+      "expectedStatus": 400,
+      "expectedErrorCode": "strategy_template_null_forbidden"
+    },
+    {
+      "id": "validation-update-template-omitted",
+      "operation": "updateRoute",
+      "existingTemplate": null,
+      "payload": { "name": "legacy route renamed" },
+      "expectedStatus": 200,
+      "expectedPersistedTemplate": null
+    },
+    {
+      "id": "validation-hidden-rule-not-active",
+      "template": "coding",
+      "layers": [
+        {
+          "promptPolicy": {
+            "id": "anthropic-only-policy",
+            "protocol": "anthropic"
+          },
+          "rules": [
+            {
+              "taskType": "code",
+              "enabled": true,
+              "providerProtocol": "anthropic",
+              "target": "anthropic-code"
+            },
+            {
+              "taskType": "general",
+              "enabled": true,
+              "providerProtocol": "anthropic",
+              "target": "anthropic-general"
+            },
+            {
+              "taskType": "writing",
+              "enabled": true,
+              "providerProtocol": "openai",
+              "target": "hidden-openai-writing"
+            }
+          ]
+        }
+      ],
+      "expectedStatus": 200,
+      "expectedHiddenRulePreserved": true
+    },
+    {
+      "id": "validation-mirror-active-order",
+      "template": "coding",
+      "layers": [
+        {
+          "rules": [
+            {
+              "taskType": "plan",
+              "enabled": true,
+              "providerProtocol": "anthropic",
+              "target": "plan-first"
+            },
+            {
+              "taskType": "code",
+              "enabled": true,
+              "providerProtocol": "openai",
+              "target": "code-second"
+            },
+            { "taskType": "general", "enabled": false },
+            {
+              "taskType": "writing",
+              "enabled": true,
+              "providerProtocol": "openai",
+              "target": "hidden-writing"
+            }
+          ]
+        },
+        {
+          "rules": [
+            {
+              "taskType": "general",
+              "enabled": true,
+              "providerProtocol": "openai",
+              "target": "l2-general"
+            }
+          ]
+        }
+      ],
+      "expectedStatus": 200,
+      "expectedLayerOneMirror": {
+        "providerId": "fixture-provider",
+        "providerProtocol": "anthropic",
+        "modelId": "plan-first"
+      }
+    }
+  ],
+  "_counts": {
+    "classificationCases": 142,
+    "arbitrationCases": 16,
+    "arbitrationAssertions": 32,
+    "resolutionCases": 32,
+    "fallbackMatrixCases": 14,
+    "fallbackMatrixAssertions": 39,
+    "compatibilityCases": 10,
+    "validationCases": 11,
+    "records": 225,
+    "executableAssertions": 266
+  }
+}

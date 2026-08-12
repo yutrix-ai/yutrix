@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 interface ProviderModelsModalProps {
   open: boolean;
@@ -201,6 +201,12 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
     );
   };
 
+  const handleToggleAllModels = (enabled: boolean) => {
+    setProviderModels(prev => prev.map(m => ({ ...m, enabled })));
+  };
+
+  const allModelsEnabled = providerModels.length > 0 && providerModels.every(m => m.enabled);
+
   const handleSaveAllModels = async () => {
     if (!provider) return;
     setSavingModels(true);
@@ -244,15 +250,38 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
 
         <div className="flex-1 min-h-0 flex flex-col px-6">
           <div className="flex justify-between items-center py-4 shrink-0 border-b">
-            <Button
-              variant="outline"
-              onClick={handleRefreshModels}
-              disabled={loadingModels || refreshingModels}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshingModels ? 'animate-spin' : ''}`} />
-              {refreshingModels ? t("providers.modelList.refreshing", "正在从上游获取并同步...") : t("providers.modelList.refresh", "从上游获取/更新列表")}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRefreshModels}
+                disabled={loadingModels || refreshingModels}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshingModels ? 'animate-spin' : ''}`} />
+                {refreshingModels ? t("providers.modelList.refreshing", "正在从上游获取并同步...") : t("providers.modelList.refresh", "从上游获取/更新列表")}
+              </Button>
+              <div className="h-4 w-px bg-border mx-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleToggleAllModels(true)}
+                disabled={loadingModels || providerModels.length === 0}
+                className="gap-1.5 text-xs font-medium"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                {t("providers.modelList.enableAll", "一键启用")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleToggleAllModels(false)}
+                disabled={loadingModels || providerModels.length === 0}
+                className="gap-1.5 text-xs font-medium"
+              >
+                <XCircle className="h-3.5 w-3.5 text-rose-500" />
+                {t("providers.modelList.disableAll", "一键关闭")}
+              </Button>
+            </div>
             <div className="text-sm text-muted-foreground font-medium">
               {t("providers.modelList.total", "共计")}: <span className="text-foreground">{providerModels.length}</span> {t("providers.modelList.unit", "个模型")}
             </div>
@@ -263,7 +292,19 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
               <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10 shadow-sm">
                 <TableRow className="border-b-0 hover:bg-transparent">
                   <TableHead className="font-semibold">{t("providers.modelList.table.name", "模型名称 / ID")}</TableHead>
-                  <TableHead className="w-24 font-semibold">{t("providers.modelList.table.enable", "启用")}</TableHead>
+                  <TableHead className="w-28 font-semibold">
+                    <div className="flex items-center gap-2">
+                      <span>{t("providers.modelList.table.enable", "启用")}</span>
+                      {providerModels.length > 0 && (
+                        <Switch
+                          checked={allModelsEnabled}
+                          onCheckedChange={(checked) => handleToggleAllModels(checked)}
+                          disabled={loadingModels}
+                          title={t("providers.modelList.toggleAll", "一键启用/关闭所有")}
+                        />
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead className="w-40 font-semibold">{t("providers.modelList.table.alias", "别名")}</TableHead>
                   <TableHead className="w-36 font-semibold">{t("providers.modelList.table.tokenizer", "分词器")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.contextWindow", "最大上下文")}</TableHead>

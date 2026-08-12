@@ -1,0 +1,312 @@
+{
+  "_meta": {
+    "schemaVersion": 1,
+    "version": "1.1.0",
+    "generatedAt": "2026-08-03",
+    "purpose": "Machine-readable v2 lexical arbitration rules for inputs that are not exact seed matches",
+    "normalizationVersion": "nfkc-lower-whitespace-v1",
+    "regexDialect": "ECMAScript Unicode, case-insensitive",
+    "continuationExactMatches": {
+      "zh-Hans": ["继续", "继续修改", "继续执行", "接着做"],
+      "en": [
+        "continue",
+        "continue editing",
+        "continue implementing",
+        "go on",
+        "keep going"
+      ]
+    },
+    "arbitrationStages": [
+      "actual_image_gate",
+      "long_context_gate",
+      "trusted_background",
+      "continuation",
+      "template_priority",
+      "general_default"
+    ],
+    "templatePriority": {
+      "coding": ["vision", "debug", "plan", "test", "code", "general"],
+      "media": ["vision", "topic", "script", "rewrite", "writing", "general"],
+      "general": ["vision", "general"]
+    },
+    "contract": [
+      "Filter rules by the active explicit v2 template before evaluating patterns.",
+      "A rule matches when any pattern matches and no excludePattern matches.",
+      "Exact/controlled seed matches and signal-rule matches are evidence for the same task; the template priority selects the winner.",
+      "Actual-image and long-context capability gates run before these rules.",
+      "A long_context text-rule match only adds reason=long_context_text_intent; it is not an eligible task unless the capability gate also succeeds.",
+      "A background evidence match with trusted internalPurpose=background is consumed before continuation and template priority.",
+      "A normalized whole-string continuationExactMatches hit inherits the trusted previousDecision; substrings and longer commands do not.",
+      "Background rules additionally require trusted internalPurpose=background.",
+      "Legacy mode does not load this file."
+    ]
+  },
+  "rules": [
+    {
+      "id": "vision-text-deictic-zh-v1",
+      "taskType": "vision",
+      "templates": ["coding", "media", "general"],
+      "patterns": [
+        "(?:看|检查|识别|读取|分析|比较).{0,12}(?:这|那|刚才|上面|附件|上传).{0,8}(?:图|图片|截图|照片|流程图|线框图)",
+        "(?:图|图片|截图|照片)(?:里|中|上).{0,16}(?:什么|内容|文字|表格|按钮|问题)"
+      ],
+      "excludePatterns": [
+        "(?:实现|新增|添加|开发|解析|序列化|上传).{0,16}(?:image_url|图片|截图)",
+        "(?:png|jpe?g|gif|webp|svg|image_url).{0,16}(?:字段|代码|类型|接口)"
+      ],
+      "reason": "vision_text_intent"
+    },
+    {
+      "id": "vision-text-deictic-en-v1",
+      "taskType": "vision",
+      "templates": ["coding", "media", "general"],
+      "patterns": [
+        "\\b(?:inspect|look at|check|read|analy[sz]e|compare|describe)\\b.{0,40}\\b(?:this|that|attached|uploaded|earlier)\\b.{0,20}\\b(?:image|screenshot|photo|diagram|wireframe)\\b",
+        "\\b(?:inspect|look at|check|read|analy[sz]e|compare|describe)\\b.{0,40}\\b(?:image|screenshot|photo|diagram|wireframe)\\b.{0,30}\\b(?:this|that|attached|uploaded|earlier)\\b",
+        "\\bwhat(?:'s| is)\\b.{0,20}\\b(?:in|on)\\b.{0,10}\\b(?:this|the)\\b.{0,10}\\b(?:image|screenshot|photo)\\b"
+      ],
+      "excludePatterns": [
+        "\\b(?:implement|add|build|parse|serialize|upload)\\b.{0,40}\\b(?:image_url|image|screenshot)\\b",
+        "\\b(?:png|jpe?g|gif|webp|svg|image_url)\\b.{0,30}\\b(?:field|code|type|api|endpoint)\\b"
+      ],
+      "reason": "vision_text_intent"
+    },
+    {
+      "id": "long-context-text-intent-zh-v1",
+      "taskType": "long_context",
+      "templates": ["coding", "media", "general"],
+      "patterns": [
+        "(?:全部|所有|整套|整个|完整|历史|归档|批量).{0,16}(?:日志|记录|文档|附件|仓库|素材|代码库)",
+        "(?:日志|记录|文档|附件|仓库|素材|代码库).{0,16}(?:全部|所有|整套|整个|完整|历史|归档|批量)"
+      ],
+      "reason": "long_context_text_intent"
+    },
+    {
+      "id": "long-context-text-intent-en-v1",
+      "taskType": "long_context",
+      "templates": ["coding", "media", "general"],
+      "patterns": [
+        "\\b(?:all|every|entire|complete|full|historical|archived)\\b.{0,40}\\b(?:logs?|records?|documents?|attachments?|repository|archive|library|codebase)\\b",
+        "\\b(?:logs?|records?|documents?|attachments?|repository|archive|library|codebase)\\b.{0,40}\\b(?:all|every|entire|complete|full|historical|archived)\\b"
+      ],
+      "reason": "long_context_text_intent"
+    },
+    {
+      "id": "debug-live-failure-zh-v1",
+      "taskType": "debug",
+      "templates": ["coding"],
+      "patterns": [
+        "(?:报错|崩了|崩溃|卡死|死锁|白屏|超时|失败|拒绝|不生效|没反应|内存(?:持续)?上涨|内存泄漏|oom|返回.{0,6}(?:4\\d\\d|5\\d\\d))",
+        "(?:发布|部署|运行|启动|请求|接口|进程|线程|测试).{0,24}(?:异常|失败|崩溃|卡死|超时|拒绝|上涨)"
+      ],
+      "excludePatterns": [
+        "(?:新增|增加|添加|实现|开发|设计|生成|创建|覆盖).{0,24}(?:错误|异常|失败|超时).{0,16}(?:提示|处理|分支|功能|测试|用例)"
+      ],
+      "reason": "debug_live_failure"
+    },
+    {
+      "id": "debug-live-failure-en-v1",
+      "taskType": "debug",
+      "templates": ["coding"],
+      "patterns": [
+        "\\b(?:crash(?:es|ed|ing)?|deadlock(?:ed)?|freeze[sd]?|hangs?|timed? out|fails?|failed|rejected|memory leak|oom(?:-killed)?|returns? (?:4\\d\\d|5\\d\\d))\\b",
+        "\\b(?:deployment|release|process|service|request|endpoint|gateway|tests?)\\b.{0,45}\\b(?:crash(?:es|ed)?|fails?|failed|freezes?|hangs?|rejected|growing|(?:4\\d\\d|5\\d\\d))\\b",
+        "\\bmemory usage\\b.{0,35}\\b(?:keeps? )?(?:growing|increasing|rising)\\b",
+        "\\b(?:failure|error) log\\b"
+      ],
+      "excludePatterns": [
+        "\\b(?:add|implement|build|design)\\b.{0,35}\\b(?:error|failure|timeout)\\b.{0,25}\\b(?:message|handling|branch|test|feature)\\b"
+      ],
+      "reason": "debug_live_failure"
+    },
+    {
+      "id": "plan-explicit-zh-v1",
+      "taskType": "plan",
+      "templates": ["coding"],
+      "patterns": [
+        "(?:先|在.{0,12}前|不要|暂不).{0,24}(?:评估|分析|规划|计划|方案|路线|设计|拆解)",
+        "(?:评估|分析|规划|计划|方案|技术路线|架构决策|里程碑|验收标准|回滚).{0,28}(?:影响|依赖|风险|阶段|步骤|可行性|取舍|口径)",
+        "(?:依赖|风险|里程碑|验收|回滚).{0,12}(?:整理|列出|定义|方案|计划)"
+      ],
+      "excludePatterns": [
+        "(?:按|根据).{0,12}(?:已|已经|批准|既定).{0,12}(?:方案|计划).{0,12}(?:实现|完成|编码)"
+      ],
+      "reason": "plan_signal"
+    },
+    {
+      "id": "plan-explicit-en-v1",
+      "taskType": "plan",
+      "templates": ["coding"],
+      "patterns": [
+        "\\b(?:before|prior to)\\b.{0,45}\\b(?:implementing|implementation|coding|changing)\\b",
+        "\\b(?:assess|analy[sz]e|plan|propose|outline|define|list|break)\\b.{0,55}\\b(?:impact|blast radius|migration|technical approach|architecture|dependencies|risks?|milestones?|acceptance|rollback|reversible phases?)\\b",
+        "\\b(?:dependencies|risks?|milestones?|acceptance gates?|rollback)\\b.{0,35}\\b(?:plan|proposal|approach|phases?|criteria)\\b"
+      ],
+      "excludePatterns": [
+        "\\b(?:implement|complete|code)\\b.{0,30}\\b(?:approved|existing|agreed)\\b.{0,20}\\b(?:plan|design|approach)\\b",
+        "\\baccording to the (?:approved|existing|agreed) plan\\b"
+      ],
+      "reason": "plan_signal"
+    },
+    {
+      "id": "test-authoring-zh-v1",
+      "taskType": "test",
+      "templates": ["coding"],
+      "patterns": [
+        "(?:写|补|增加|添加|生成|覆盖|创建).{0,24}(?:单元测试|集成测试|端到端|回归用例|回归测试|契约测试|属性测试|测试用例)",
+        "(?:测试|用例).{0,16}(?:覆盖|验证|模拟|mock|边界|失败分支)"
+      ],
+      "excludePatterns": [
+        "(?:测试|用例|进程).{0,12}(?:失败了|挂了|崩溃|超时|卡死)",
+        "(?:测试失败|测试挂了|测试崩溃|测试超时|测试卡死|进程失败|进程挂了|进程崩溃|进程超时|进程卡死)"
+      ],
+      "reason": "test_authoring"
+    },
+    {
+      "id": "test-authoring-en-v1",
+      "taskType": "test",
+      "templates": ["coding"],
+      "patterns": [
+        "\\b(?:write|add|create|generate|cover|start with)\\b.{0,50}\\b(?:unit tests?|integration tests?|end-to-end|e2e|regression (?:tests?|cases?)|contract (?:tests?|coverage)|property[- ]based|test cases?)\\b",
+        "\\b(?:tests?|cases?)\\b.{0,35}\\b(?:cover|verify|mock|edge|boundary|failure branch)\\b",
+        "\\bcover\\b.{0,55}\\bend[ -]to[ -]end\\b"
+      ],
+      "excludePatterns": [
+        "\\b(?:tests?|test process|test suite)\\b.{0,25}\\b(?:fails?|failed|crashes?|hangs?|times? out)\\b"
+      ],
+      "reason": "test_authoring"
+    },
+    {
+      "id": "code-change-zh-v1",
+      "taskType": "code",
+      "templates": ["coding"],
+      "patterns": [
+        "(?:实现|新增|增加|添加|补上|抽取|抽成|重构|改成|迁移|接入|封装).{0,28}(?:接口|api|字段|组件|函数|方法|中间件|命令行|子命令|队列|缓存|校验|分页|回调|数据库|脚本|流程|序列化|上传)",
+        "(?:接口|api|字段|组件|函数|方法|中间件|命令行|子命令|队列|缓存|校验|分页|回调|数据库|脚本|流程).{0,20}(?:实现|新增|增加|添加|重构|改成|迁移|接入)",
+        "(?:新增|增加|添加|实现).{0,20}(?:错误|异常|超时).{0,16}(?:提示|消息|处理|分支|逻辑)",
+        "(?:按|根据).{0,16}(?:已|已经|批准|既定).{0,16}(?:方案|计划).{0,20}(?:实现|完成|迁移)"
+      ],
+      "reason": "code_change"
+    },
+    {
+      "id": "code-change-en-v1",
+      "taskType": "code",
+      "templates": ["coding"],
+      "patterns": [
+        "\\b(?:implement|add|extract|refactor|convert|move|migrate|wire|serialize|build)\\b.{0,55}\\b(?:api|endpoint|field|component|function|method|middleware|cli|subcommand|queue|cache|validation|pagination|callback|database|script|flow|upload)\\b",
+        "\\b(?:api|endpoint|field|component|function|method|middleware|cli|subcommand|queue|cache|validation|pagination|callback|database|script|flow)\\b.{0,40}\\b(?:implement|add|extract|refactor|convert|move|migrate|build)\\b",
+        "\\b(?:add|implement)\\b.{0,35}\\b(?:error|failure|timeout)\\b.{0,25}\\b(?:message|handling|branch|logic)\\b",
+        "\\bimplement\\b.{0,45}\\bmigration\\b.{0,45}\\baccording to the (?:approved|existing|agreed) plan\\b",
+        "\\bcontinue\\b.{0,35}\\b(?:api|endpoint|component|function|migration|feature)\\b.{0,25}\\bimplementation\\b"
+      ],
+      "reason": "code_change"
+    },
+    {
+      "id": "topic-planning-zh-v1",
+      "taskType": "topic",
+      "templates": ["media"],
+      "patterns": [
+        "(?:规划|整理|寻找|找出|生成|列出|推荐|想).{0,24}(?:选题|主题|内容支柱|内容空白|选题库|内容方向)",
+        "(?:选题|主题|内容支柱|内容空白|选题库|内容方向).{0,20}(?:规划|排序|优先级|受众|搜索意图|竞品|痛点)"
+      ],
+      "reason": "topic_planning"
+    },
+    {
+      "id": "topic-planning-en-v1",
+      "taskType": "topic",
+      "templates": ["media"],
+      "patterns": [
+        "\\b(?:plan|suggest|find|identify|build|list|rank|turn)\\b.{0,55}\\b(?:content pillars?|topics?|themes?|content gaps?|topic backlog|content ideas?)\\b",
+        "\\b(?:content pillars?|topics?|themes?|content gaps?|topic backlog|content ideas?)\\b.{0,45}\\b(?:audience|search intent|competitors?|pain points?|rank|priority)\\b"
+      ],
+      "reason": "topic_planning"
+    },
+    {
+      "id": "script-production-zh-v1",
+      "taskType": "script",
+      "templates": ["media"],
+      "patterns": [
+        "(?:写|生成|展开|安排|拆解|设计).{0,24}(?:直播脚本|视频脚本|广告脚本|播客|对话稿|分镜|口播|旁白|镜头|台词|cta)",
+        "(?:直播|视频|广告|播客|访谈|产品演示).{0,24}(?:脚本|分镜|口播|旁白|镜头|台词|主持流程)"
+      ],
+      "reason": "script_production"
+    },
+    {
+      "id": "script-production-en-v1",
+      "taskType": "script",
+      "templates": ["media"],
+      "patterns": [
+        "\\b(?:write|draft|expand|plan|split|create)\\b.{0,55}\\b(?:livestream script|video script|ad script|podcast dialogue|storyboard|voiceover|narration|shots?|dialogue|cta)\\b",
+        "\\b(?:livestream|video|advertisement|ad|podcast|interview|product demo)\\b.{0,45}\\b(?:script|storyboard|voiceover|narration|shots?|dialogue|host flow)\\b"
+      ],
+      "reason": "script_production"
+    },
+    {
+      "id": "rewrite-channel-zh-v1",
+      "taskType": "rewrite",
+      "templates": ["media"],
+      "patterns": [
+        "(?:改成|改写成|适配成|改造为|转换成).{0,24}(?:平台|小红书|公众号|知乎|朋友圈|短视频|邮件简报|推文|职场社交|linkedin)",
+        "(?:同一内容|现有文章|这篇长文|产品文章).{0,24}(?:不同受众|两个版本|多个版本|平台版本|邮件简报|社区回答)",
+        "(?:同一内容|现有文章|这篇长文|产品文章).{0,32}(?:高管版|新手版|管理层版|入门版)",
+        "(?:保留事实|不改事实).{0,24}(?:换一种表达|适配|改写|平台)"
+      ],
+      "reason": "rewrite_channel_adaptation"
+    },
+    {
+      "id": "rewrite-channel-en-v1",
+      "taskType": "rewrite",
+      "templates": ["media"],
+      "patterns": [
+        "\\b(?:adapt|convert|turn|transform)\\b.{0,55}\\b(?:for|into)\\b.{0,20}\\b(?:social channel|social network|community post|newsletter|linkedin|audience|platform|short-video copy)\\b",
+        "\\bcreate\\b.{0,35}\\b(?:variants?|versions?)\\b.{0,30}\\b(?:audiences?|channels?|platforms?|executive|beginner)\\b",
+        "\\b(?:variants?|versions?)\\b.{0,40}\\b(?:of|for)\\b.{0,20}\\b(?:the )?(?:same|existing) (?:content|article)\\b",
+        "\\bkeep the facts\\b.{0,35}\\b(?:adapt|rewrite|change the wording)\\b"
+      ],
+      "reason": "rewrite_channel_adaptation"
+    },
+    {
+      "id": "writing-content-zh-v1",
+      "taskType": "writing",
+      "templates": ["media"],
+      "patterns": [
+        "(?:写|撰写|起草|整理|编成|润色|翻译).{0,24}(?:文章|故事|邮件|纪要|文档|faq|通知|介绍|摘要|文案|笔记)",
+        "(?:访谈记录|会议讨论|产品资料|要点|素材).{0,24}(?:文章|故事|邮件|纪要|文档|faq|摘要|文案)"
+      ],
+      "reason": "writing_content"
+    },
+    {
+      "id": "writing-content-en-v1",
+      "taskType": "writing",
+      "templates": ["media"],
+      "patterns": [
+        "\\b(?:write|draft|turn|convert|compile|polish|translate)\\b.{0,55}\\b(?:article|story|email|minutes|document|faq|announcement|description|summary|copy|post)\\b",
+        "\\b(?:interview notes|meeting discussion|product material|bullet points|source material)\\b.{0,45}\\b(?:article|story|email|minutes|document|faq|summary|copy)\\b"
+      ],
+      "reason": "writing_content"
+    },
+    {
+      "id": "background-internal-zh-v1",
+      "taskType": "background",
+      "templates": ["coding", "media", "general"],
+      "requiredContext": { "internalPurpose": "background" },
+      "patterns": [
+        "(?:内部|下一处理阶段|下一轮|会话交接).{0,24}(?:摘要|标题|上下文|核心状态)",
+        "(?:生成|创建|提取).{0,20}(?:上下文摘要|会话标题|交接摘要|核心状态)"
+      ],
+      "reason": "background_internal"
+    },
+    {
+      "id": "background-internal-en-v1",
+      "taskType": "background",
+      "templates": ["coding", "media", "general"],
+      "requiredContext": { "internalPurpose": "background" },
+      "patterns": [
+        "\\b(?:internal|next processing stage|next turn|handoff)\\b.{0,45}\\b(?:summary|digest|title|context|state)\\b",
+        "\\b(?:create|generate|extract|prepare)\\b.{0,40}\\b(?:context digest|session title|handoff summary|current state)\\b",
+        "\\b(?:summary|digest|title|context|state)\\b.{0,35}\\b(?:internal|session|handoff)\\b"
+      ],
+      "reason": "background_internal"
+    }
+  ]
+}

@@ -246,7 +246,47 @@ describe("Gateway Models Endpoint", () => {
     expect(modelIds).toContain("claude-opus-4-20250918");
   });
 
-  it("returns default model when model discovery is disabled", async () => {
+  it("returns L0 route models when model discovery is disabled", async () => {
+    // --- Setup: create a provider, endpoint, and route ---
+    const testProviderId = "test-route-discovery-provider";
+    await db.delete(providers).where(eq(providers.id, testProviderId));
+    await db.insert(providers).values({
+      id: testProviderId,
+      name: "Route Discovery Provider",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const testEndpointId = "test-route-discovery-endpoint";
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.endpointId, testEndpointId));
+    await db.delete(endpoints).where(eq(endpoints.id, testEndpointId));
+    await db.insert(endpoints).values({
+      id: testEndpointId,
+      userId,
+      name: "test-route-discovery",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const testRouteId = "test-route-discovery-route";
+    await db.insert(endpointRoutes).values({
+      id: testRouteId,
+      endpointId: testEndpointId,
+      providerId: testProviderId,
+      providerProtocol: "openai",
+      modelId: "gpt-4o-from-route",
+      enabled: true,
+      status: "active",
+      priority: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
     // Disable model discovery
     await db
       .update(systemSettings)
@@ -265,11 +305,200 @@ describe("Gateway Models Endpoint", () => {
     const body = JSON.parse(response.body);
     expect(body.object).toBe("list");
     expect(body.data).toBeInstanceOf(Array);
+
+    const modelIds = body.data.map((m: any) => m.id);
+    // Should contain the L0 model from the route
+    expect(modelIds).toContain("gpt-4o-from-route");
+    // Should NOT contain "default" since routes exist
+    expect(modelIds).not.toContain("default");
+
+    // Verify owned_by is correctly inferred
+    const routeModel = body.data.find((m: any) => m.id === "gpt-4o-from-route");
+    expect(routeModel.owned_by).toBe("openai");
+    expect(routeModel.object).toBe("model");
+
+    // Cleanup
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, testRouteId));
+    await db.delete(endpoints).where(eq(endpoints.id, testEndpointId));
+    await db.delete(providers).where(eq(providers.id, testProviderId));
+
+    // Re-enable model discovery
+    await db
+      .update(systemSettings)
+      .set({ value: "true", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "modelDiscoveryEnabled"));
+  });
+
+  it("returns virtualModelAlias when set, not internal modelId", async () => {
+    const testProviderId = "test-alias-provider";
+    await db.delete(providers).where(eq(providers.id, testProviderId));
+    await db.insert(providers).values({
+      id: testProviderId,
+      name: "Alias Provider",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const testEndpointId = "test-alias-endpoint";
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.endpointId, testEndpointId));
+    await db.delete(endpoints).where(eq(endpoints.id, testEndpointId));
+    await db.insert(endpoints).values({
+      id: testEndpointId,
+      userId,
+      name: "test-alias",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      virtualModelAlias: "my-custom-model",
+      enabled: true,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await db.insert(endpointRoutes).values({
+      id: "test-alias-route",
+      endpointId: testEndpointId,
+      providerId: testProviderId,
+      providerProtocol: "openai",
+      modelId: "internal-gpt4o-prod",
+      enabled: true,
+      status: "active",
+      priority: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await db
+      .update(systemSettings)
+      .set({ value: "false", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "modelDiscoveryEnabled"));
+
+    const response = await fastify.inject({
+      method: "GET",
+      url: "/v1/models",
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+
+    const body = JSON.parse(response.body);
+    const modelIds = body.data.map((m: any) => m.id);
+    // Should expose virtualModelAlias, not internal modelId
+    expect(modelIds).toContain("my-custom-model");
+    expect(modelIds).not.toContain("internal-gpt4o-prod");
+
+    // Cleanup
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, "test-alias-route"));
+    await db.delete(endpoints).where(eq(endpoints.id, testEndpointId));
+    await db.delete(providers).where(eq(providers.id, testProviderId));
+    await db
+      .update(systemSettings)
+      .set({ value: "true", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "modelDiscoveryEnabled"));
+  });
+
+  it("extracts L0 model from targets JSON when present", async () => {
+    const testProviderId = "test-targets-provider";
+    await db.delete(providers).where(eq(providers.id, testProviderId));
+    await db.insert(providers).values({
+      id: testProviderId,
+      name: "Targets Provider",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const testEndpointId = "test-targets-endpoint";
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.endpointId, testEndpointId));
+    await db.delete(endpoints).where(eq(endpoints.id, testEndpointId));
+    await db.insert(endpoints).values({
+      id: testEndpointId,
+      userId,
+      name: "test-targets",
+      path: "/v1/messages",
+      incomingProtocol: "anthropic",
+      enabled: true,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Route with targets JSON (L0 = claude-sonnet-4, L1 = fallback)
+    await db.insert(endpointRoutes).values({
+      id: "test-targets-route",
+      endpointId: testEndpointId,
+      providerId: testProviderId,
+      providerProtocol: "anthropic",
+      modelId: "old-model-field",
+      targets: JSON.stringify([
+        { providerId: testProviderId, providerProtocol: "anthropic", modelId: "claude-sonnet-4-20250514" },
+        { providerId: testProviderId, providerProtocol: "anthropic", modelId: "claude-haiku-4-fallback" },
+      ]),
+      enabled: true,
+      status: "active",
+      priority: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await db
+      .update(systemSettings)
+      .set({ value: "false", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "modelDiscoveryEnabled"));
+
+    const response = await fastify.inject({
+      method: "GET",
+      url: "/v1/models",
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+
+    const body = JSON.parse(response.body);
+    const modelIds = body.data.map((m: any) => m.id);
+
+    // Should use targets[0].modelId, not route.modelId
+    expect(modelIds).toContain("claude-sonnet-4-20250514");
+    expect(modelIds).not.toContain("old-model-field");
+    // Should NOT contain fallback (L1) model
+    expect(modelIds).not.toContain("claude-haiku-4-fallback");
+
+    // Verify owned_by for Anthropic model
+    const claudeModel = body.data.find((m: any) => m.id === "claude-sonnet-4-20250514");
+    expect(claudeModel.owned_by).toBe("anthropic");
+
+    // Cleanup
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, "test-targets-route"));
+    await db.delete(endpoints).where(eq(endpoints.id, testEndpointId));
+    await db.delete(providers).where(eq(providers.id, testProviderId));
+    await db
+      .update(systemSettings)
+      .set({ value: "true", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "modelDiscoveryEnabled"));
+  });
+
+  it("falls back to 'default' when discovery disabled and no routes exist", async () => {
+    // Disable model discovery – no routes/endpoints created
+    await db
+      .update(systemSettings)
+      .set({ value: "false", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "modelDiscoveryEnabled"));
+
+    // Delete all endpoints/routes to simulate empty config
+    await db.delete(endpointRoutes);
+    await db.delete(endpoints);
+
+    const response = await fastify.inject({
+      method: "GET",
+      url: "/v1/models",
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.object).toBe("list");
     expect(body.data.length).toBe(1);
     expect(body.data[0].id).toBe("default");
     expect(body.data[0].owned_by).toBe("promptgate");
 
-    // Re-enable model discovery for subsequent tests
+    // Re-enable model discovery
     await db
       .update(systemSettings)
       .set({ value: "true", updatedAt: new Date() })
