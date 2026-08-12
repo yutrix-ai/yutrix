@@ -589,4 +589,48 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(text).toBe("我是助手。");
     expect(emptyStopBeforeContent).toBe(false);
   });
+
+  it("stream=true OpenAI client receives visible text when upstream JSON has type=message", async () => {
+    await setupEnvironment();
+
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            type: "message",
+            id: "chatcmpl-ag-1",
+            object: "chat.completion",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "你好，我是数字员工助手。" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 539, completion_tokens: 2, total_tokens: 541 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "请介绍自己" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toMatch(/event:\s*message_start/);
+    expect(res.body).toContain("你好，我是数字员工助手。");
+    expect(res.body).toContain("[DONE]");
+  });
 });

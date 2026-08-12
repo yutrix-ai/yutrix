@@ -573,11 +573,22 @@ export async function executeUpstreamFetch(
         }
 
         // Wrap the actual content (not an error message) as a fake SSE stream.
+        // Client protocol wins: OpenAI clients (OpenCode) must never receive
+        // Anthropic SSE just because the JSON has type:"message". That sniff
+        // made Claude look fine and blanked OpenAI. Anthropic clients still
+        // use Anthropic SSE when upstream is Anthropic or the body is a message.
         const fakeStreamPolicy = adapter?.getRequestPolicy?.(adapterContext)?.preserveFakeStreamFields
           ? { preserveFields: adapter.getRequestPolicy!(adapterContext).preserveFakeStreamFields }
           : undefined;
-        const upstreamResponseProtocol = (isAnthropicUpstream || dataObj?.type === "message" || (dataObj?.content && !dataObj?.choices)) ? "anthropic" : "openai";
-        const { fakeStream, textToEmit } = createFakeStreamFromData(dataObj, modelId, upstreamResponseProtocol, fakeStreamPolicy);
+        const looksAnthropicMessage = dataObj?.type === "message"
+          || (Array.isArray(dataObj?.content) && !dataObj?.choices);
+        const upstreamResponseProtocol = incomingProtocol === "openai"
+          ? "openai"
+          : (isAnthropicUpstream || looksAnthropicMessage ? "anthropic" : "openai");
+        const dataForFakeStream = upstreamResponseProtocol === "openai"
+          ? coerceToOpenAICompletionShape(dataObj, modelId)
+          : dataObj;
+        const { fakeStream, textToEmit } = createFakeStreamFromData(dataForFakeStream, modelId, upstreamResponseProtocol, fakeStreamPolicy);
 
         const releaseProv = holdProv();
         const releaseUser = holdUser();
@@ -754,6 +765,65 @@ export async function executeUpstreamFetch(
     };
     throw e;
   }
+}
+
+/**
+ * If a non-Anthropic upstream returned an Anthropic-shaped JSON body (type:message
+ * and/or content blocks, with or without choices), normalize it so OpenAI fake-SSE
+ * still emits choices[].delta.content. Do not change protocol based on this shape.
+ */
+export function coerceToOpenAICompletionShape(dataObj: any, modelId: string): any {
+  if (!dataObj || typeof dataObj !== "object") return dataObj;
+  if (dataObj.choices?.[0]?.message) return dataObj;
+
+  const blocks = Array.isArray(dataObj.content) ? dataObj.content : [];
+  let text = typeof dataObj.content === "string" ? dataObj.content : "";
+  let reasoning = typeof dataObj.choices?.[0]?.message?.reasoning_content === "string"
+    ? dataObj.choices[0].message.reasoning_content
+    : "";
+  const toolCalls: any[] = [];
+  for (const b of blocks) {
+    if (!b) continue;
+    if (typeof b === "string") text += b;
+    else if (b.type === "text" && typeof b.text === "string") text += b.text;
+    else if ((b.type === "thinking" || b.type === "redacted_thinking") && typeof b.thinking === "string") reasoning += b.thinking;
+    else if (b.type === "tool_use") {
+      toolCalls.push({
+        id: b.id,
+        type: "function",
+        function: {
+          name: b.name || "",
+          arguments: JSON.stringify(b.input ?? {}),
+        },
+      });
+    }
+  }
+
+  const stop = dataObj.stop_reason === "tool_use" || toolCalls.length
+    ? "tool_calls"
+    : dataObj.stop_reason === "max_tokens"
+      ? "length"
+      : "stop";
+
+  return {
+    ...dataObj,
+    id: dataObj.id || `chatcmpl_${crypto.randomUUID()}`,
+    object: "chat.completion",
+    created: dataObj.created || Math.floor(Date.now() / 1000),
+    model: dataObj.model || modelId,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: text,
+          ...(reasoning ? { reasoning_content: reasoning } : {}),
+          ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+        },
+        finish_reason: stop,
+      },
+    ],
+  };
 }
 
 /**
