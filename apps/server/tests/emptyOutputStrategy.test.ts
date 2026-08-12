@@ -183,11 +183,12 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("should NOT intervene mid-stream before streamResult is available", async () => {
+  it("should NOT intervene mid-stream before streamResult is available (live stream)", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
         isStream: true,
+        // not a fake stream — live SSE still flowing
         data: {
           choices: [
             {
@@ -203,6 +204,33 @@ describe("EmptyOutputStrategy Unit Tests", () => {
 
     const decision = await strategy.evaluate(context);
     expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("should intervene on completed empty fake streams without streamResult (Stage 1 path)", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        isStream: true,
+        isFakeStream: true,
+        fakeStreamText: "",
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
+        },
+      },
+      // Stage 1 early continuity has no streamResult yet
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("EmptyOutput");
+    expect(decision.modifiedBody.messages.at(-1).content).toContain("System Guard Note");
   });
 
   it("should NOT intervene when meaningful client output was already sent", async () => {
@@ -234,6 +262,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     const context = baseContext({
       responseData: {
         status: 200,
+        isStream: true,
         isFakeStream: true,
         fakeStreamText: "recovered answer from fake stream",
         data: {
@@ -298,7 +327,7 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
     expect(decision.strategyName).toBe("MaxTokensTruncation");
   });
 
-  it("MaxTokensTruncation defers when isStream without streamResult", async () => {
+  it("MaxTokensTruncation defers when live isStream without streamResult", async () => {
     const strategy = new MaxTokensTruncationStrategy();
     const decision = await strategy.evaluate(
       baseContext({
@@ -319,6 +348,32 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
       })
     );
     expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("MaxTokensTruncation still intervenes on completed fake streams without streamResult", async () => {
+    const strategy = new MaxTokensTruncationStrategy();
+    const decision = await strategy.evaluate(
+      baseContext({
+        responseData: {
+          status: 200,
+          isStream: true,
+          isFakeStream: true,
+          fakeStreamText: "partial...",
+          data: {
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "partial..." },
+                finish_reason: "length",
+              },
+            ],
+          },
+        },
+        accumulatedCompletionText: "partial...",
+      })
+    );
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("MaxTokensTruncation");
   });
 
   it("ReasoningExhaustion still intervenes on reasoning-only non-stream payloads", async () => {
@@ -348,7 +403,7 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
     expect(decision.strategyName).toBe("ReasoningExhaustion");
   });
 
-  it("ReasoningExhaustion defers when isStream without streamResult", async () => {
+  it("ReasoningExhaustion defers when live isStream without streamResult", async () => {
     const strategy = new ReasoningExhaustionStrategy();
     const decision = await strategy.evaluate(
       baseContext({

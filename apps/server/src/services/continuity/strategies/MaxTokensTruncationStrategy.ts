@@ -12,7 +12,8 @@ export class MaxTokensTruncationStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    if (responseData?.isStream && !streamResult) {
+    // Defer only for live native streams mid-flight. Fake streams have a complete payload.
+    if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
       return { shouldIntervene: false };
     }
 

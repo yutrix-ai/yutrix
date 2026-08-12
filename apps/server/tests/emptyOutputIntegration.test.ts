@@ -318,4 +318,119 @@ describe("Empty Output Auto-Continuation Integration", () => {
     // Initial call + 2 retries (maxRetries = 2) = 3 total attempts
     expect(callCount).toBe(3);
   });
+
+  it("stream=true recovers via Stage 1 when upstream returns empty JSON (fake-stream) then valid content", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const receivedBodies: any[] = [];
+
+    // Use real Response objects: stream+JSON path reads body via response.text().
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      callCount++;
+      const body = JSON.parse(init.body);
+      receivedBodies.push(body);
+
+      // Upstream returns application/json even when client requested stream
+      // (gateway wraps it as a fake SSE stream).
+      if (callCount === 1) {
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-empty-stream-1",
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: "gemini-3.6-flash",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 50, completion_tokens: 0, total_tokens: 50 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: "chatcmpl-success-stream-2",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "gemini-3.6-flash",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "export const getRecordList = () => {}" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 70, completion_tokens: 25, total_tokens: 95 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "Generate API code" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(2);
+    expect(receivedBodies[1].messages.length).toBe(2);
+    expect(receivedBodies[1].messages[1].content).toContain("System Guard Note");
+
+    // Client SSE should carry recovered content and a single terminal stop/[DONE]
+    // without a premature empty terminal completion from turn 1.
+    const lines = res.body.split("\n").filter((l) => l.startsWith("data: "));
+    let text = "";
+    let finishReasons: (string | null)[] = [];
+    let doneFound = false;
+    let emptyStopBeforeContent = false;
+    let sawContent = false;
+
+    for (const line of lines) {
+      const payload = line.replace("data: ", "").trim();
+      if (payload === "[DONE]") {
+        doneFound = true;
+        continue;
+      }
+      let chunk: any;
+      try {
+        chunk = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      const deltaContent = chunk.choices?.[0]?.delta?.content;
+      if (typeof deltaContent === "string" && deltaContent.length > 0) {
+        text += deltaContent;
+        sawContent = true;
+      }
+      const fr = chunk.choices?.[0]?.finish_reason;
+      if (fr) {
+        finishReasons.push(fr);
+        if (!sawContent && fr === "stop") {
+          emptyStopBeforeContent = true;
+        }
+      }
+    }
+
+    expect(text).toBe("export const getRecordList = () => {}");
+    expect(finishReasons.at(-1)).toBe("stop");
+    expect(doneFound).toBe(true);
+    expect(emptyStopBeforeContent).toBe(false);
+  });
 });

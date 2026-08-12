@@ -46,9 +46,11 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    // For any streaming response (native stream or fake stream),
-    // do not trigger empty output intervention before stream chunks finish flowing (streamResult).
-    if (responseData?.isStream && !streamResult) {
+    // Defer only for live native streams that have not finished yet.
+    // Fake streams already wrap a complete JSON payload (isFakeStream=true) and are
+    // evaluated in Stage 1 early continuity BEFORE any SSE (including empty stop/[DONE])
+    // is forwarded to the client — treating them as incomplete would skip auto-continue.
+    if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
       return { shouldIntervene: false };
     }
 

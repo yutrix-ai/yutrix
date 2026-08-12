@@ -7,7 +7,8 @@ export class ReasoningExhaustionStrategy implements ContinuityStrategy {
   async evaluate(context: ContinuityContext): Promise<ContinuityDecision> {
     const { responseData, originalBody, accumulatedCompletionText, streamResult } = context;
 
-    if (responseData?.isStream && !streamResult) {
+    // Defer only for live native streams mid-flight. Fake streams have a complete payload.
+    if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
       return { shouldIntervene: false };
     }
 
