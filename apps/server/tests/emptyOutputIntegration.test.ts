@@ -433,4 +433,160 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(doneFound).toBe(true);
     expect(emptyStopBeforeContent).toBe(false);
   });
+
+  it("stream=true holds empty native SSE stop/[DONE] and recovers visible content on retry", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const receivedBodies: any[] = [];
+
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      callCount++;
+      receivedBodies.push(JSON.parse(init.body));
+
+      if (callCount === 1) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: {"usage":{"prompt_tokens":539,"completion_tokens":2,"total_tokens":541}}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"你好，我是数字员工助手。"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "请介绍自己" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(2);
+    expect(receivedBodies[1].messages.at(-1).content).toContain("System Guard Note");
+
+    const lines = res.body.split("\n").filter((l) => l.startsWith("data: "));
+    let text = "";
+    let emptyStopBeforeContent = false;
+    let sawContent = false;
+    let doneCount = 0;
+    for (const line of lines) {
+      const payload = line.replace("data: ", "").trim();
+      if (payload === "[DONE]") {
+        doneCount++;
+        continue;
+      }
+      let chunk: any;
+      try {
+        chunk = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      const deltaContent = chunk.choices?.[0]?.delta?.content;
+      if (typeof deltaContent === "string" && deltaContent.length > 0) {
+        text += deltaContent;
+        sawContent = true;
+      }
+      if (chunk.choices?.[0]?.finish_reason === "stop" && !sawContent) {
+        emptyStopBeforeContent = true;
+      }
+    }
+
+    expect(text).toBe("你好，我是数字员工助手。");
+    expect(emptyStopBeforeContent).toBe(false);
+    expect(doneCount).toBe(1);
+  });
+
+  it("stream=true holds reasoning-only native SSE and recovers visible content on retry", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      callCount++;
+      if (callCount === 1) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"reasoning_content":"ok"}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"content":"我是助手。"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "请介绍自己" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(2);
+
+    const lines = res.body.split("\n").filter((l) => l.startsWith("data: "));
+    let text = "";
+    let emptyStopBeforeContent = false;
+    let sawContent = false;
+    for (const line of lines) {
+      const payload = line.replace("data: ", "").trim();
+      if (payload === "[DONE]") continue;
+      let chunk: any;
+      try {
+        chunk = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      const deltaContent = chunk.choices?.[0]?.delta?.content;
+      if (typeof deltaContent === "string" && deltaContent.length > 0) {
+        text += deltaContent;
+        sawContent = true;
+      }
+      if (chunk.choices?.[0]?.finish_reason === "stop" && !sawContent) {
+        emptyStopBeforeContent = true;
+      }
+    }
+
+    expect(text).toBe("我是助手。");
+    expect(emptyStopBeforeContent).toBe(false);
+  });
 });

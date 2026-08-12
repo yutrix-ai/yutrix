@@ -54,8 +54,12 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    // If stream already sent meaningful output to client or resulted in a terminal error, do not intervene.
-    if (streamResult?.meaningfulClientOutputSent || streamResult?.terminalError) {
+    // Do not retry if visible answer/tool output already went to the client, or on terminal errors.
+    // Reasoning-only streams set meaningfulClientOutputSent but not visibleClientOutputSent —
+    // OpenCode/agents ignore reasoning_content, so those must still auto-continue.
+    const visibleAlreadySent = streamResult?.visibleClientOutputSent === true
+      || (streamResult?.visibleClientOutputSent !== false && streamResult?.meaningfulClientOutputSent === true && streamResult?.visibleClientOutputSent === undefined);
+    if (visibleAlreadySent || streamResult?.terminalError) {
       return { shouldIntervene: false };
     }
 

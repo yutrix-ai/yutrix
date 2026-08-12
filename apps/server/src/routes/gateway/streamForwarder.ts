@@ -174,6 +174,61 @@ export function hasMeaningfulOutputEvent(chunk: string, protocol: string | undef
   return false;
 }
 
+/** Visible answer/tool payload only — reasoning/thought does not count (OpenCode ignores it). */
+export function hasVisibleAnswerEvent(chunk: string, protocol: string | undefined): boolean {
+  if (!chunk) return false;
+
+  const lines = chunk.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+
+    const dataContent = trimmed.substring(5).trim();
+    if (dataContent === "[DONE]") continue;
+
+    try {
+      const parsed = JSON.parse(dataContent);
+      if (!parsed) continue;
+
+      if (protocol === "anthropic") {
+        if (parsed.type === "content_block_delta" && parsed.delta) {
+          const delta = parsed.delta;
+          if (delta.type === "text_delta" && typeof delta.text === "string" && delta.text.length > 0) {
+            return true;
+          }
+          if (delta.type === "input_json_delta" && delta.partial_json) {
+            return true;
+          }
+        }
+        if (parsed.type === "content_block_start" && parsed.content_block) {
+          const block = parsed.content_block;
+          if (block.type === "text" && block.text && block.text.length > 0) {
+            return true;
+          }
+          if (block.type === "tool_use") {
+            return true;
+          }
+        }
+      } else if (parsed.choices && Array.isArray(parsed.choices)) {
+        for (const choice of parsed.choices) {
+          const delta = choice.delta;
+          if (!delta) continue;
+          if (typeof delta.content === "string" && delta.content.length > 0) {
+            return true;
+          }
+          if (delta.tool_calls && Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // Non-JSON or corrupt payload
+    }
+  }
+
+  return false;
+}
+
 function createDownstreamWriter(
   reply: FastifyReply,
   protocol: string | undefined,
@@ -294,8 +349,10 @@ export interface TransparentForwardResult {
   terminalEventSent?: boolean;
   /** The terminal error if the stream ended with one. */
   terminalError?: any;
-  /** True if actual content or tool calls have been sent downstream */
+  /** True if actual content, reasoning, or tool calls have been sent downstream */
   meaningfulClientOutputSent: boolean;
+  /** True if visible answer text or tool calls were sent (excludes reasoning-only). */
+  visibleClientOutputSent?: boolean;
 }
 
 /**
@@ -365,7 +422,9 @@ export async function forwardSSEStreamTransparent(
   let streamTimeoutId: NodeJS.Timeout | undefined;
   const translatorState: TranslatorState = {};
   let hadLengthCutoff = false;
+  let hadEmptyVisibleOutput = false;
   let meaningfulClientOutputSent = false;
+  let visibleClientOutputSent = false;
   let streamHadDoneEvent = false;
   let pendingUsageEvents: string[] = [];
 
@@ -384,6 +443,9 @@ export async function forwardSSEStreamTransparent(
     if (success && chunk) {
       if (hasMeaningfulOutputEvent(chunk, incomingProtocol)) {
         meaningfulClientOutputSent = true;
+      }
+      if (hasVisibleAnswerEvent(chunk, incomingProtocol)) {
+        visibleClientOutputSent = true;
       }
     }
     return success;
@@ -466,7 +528,7 @@ export async function forwardSSEStreamTransparent(
 
         if (dataText === "[DONE]") {
           eventIsDone = true;
-          if (!isTransparentNoStitch || hadLengthCutoff) {
+          if (!isTransparentNoStitch || hadLengthCutoff || hadEmptyVisibleOutput) {
             skipThisLine = true;
             skippedDoneLine = true;
           }
@@ -488,12 +550,16 @@ export async function forwardSSEStreamTransparent(
               eventHasChoices = true;
               const delta = dataCopy.choices[0].delta;
               if (delta) {
-                if (delta.content && delta.content.length > 0) eventHasSemanticContent = true;
+                if (delta.content && delta.content.length > 0) {
+                  eventHasSemanticContent = true;
+                  visibleClientOutputSent = true;
+                }
                 if (delta.reasoning_content && delta.reasoning_content.length > 0) eventHasSemanticContent = true;
                 if (delta.tool_calls && delta.tool_calls.length > 0) {
                   for (const tc of delta.tool_calls) {
                     if (tc.function && (tc.function.name || tc.function.arguments)) {
                       eventHasSemanticContent = true;
+                      visibleClientOutputSent = true;
                     }
                   }
                 }
@@ -504,6 +570,11 @@ export async function forwardSSEStreamTransparent(
             }
             if (dataCopy?.choices?.[0]?.finish_reason === "length") {
               isLengthCutoff = true;
+            } else if (
+              (dataCopy?.choices?.[0]?.finish_reason === "stop" || dataCopy?.choices?.[0]?.finish_reason === "end_turn")
+              && !visibleClientOutputSent
+            ) {
+              hadEmptyVisibleOutput = true;
             } else if (dataCopy?.type === "message_delta" && dataCopy?.delta?.stop_reason === "max_tokens" && sourceProtocol === "anthropic") {
               logAction?.({
                 ...(baseActionLog || {}),
@@ -634,7 +705,7 @@ export async function forwardSSEStreamTransparent(
 
         await reader.cancel().catch(() => {});
         observer?.onStreamEnd?.();
-        return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: adapterState?.terminalError, meaningfulClientOutputSent };
+        return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: adapterState?.terminalError, meaningfulClientOutputSent, visibleClientOutputSent };
       }
 
       // already determined before while loop
@@ -649,8 +720,12 @@ export async function forwardSSEStreamTransparent(
          }
       }
 
-      if (hadLengthCutoff) {
-         // Drop everything if it's DONE or usage only
+      if (hadEmptyVisibleOutput && (eventChunkFinishReason === "stop" || eventChunkFinishReason === "end_turn") && !visibleClientOutputSent) {
+         shouldSkipWrite = true;
+      }
+
+      if (hadLengthCutoff || hadEmptyVisibleOutput) {
+         // Drop everything if it's DONE or usage only (or empty stop held for EmptyOutput)
          if (eventIsDone || (eventHasUsage && !eventHasSemanticContent && !eventChunkFinishReason)) {
            shouldSkipWrite = true;
          }
@@ -699,7 +774,7 @@ export async function forwardSSEStreamTransparent(
 
         if (done) {
       // Flush any pending usage events that were held waiting for a potential length cutoff
-      if (!hadLengthCutoff && pendingUsageEvents.length > 0) {
+      if (!hadLengthCutoff && !hadEmptyVisibleOutput && pendingUsageEvents.length > 0) {
         for (const ev of pendingUsageEvents) {
           if (isTransparentNoStitch) {
             downstream.write(ev);
@@ -757,14 +832,14 @@ export async function forwardSSEStreamTransparent(
     }
 
     observer?.onStreamEnd?.();
-    return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: classified, meaningfulClientOutputSent };
+    return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: classified, meaningfulClientOutputSent, visibleClientOutputSent };
   } finally {
     downstream.stop();
   }
 
   observer?.onStreamEnd?.();
 
-  return { gotFirstChunk, isLengthTruncated: hadLengthCutoff, lastToolCallState: stitchState, meaningfulClientOutputSent };
+  return { gotFirstChunk, isLengthTruncated: hadLengthCutoff, lastToolCallState: stitchState, meaningfulClientOutputSent, visibleClientOutputSent };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

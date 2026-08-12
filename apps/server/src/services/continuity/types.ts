@@ -11,6 +11,8 @@ export interface ContinuityContext {
     lastToolCallState?: any;
     /** True when client already received meaningful stream content (blocks empty-output retry). */
     meaningfulClientOutputSent?: boolean;
+    /** Visible answer text or tool calls were sent (excludes reasoning-only). */
+    visibleClientOutputSent?: boolean;
     /** Terminal stream error from forwarder/adapters (blocks empty-output retry). */
     terminalError?: any;
     terminalEventSent?: boolean;

@@ -48,6 +48,7 @@ export interface StreamForwardResult {
   closingSentinel?: string;
   terminalEventSent?: boolean;
   meaningfulClientOutputSent?: boolean;
+  visibleClientOutputSent?: boolean;
   /** Terminal error detected by provider adapter during stream observation. */
   terminalError?: StreamTerminalError;
   anthropicState?: any;
@@ -333,6 +334,7 @@ export async function forwardStream(
   let closingSentinel: string | undefined;
   let terminalEventSent = false;
   let meaningfulClientOutputSent = false;
+  let visibleClientOutputSent = false;
 
   const translatorContext: TranslatorContext = {
     modelId: currentAttempt.modelId,
@@ -369,6 +371,7 @@ export async function forwardStream(
     closingSentinel = result.closingSentinel;
     terminalEventSent = result.terminalEventSent || false;
     meaningfulClientOutputSent = result.meaningfulClientOutputSent || false;
+    visibleClientOutputSent = result.visibleClientOutputSent || false;
     anthropicState = (result as any).anthropicState;
   } else {
     // ─── Same-protocol path ───
@@ -396,6 +399,7 @@ export async function forwardStream(
     closingSentinel = result.closingSentinel;
     terminalEventSent = result.terminalEventSent || false;
     meaningfulClientOutputSent = result.meaningfulClientOutputSent || false;
+    visibleClientOutputSent = result.visibleClientOutputSent || false;
   }
 
   // ─── Post-stream processing ───
@@ -437,6 +441,7 @@ export async function forwardStream(
     closingSentinel,
     terminalEventSent,
     meaningfulClientOutputSent,
+    visibleClientOutputSent,
     terminalError: ctx.activeProviderAdapterState?.terminalError || undefined,
     anthropicState: anthropicState,
   };

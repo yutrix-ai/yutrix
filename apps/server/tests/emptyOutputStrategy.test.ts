@@ -233,7 +233,33 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.modifiedBody.messages.at(-1).content).toContain("System Guard Note");
   });
 
-  it("should NOT intervene when meaningful client output was already sent", async () => {
+  it("should NOT intervene when visible client output was already sent", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        isStream: true,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        },
+      },
+      streamResult: {
+        isLengthTruncated: false,
+        visibleClientOutputSent: true,
+        meaningfulClientOutputSent: true,
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("should intervene after reasoning-only stream (no visible answer for OpenCode)", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -251,11 +277,14 @@ describe("EmptyOutputStrategy Unit Tests", () => {
       streamResult: {
         isLengthTruncated: false,
         meaningfulClientOutputSent: true,
-      } as any,
+        visibleClientOutputSent: false,
+      },
+      accumulatedCompletionText: "",
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(false);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("EmptyOutput");
   });
 
   it("should NOT intervene when fakeStreamText carries non-empty content", async () => {
