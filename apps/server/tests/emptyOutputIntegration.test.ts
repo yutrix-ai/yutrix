@@ -523,6 +523,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.statusCode).toBe(200);
     expect(callCount).toBe(1);
     expect(res.body).toContain("reasoning_content");
+    expect(res.body).toContain("\"content\":\"ok\"");
     expect(res.body).toContain("[DONE]");
   });
 

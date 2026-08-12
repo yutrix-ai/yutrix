@@ -426,6 +426,27 @@ export async function forwardSSEStreamTransparent(
   let visibleClientOutputSent = false;
   let streamHadDoneEvent = false;
   let pendingUsageEvents: string[] = [];
+  let reasoningForOpenAIClient = "";
+  let lastOpenAIChunkMeta: { id: string; created: number; model: string } = {
+    id: `chatcmpl_${crypto.randomUUID()}`,
+    created: Math.floor(Date.now() / 1000),
+    model: "",
+  };
+
+  const promoteReasoningToVisibleContent = () => {
+    if (incomingProtocol === "anthropic") return;
+    if (visibleClientOutputSent || !reasoningForOpenAIClient) return;
+    downstream.write(`data: ${JSON.stringify({
+      id: lastOpenAIChunkMeta.id,
+      object: "chat.completion.chunk",
+      created: lastOpenAIChunkMeta.created,
+      model: lastOpenAIChunkMeta.model,
+      choices: [{ index: 0, delta: { content: reasoningForOpenAIClient }, finish_reason: null }],
+    })}\n\n`);
+    visibleClientOutputSent = true;
+    meaningfulClientOutputSent = true;
+    reasoningForOpenAIClient = "";
+  };
 
   const isTransparentNoStitch = (!stitchState?.isStitching && incomingProtocol === (sourceProtocol || "openai") && (!adapter || adapter.id === "transparent"));
 
@@ -527,6 +548,7 @@ export async function forwardSSEStreamTransparent(
 
         if (dataText === "[DONE]") {
           eventIsDone = true;
+          promoteReasoningToVisibleContent();
           if (!isTransparentNoStitch || hadLengthCutoff) {
             skipThisLine = true;
             skippedDoneLine = true;
@@ -545,6 +567,9 @@ export async function forwardSSEStreamTransparent(
              if (dataCopy.usage && dataCopy.type !== "message_delta") {
                eventHasUsage = true;
              }
+            if (dataCopy.id) lastOpenAIChunkMeta.id = dataCopy.id;
+            if (typeof dataCopy.created === "number") lastOpenAIChunkMeta.created = dataCopy.created;
+            if (typeof dataCopy.model === "string") lastOpenAIChunkMeta.model = dataCopy.model;
             if (dataCopy.choices && dataCopy.choices.length > 0) {
               eventHasChoices = true;
               const delta = dataCopy.choices[0].delta;
@@ -553,7 +578,13 @@ export async function forwardSSEStreamTransparent(
                   eventHasSemanticContent = true;
                   visibleClientOutputSent = true;
                 }
-                if (delta.reasoning_content && delta.reasoning_content.length > 0) eventHasSemanticContent = true;
+                if (delta.reasoning_content && delta.reasoning_content.length > 0) {
+                  eventHasSemanticContent = true;
+                  reasoningForOpenAIClient += delta.reasoning_content;
+                } else if (delta.reasoning && delta.reasoning.length > 0) {
+                  eventHasSemanticContent = true;
+                  reasoningForOpenAIClient += delta.reasoning;
+                }
                 if (delta.tool_calls && delta.tool_calls.length > 0) {
                   for (const tc of delta.tool_calls) {
                     if (tc.function && (tc.function.name || tc.function.arguments)) {
@@ -569,6 +600,13 @@ export async function forwardSSEStreamTransparent(
             }
             if (dataCopy?.choices?.[0]?.finish_reason === "length") {
               isLengthCutoff = true;
+            }
+            if (
+              (dataCopy?.choices?.[0]?.finish_reason === "stop"
+                || dataCopy?.choices?.[0]?.finish_reason === "end_turn")
+              && !visibleClientOutputSent
+            ) {
+              promoteReasoningToVisibleContent();
             } else if (dataCopy?.type === "message_delta" && dataCopy?.delta?.stop_reason === "max_tokens" && sourceProtocol === "anthropic") {
               logAction?.({
                 ...(baseActionLog || {}),

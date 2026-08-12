@@ -1120,6 +1120,12 @@ export function createFakeStreamFromData(dataObj: any, modelId: string, effectiv
       mainContent = mainContent.slice(fakeStreamPolicy.skipTextLength);
     }
 
+    // OpenCode ignores reasoning_content. If the model (e.g. GLM-5) only
+    // returned thought tokens, surface them as visible content.
+    if (!mainContent && (reasoningContent || reasoning)) {
+      mainContent = reasoningContent || reasoning;
+    }
+
     if (mainContent || !chunks.length) {
       chunks.push({
         id,

@@ -53,4 +53,25 @@ describe("OpenAI fake-stream protocol (regression: type=message must not blank O
     expect(sse).not.toMatch(/event:\s*message_start/);
     expect(sse).toContain("你好，我是助手。");
   });
+
+  it("surfaces reasoning-only JSON as visible OpenAI content (GLM-5 / OpenCode)", async () => {
+    const data = {
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: "",
+            reasoning_content: "我是阿里云上的 GLM-5 助手。",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 519, completion_tokens: 152, total_tokens: 671 },
+    };
+    const { fakeStream, textToEmit } = createFakeStreamFromData(data, "glm-5", "openai");
+    expect(textToEmit).toBe("我是阿里云上的 GLM-5 助手。");
+    const sse = await readStreamText(fakeStream);
+    expect(sse).toContain("\"content\":\"我是阿里云上的 GLM-5 助手。\"");
+  });
 });
