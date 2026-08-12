@@ -9,6 +9,11 @@ export interface ContinuityContext {
   streamResult?: {
     isLengthTruncated: boolean;
     lastToolCallState?: any;
+    /** True when client already received meaningful stream content (blocks empty-output retry). */
+    meaningfulClientOutputSent?: boolean;
+    /** Terminal stream error from forwarder/adapters (blocks empty-output retry). */
+    terminalError?: any;
+    terminalEventSent?: boolean;
   };
   accumulatedCompletionText: string;
   baseActionLog: any;
