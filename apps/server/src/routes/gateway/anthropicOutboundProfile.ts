@@ -4,11 +4,6 @@ export interface AnthropicOutboundSurface {
   rawBaseUrl?: string;
 }
 
-const ANTIGRAVITY_MODEL_ALIASES: Record<string, string> = {
-  "gemini-3.1-pro-high": "gemini-pro-agent",
-  "gemini-3.6-flash-tiered": "gemini-3.6-flash-high",
-};
-
 function hostFromSurface(surface?: AnthropicOutboundSurface | null): string {
   if (!surface) return "";
   if (surface.hostname && surface.hostname.trim()) {
@@ -41,14 +36,6 @@ export function isFirstPartyAnthropicSurface(
     return true;
   }
   return false;
-}
-
-export function remapAntigravityCompatibleModelId(
-  modelId: string | null | undefined,
-): string {
-  if (!modelId) return modelId || "";
-  const mapped = ANTIGRAVITY_MODEL_ALIASES[modelId.trim()];
-  return mapped || modelId;
 }
 
 function thinkingText(block: any): string {
@@ -158,6 +145,6 @@ export function applyAnthropicCompatibleOutbound(
     return body;
   }
   const next = normalizeCompatibleAnthropicBody(body);
-  next.model = remapAntigravityCompatibleModelId(modelId || next.model);
+  if (modelId) next.model = modelId;
   return next;
 }

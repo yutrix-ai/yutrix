@@ -183,8 +183,8 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
     expect(Array.isArray(finalBody.messages[0].content)).toBe(true);
   });
 
-  it("remaps Antigravity aliases only on the compatible surface", () => {
-    const high = adaptAnthropicToAnthropic(
+  it("does not rewrite model ids; that stays in provider/route config", () => {
+    const compatible = adaptAnthropicToAnthropic(
       claudeCodeBody("gemini-3.1-pro-high"),
       {
         hostname: "10.8.0.200",
@@ -193,7 +193,7 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
       },
       "gemini-3.1-pro-high",
     );
-    expect(high.finalBody.model).toBe("gemini-pro-agent");
+    expect(compatible.finalBody.model).toBe("gemini-3.1-pro-high");
 
     const tiered = adaptAnthropicToAnthropic(
       claudeCodeBody("gemini-3.6-flash-tiered"),
@@ -204,14 +204,7 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
       },
       "gemini-3.6-flash-tiered",
     );
-    expect(tiered.finalBody.model).toBe("gemini-3.6-flash-high");
-
-    const official = adaptAnthropicToAnthropic(
-      claudeCodeBody("gemini-3.1-pro-high"),
-      { hostname: "api.anthropic.com", rawBaseUrl: "https://api.anthropic.com" },
-      "gemini-3.1-pro-high",
-    );
-    expect(official.finalBody.model).toBe("gemini-3.1-pro-high");
+    expect(tiered.finalBody.model).toBe("gemini-3.6-flash-tiered");
   });
 
   it("does not rewrite generic OpenAI model ids on the OpenAI adapt path", () => {
