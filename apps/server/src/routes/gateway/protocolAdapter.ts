@@ -4,6 +4,10 @@ import {
   normalizeImageBlock,
   normalizeOpenAIContentParts,
 } from "../../utils/multimodal";
+import {
+  applyAnthropicCompatibleOutbound,
+  type AnthropicOutboundSurface,
+} from "./anthropicOutboundProfile";
 
 const RESPONSE_ONLY_MESSAGE_FIELDS = [
   "reasoning_content",
@@ -170,7 +174,8 @@ export function adaptRequestProtocol(
   modelId: string,
   baseActionLog: any,
   logAction: Function,
-  requestPolicy?: any
+  requestPolicy?: any,
+  outbound?: AnthropicOutboundSurface,
 ): { finalBody: any; logInfo: NormalizedLogInfo } {
   const logInfo: NormalizedLogInfo = {
     detected: false,
@@ -424,6 +429,14 @@ export function adaptRequestProtocol(
 
   if (finalBody && typeof finalBody === "object" && modelId) {
     finalBody.model = modelId;
+  }
+
+  if (incomingProtocol === "anthropic" && isAnthropicUpstream) {
+    finalBody = applyAnthropicCompatibleOutbound(
+      finalBody,
+      outbound,
+      (finalBody && finalBody.model) || modelId,
+    );
   }
 
   return { finalBody, logInfo };

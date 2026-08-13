@@ -1128,6 +1128,11 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               { ...baseActionLog, providerName: provider.name },
               logAction,
               requestPolicy,
+              {
+                hostname: urlNorm?.hostname,
+                pathname: urlNorm?.pathname,
+                rawBaseUrl: baseUrl,
+              },
             );
 
             if (adapter?.adaptRequestBody) {
