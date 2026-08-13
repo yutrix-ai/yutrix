@@ -26,7 +26,7 @@ import { enforceInputTokenLimit } from "./inputTokenLimitGuard";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTokenLimit } from "./inputTokenLimit";
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
-import { looksLikeContinuationRequestRaw } from "../../utils/chatTurnsDetector";
+import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
 import { buildUpstreamRequestDiagnostic } from "./diagnostics";
@@ -480,7 +480,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             if (!strategyRoutingChecked && !currentAttempt.isFallback) {
               strategyRoutingChecked = true;
               try {
-                const isContinuation = looksLikeContinuationRequestRaw(body);
+                const requestClass = classifyGatewayRequestClass(body);
+                const isContinuation = requestClass.requestClass === "tool_continuation";
                 let previousModelId: string | null = null;
                 if (isContinuation) {
                   const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string | undefined;
@@ -497,7 +498,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
                 if (
                   strategyDecision?.applied ||
-                  (strategyDecision?.skipReason && !["already_on_target", "no_matching_rule"].includes(strategyDecision.skipReason))
+                  (strategyDecision?.skipReason && !["already_on_target", "no_matching_rule", "client_sidecar", "client_named_small_model"].includes(strategyDecision.skipReason))
                 ) {
                   logAction({
                     ...baseActionLog,
@@ -512,6 +513,9 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 }
 
                 if (strategyDecision?.applied && strategyDecision.newAttempt) {
+                  if (
+                    shouldRecordStrategyRoutingHop(currentAttempt, strategyDecision.newAttempt)
+                  ) {
                      ctx.routingTrace.push({
                        fromProviderId: currentAttempt.providerId,
                        fromModelId: currentAttempt.modelId,
@@ -523,6 +527,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                        latencyMs: 0,
                        createdAt: new Date().toISOString(),
                      });
+                  }
                   strategyDecisionApplied = true;
                   currentAttempt = {
                     ...strategyDecision.newAttempt,
@@ -564,7 +569,11 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             activeModelConfig = modelConfigList.length > 0 ? modelConfigList[0] : null;
             ctx.activeModelConfig = activeModelConfig;
 
-            ctx.routingRequirements = await computeRoutingRequirements(body, activeModelConfig, looksLikeContinuationRequestRaw(body));
+            ctx.routingRequirements = await computeRoutingRequirements(
+              body,
+              activeModelConfig,
+              classifyGatewayRequestClass(body).requestClass === "tool_continuation",
+            );
 
             const contextBudget = resolveModelContextWindow(activeModelConfig);
             if (

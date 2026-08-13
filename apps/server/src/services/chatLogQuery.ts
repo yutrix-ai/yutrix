@@ -13,6 +13,10 @@ import {
 } from "../utils/chatTurns";
 import { extractTextFromContent } from "../utils/chatText";
 import { ChatLogPayload, SessionMatch } from "./chatLogTypes";
+import {
+  selectStickyModelFromLogRows,
+  selectStickyTurnFromLogRows,
+} from "./requestRoutingClass";
 
 type MergeStrategy = {
   priority: number;
@@ -528,13 +532,13 @@ export async function getStickyModelForContinuation(
   if (!match || !match.serverSessionId) return null;
 
   const rows = await db
-    .select({ model: chatLogs.model })
+    .select({ model: chatLogs.model, inputText: chatLogs.inputText })
     .from(chatLogs)
     .where(eq(chatLogs.serverSessionId, match.serverSessionId))
     .orderBy(desc(chatLogs.turnId), desc(chatLogs.createdAt))
-    .limit(1);
+    .limit(40);
 
-  return rows.length > 0 ? rows[0].model : null;
+  return selectStickyModelFromLogRows(rows);
 }
 
 export async function getStickyTurnForContinuation(
@@ -560,7 +564,7 @@ export async function getStickyTurnForContinuation(
     .from(chatLogs)
     .where(eq(chatLogs.serverSessionId, match.serverSessionId))
     .orderBy(desc(chatLogs.turnId), desc(chatLogs.createdAt))
-    .limit(1);
+    .limit(40);
 
-  return rows.length > 0 ? { model: rows[0].model || "", inputText: rows[0].inputText || "" } : null;
+  return selectStickyTurnFromLogRows(rows);
 }

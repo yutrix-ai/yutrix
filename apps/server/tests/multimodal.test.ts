@@ -17,6 +17,8 @@ import {
   normalizeChatLogTurn,
   normalizeAssistantResponseToComparableText,
   looksLikeContinuationRequest,
+  looksLikeClientSidecarText,
+  looksLikeClientSidecarRequestRaw,
   detectAIClient,
   extractTitleRequestSubjectText,
   extractEmbeddedTaskPromptText,
@@ -789,6 +791,58 @@ describe("continuation request detection", () => {
   it("null/empty input is NOT detected as continuation", () => {
     expect(looksLikeContinuationRequest(null)).toBe(false);
     expect(looksLikeContinuationRequest("")).toBe(false);
+  });
+});
+
+const SIDECAR_STAGE1 =
+  "Stage 1 does NOT apply user intent or ALLOW exceptions — stage 2 will handle those.\n" +
+  "Respond with <severity>N</severity> ONLY. Grade HARM ONLY — do NOT reduce for user intent. No other text.";
+
+describe("client sidecar detection", () => {
+  it("detects a harm-classifier envelope regardless of protocol wrapper", () => {
+    const embedded =
+      "AttributeError: 'NoneType' object has no attribute 'review_pass'\n" +
+      SIDECAR_STAGE1;
+    expect(looksLikeClientSidecarText(embedded)).toBe(true);
+
+    const anthropicBody = {
+      model: "claude-sonnet",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "<transcript>\nAttributeError: boom\n</transcript>\n" + SIDECAR_STAGE1 },
+        ],
+      }],
+    };
+    const openaiBody = {
+      model: "gpt-4o",
+      messages: [{
+        role: "user",
+        content: "<transcript>\nAttributeError: boom\n</transcript>\n" + SIDECAR_STAGE1,
+      }],
+    };
+    expect(looksLikeClientSidecarRequestRaw(anthropicBody)).toBe(true);
+    expect(looksLikeClientSidecarRequestRaw(openaiBody)).toBe(true);
+  });
+
+  it("does not treat a real debug paste as a sidecar", () => {
+    expect(looksLikeClientSidecarText(
+      "AttributeError: 'NoneType' object has no attribute 'review_pass'\n为什么模型这么笨，调用工具都能出错",
+    )).toBe(false);
+    expect(looksLikeClientSidecarRequestRaw({
+      messages: [{ role: "user", content: "接口报错了，帮我排查一下" }],
+    })).toBe(false);
+  });
+
+  it("does not treat a transcript review request as a sidecar", () => {
+    expect(looksLikeClientSidecarText(
+      "review this transcript and build a parser for AttributeError stacks",
+    )).toBe(false);
+  });
+
+  it("still finds the envelope after a long prefix (markers sit at the end)", () => {
+    const huge = "AttributeError: fail\n".repeat(2000) + SIDECAR_STAGE1;
+    expect(looksLikeClientSidecarText(huge)).toBe(true);
   });
 });
 

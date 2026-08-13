@@ -2,6 +2,69 @@ import { extractTextFromContent } from "./chatText";
 import { looksLikeTitleGenerationText, tryParseJson } from "./chatTurnsUtils";
 import { getMessagesFromParsedRequest, selectCurrentInputMessages } from "./chatTurnsFormatter";
 
+/**
+ * Client sidecar envelopes are application-level (Claude Code Stage 1, future
+ * Cursor/Codex permission checks, etc.). They are not Anthropic/OpenAI wire
+ * protocol. Strategy routing must not classify embedded user/tool text inside
+ * them, and sticky model lookup must not treat them as the previous turn.
+ *
+ * Require both a severity-only output contract and a harm-classifier frame so
+ * a real user asking to "review this transcript" is not swallowed.
+ */
+const CLIENT_SIDECAR_SEVERITY_DIRECTIVE = /respond with\s*<severity\b/i;
+const CLIENT_SIDECAR_SEVERITY_TAG = /<\s*severity\s*>\s*n\s*<\s*\/\s*severity\s*>/i;
+const CLIENT_SIDECAR_HARM_FRAME =
+  /grade harm only|stage 1 does not apply user intent|do not apply user intent or allow exceptions/i;
+
+export function looksLikeClientSidecarText(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const hasDirective =
+    CLIENT_SIDECAR_SEVERITY_DIRECTIVE.test(text) ||
+    CLIENT_SIDECAR_SEVERITY_TAG.test(text);
+  if (!hasDirective) return false;
+  return CLIENT_SIDECAR_HARM_FRAME.test(text);
+}
+
+function collectMessageTexts(messages: any[]): string[] {
+  const texts: string[] = [];
+  for (const msg of messages) {
+    const content = msg?.content;
+    if (typeof content === "string") {
+      if (content.trim()) texts.push(content);
+      continue;
+    }
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (!block) continue;
+        if (typeof block === "string") {
+          if (block.trim()) texts.push(block);
+        } else if (block.type === "text" && typeof block.text === "string") {
+          if (block.text.trim()) texts.push(block.text);
+        }
+      }
+      continue;
+    }
+    const text = extractTextFromContent(content);
+    if (text) texts.push(text);
+  }
+  return texts;
+}
+
+export function looksLikeClientSidecarRequestRaw(body: any): boolean {
+  if (!body) return false;
+  if (typeof body === "string") return looksLikeClientSidecarText(body);
+
+  const messages = getMessagesFromParsedRequest(body);
+  const currentInput = selectCurrentInputMessages(messages);
+  const currentTexts = collectMessageTexts(currentInput.messages);
+  if (looksLikeClientSidecarText(currentTexts.join("\n"))) return true;
+
+  if (typeof body.prompt === "string" && looksLikeClientSidecarText(body.prompt)) {
+    return true;
+  }
+  return false;
+}
+
 function isAllowedContinuationTextBlock(text: string, cacheControlPresent: boolean): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return true;

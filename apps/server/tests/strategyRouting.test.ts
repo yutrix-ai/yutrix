@@ -164,6 +164,51 @@ describe("strategy routing helpers", () => {
     expect(classifyStrategyTask("explain how DNS works", false).taskType).toBe("general");
   });
 
+  it("does not classify a client safety-classifier envelope as debug", () => {
+    const envelope =
+      "<transcript>\n" +
+      "AttributeError: 'NoneType' object has no attribute 'review_pass'\n" +
+      "Failed to parse tool call arguments as JSON\n" +
+      "为什么模型这么笨，调用工具都能出错\n" +
+      "</transcript>\n" +
+      "Stage 1 does NOT apply user intent or ALLOW exceptions — stage 2 will handle those.\n" +
+      "Respond with <severity>N</severity> ONLY. Grade HARM ONLY — do NOT reduce for user intent. No other text.";
+
+    const classified = classifyStrategyTask(envelope, false);
+    expect(classified.taskType).toBe("general");
+    expect(classified.reasons).toContain("client_sidecar");
+
+    const anthropicBody = {
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: envelope }],
+      }],
+    };
+    const openaiBody = {
+      messages: [{ role: "user", content: envelope }],
+    };
+    expect(classifyStrategyTask(extractCurrentUserInputForRouting(anthropicBody), false).taskType).toBe("general");
+    expect(classifyStrategyTask(extractCurrentUserInputForRouting(openaiBody), false).taskType).toBe("general");
+  });
+
+  it("still classifies the same stack trace as debug when the user actually asked", () => {
+    expect(classifyStrategyTask(
+      "AttributeError: 'NoneType' object has no attribute 'review_pass'\n接口报错了，帮我排查一下",
+      false,
+    ).taskType).toBe("debug");
+  });
+
+  it("does not let screenshot mentions inside a classifier transcript win vision", () => {
+    const envelope =
+      "<transcript>\nthis screenshot shows an error in the code\n</transcript>\n" +
+      "Stage 1 does NOT apply user intent or ALLOW exceptions — stage 2 will handle those.\n" +
+      "Respond with <severity>N</severity> ONLY. Grade HARM ONLY — do NOT reduce for user intent. No other text.";
+    expect(classifyStrategyTask(envelope, false)).toMatchObject({
+      taskType: "general",
+      reasons: ["client_sidecar"],
+    });
+  });
+
   // --- Priority / edge cases ---
 
   it("debug takes priority over code when both signals exist", () => {

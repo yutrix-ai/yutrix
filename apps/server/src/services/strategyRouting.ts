@@ -3,10 +3,16 @@ import { db } from "../db";
 import { providerModels, providers } from "../db/schema";
 import {
   getMessagesFromParsedRequest,
+  looksLikeClientSidecarText,
   selectCurrentInputMessages,
   serializeContentForLog,
   serializeMessagesForLog,
 } from "../utils/chatTurns";
+import {
+  classifyGatewayRequestClass,
+  extractClientRequestedModel,
+  isClientNamedSmallFastModel,
+} from "./requestRoutingClass";
 import {
   resolveRouteProviderProtocol,
   type RouteProtocol,
@@ -322,24 +328,47 @@ export function classifyStrategyTask(
   const skipAgentic = !!options?.skipAgentic;
   const excludeLongContext = !!options?.excludeLongContext;
 
-  // --- 1. Vision: image input or vision-related keywords (O(1) pre-check, HIGHEST PRIORITY) ---
-  // Must be first! "宁可错杀也不要放过" — vision misrouting crashes non-vision models
+  // --- 1. Vision: actual image input first (misrouting crashes non-vision models) ---
+  if (!skipVision && hasCurrentImageInput) {
+    reasons.push("image_input");
+    return {
+      taskType: "vision",
+      reasons,
+      inputText: text,
+      hasImageInput: true,
+    };
+  }
+
+  // Client sidecar (safety classifier, permission gate, …): the embedded
+  // transcript often contains stack traces, but the *task* is only to emit a
+  // severity token. Markers can sit at the end of a huge payload, so scan the
+  // full text — not the 8k classification window. Must beat vision *keywords*
+  // in the transcript; real image parts already returned above.
+  if (looksLikeClientSidecarText(text) || looksLikeClientSidecarText(truncatedText)) {
+    reasons.push("client_sidecar");
+    return {
+      taskType: "general",
+      reasons,
+      inputText: text,
+      hasImageInput: false,
+    };
+  }
+
   if (
     !skipVision &&
-    (hasCurrentImageInput ||
-      /\b(image|screenshot|vision|picture|photo|jpg|jpeg|png|webp|gif|ocr)\b|截图|图片|图像|视觉|照片|图中|图里|原图|大图|识别图|海报|头像|logo|二维码|attached media from tool result/.test(
+    (/\b(image|screenshot|vision|picture|photo|jpg|jpeg|png|webp|gif|ocr)\b|截图|图片|图像|视觉|照片|图中|图里|原图|大图|识别图|海报|头像|logo|二维码|attached media from tool result/.test(
         normalized,
       ) ||
       /"type"\s*:\s*"(?:image_url|image|input_image)"|"image_url"\s*:|"image"\s*:/i.test(
         truncatedText,
       ))
   ) {
-    reasons.push(hasCurrentImageInput ? "image_input" : "vision_keyword");
+    reasons.push("vision_keyword");
     return {
       taskType: "vision",
       reasons,
       inputText: text,
-      hasImageInput: hasCurrentImageInput,
+      hasImageInput: false,
     };
   }
 
@@ -1138,6 +1167,30 @@ export async function resolveStrategyRoutingDecision(options: {
 
   if (!strategyRoutingEnabled || options.currentAttempt.isFallback) {
     return null;
+  }
+
+  const requestClass = classifyGatewayRequestClass(options.body);
+  if (requestClass.requestClass === "client_sidecar") {
+    return {
+      applied: false,
+      taskType: "general" as StrategyTaskType,
+      reasons: requestClass.reasons,
+      rule: null,
+      skipReason: "client_sidecar",
+    };
+  }
+
+  if (
+    requestClass.requestClass === "user_intent" &&
+    isClientNamedSmallFastModel(extractClientRequestedModel(options.body))
+  ) {
+    return {
+      applied: false,
+      taskType: "general" as StrategyTaskType,
+      reasons: ["client_named_small_model"],
+      rule: null,
+      skipReason: "client_named_small_model",
+    };
   }
 
   const parseRules = (rulesStr: any) => {
