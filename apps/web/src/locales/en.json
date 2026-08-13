@@ -863,6 +863,21 @@
       "title": "Confirm Delete Route",
       "description": "Are you sure you want to delete \"{{name}}\"?"
     },
+    "modelDiscovery": {
+      "button": "Discovery",
+      "title": "Model Discovery",
+      "desc": "Names advertised on /v1/models. When enabled, clients get the custom lists below, independent of actual routes, so Claude, OpenCode, and similar clients see familiar official IDs. When disabled, routes are matched by the request Host, and the list is the first-layer target model of each match (or the virtual alias if set). A default placeholder is returned only if no routes match.",
+      "enableLabel": "Use custom list",
+      "enableDesc": "When off, /v1/models matches routes by Host and returns first-layer target models — not an empty list",
+      "modelListLabel": "Models",
+      "emptyHint": "No models yet. Type an ID below and press Enter.",
+      "inputPlaceholder": "Model ID, then Enter",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveSuccess": "Model discovery settings saved",
+      "saveFailed": "Failed to save",
+      "loadFailed": "Failed to load model discovery settings"
+    },
     "userRoutes": {
       "description": "View the routing rules you have access to. If allowed by the route, you can choose a specific model to override the default configuration.",
       "dialogTitle": "Select Custom Model",

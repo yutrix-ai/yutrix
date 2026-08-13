@@ -860,6 +860,21 @@
       "title": "确认删除路由规则",
       "description": "确定要删除 \"{{name}}\" 吗？"
     },
+    "modelDiscovery": {
+      "button": "模型发现",
+      "title": "模型发现",
+      "desc": "客户端请求 /v1/models 时看到的模型名称。开启后返回下方自定义列表，与实际路由脱钩，方便 Claude、OpenCode 等识别官方 ID。关闭后按请求访问的 Host 匹配路由，返回这些路由第一层目标上的模型（有虚拟别名则用别名）。没有匹配到路由时才返回占位模型 default。",
+      "enableLabel": "使用自定义列表",
+      "enableDesc": "关闭后按请求的 Host 匹配路由，返回第一层目标的模型，不是空列表",
+      "modelListLabel": "模型列表",
+      "emptyHint": "暂无模型，请在下方输入添加",
+      "inputPlaceholder": "输入模型 ID，回车添加",
+      "save": "保存",
+      "saving": "保存中...",
+      "saveSuccess": "模型发现配置已保存",
+      "saveFailed": "保存失败",
+      "loadFailed": "加载模型发现配置失败"
+    },
     "userRoutes": {
       "description": "查看您可以访问的路由规则。若路由允许，您可以选择专属的模型覆盖默认配置。",
       "dialogTitle": "选择自定义模型",

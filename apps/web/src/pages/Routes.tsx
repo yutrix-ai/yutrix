@@ -29,7 +29,7 @@ export default function RoutesPage() {
       <div className="flex justify-end items-center gap-2">
         <Button variant="outline" onClick={() => setDiscoveryOpen(true)}>
           <Eye className="h-4 w-4 mr-2" />
-          {state.t("routes.modelDiscovery.title", "模型发现列表")}
+          {state.t("routes.modelDiscovery.button")}
         </Button>
         <Button onClick={state.openCreate}>
           <Plus className="h-4 w-4 mr-2" />

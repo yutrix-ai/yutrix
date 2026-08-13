@@ -67,7 +67,7 @@ export function ModelDiscoveryDialog({
       setLoaded(true);
     } catch (e: any) {
       toast.error(
-        t("routes.modelDiscovery.loadFailed", "加载模型发现配置失败") +
+        t("routes.modelDiscovery.loadFailed") +
           ": " +
           e.message
       );
@@ -103,12 +103,12 @@ export function ModelDiscoveryDialog({
         }),
       });
       toast.success(
-        t("routes.modelDiscovery.saveSuccess", "模型发现配置已保存")
+        t("routes.modelDiscovery.saveSuccess")
       );
       onOpenChange(false);
     } catch (e: any) {
       toast.error(
-        t("routes.modelDiscovery.saveFailed", "保存失败") + ": " + e.message
+        t("routes.modelDiscovery.saveFailed") + ": " + e.message
       );
     } finally {
       setSaving(false);
@@ -141,13 +141,10 @@ export function ModelDiscoveryDialog({
       <DialogContent className="max-w-2xl flex flex-col max-h-[85vh]">
         <DialogHeader>
           <DialogTitle>
-            {t("routes.modelDiscovery.title", "配置模型发现列表")}
+            {t("routes.modelDiscovery.title")}
           </DialogTitle>
           <DialogDescription>
-            {t(
-              "routes.modelDiscovery.desc",
-              "配置 /v1/models 端点返回的模型列表。客户端（如 Claude、opencode）连接网关时将从此列表中拉取可用模型名称。启用后，返回的模型列表与系统中具体路由到的实际配置模型完全脱钩，确保最佳兼容性。"
-            )}
+            {t("routes.modelDiscovery.desc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -160,16 +157,10 @@ export function ModelDiscoveryDialog({
                   htmlFor="modelDiscoveryEnabled"
                   className="text-sm font-medium"
                 >
-                  {t(
-                    "routes.modelDiscovery.enableLabel",
-                    "启用自定义模型发现列表"
-                  )}
+                  {t("routes.modelDiscovery.enableLabel")}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  {t(
-                    "routes.modelDiscovery.enableDesc",
-                    "关闭后 /v1/models 仅返回默认占位模型"
-                  )}
+                  {t("routes.modelDiscovery.enableDesc")}
                 </p>
               </div>
               <Switch
@@ -190,7 +181,7 @@ export function ModelDiscoveryDialog({
                     >
                       OpenAI
                     </Badge>
-                    {t("routes.modelDiscovery.modelListLabel", "模型列表")}
+                    {t("routes.modelDiscovery.modelListLabel")}
                   </Label>
                   <div className="border rounded-md bg-background flex flex-col flex-1 min-h-0 overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-2 flex flex-wrap content-start gap-1.5 custom-scrollbar">
@@ -211,19 +202,13 @@ export function ModelDiscoveryDialog({
                       ))}
                       {openaiModels.length === 0 && (
                         <span className="text-xs text-muted-foreground p-1">
-                          {t(
-                            "routes.modelDiscovery.emptyHint",
-                            "暂无模型，请在下方输入添加"
-                          )}
+                          {t("routes.modelDiscovery.emptyHint")}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 p-2 border-t border-border/50 shrink-0 bg-muted/5">
                       <Input
-                        placeholder={t(
-                          "routes.modelDiscovery.inputPlaceholder",
-                          "输入模型 ID，回车添加"
-                        )}
+                        placeholder={t("routes.modelDiscovery.inputPlaceholder")}
                         value={openaiInput}
                         className="text-xs h-7 flex-1"
                         onChange={(e) => setOpenaiInput(e.target.value)}
@@ -252,7 +237,7 @@ export function ModelDiscoveryDialog({
                     >
                       Anthropic
                     </Badge>
-                    {t("routes.modelDiscovery.modelListLabel", "模型列表")}
+                    {t("routes.modelDiscovery.modelListLabel")}
                   </Label>
                   <div className="border rounded-md bg-background flex flex-col flex-1 min-h-0 overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-2 flex flex-wrap content-start gap-1.5 custom-scrollbar">
@@ -277,19 +262,13 @@ export function ModelDiscoveryDialog({
                       ))}
                       {anthropicModels.length === 0 && (
                         <span className="text-xs text-muted-foreground p-1">
-                          {t(
-                            "routes.modelDiscovery.emptyHint",
-                            "暂无模型，请在下方输入添加"
-                          )}
+                          {t("routes.modelDiscovery.emptyHint")}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 p-2 border-t border-border/50 shrink-0 bg-muted/5">
                       <Input
-                        placeholder={t(
-                          "routes.modelDiscovery.inputPlaceholder",
-                          "输入模型 ID，回车添加"
-                        )}
+                        placeholder={t("routes.modelDiscovery.inputPlaceholder")}
                         value={anthropicInput}
                         className="text-xs h-7 flex-1"
                         onChange={(e) => setAnthropicInput(e.target.value)}
@@ -313,7 +292,7 @@ export function ModelDiscoveryDialog({
           </DialogBody>
         ) : (
           <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
-            {t("common.loading", "加载中...")}
+            {t("common.loading")}
           </div>
         )}
 
@@ -323,13 +302,13 @@ export function ModelDiscoveryDialog({
             size="sm"
             onClick={() => onOpenChange(false)}
           >
-            {t("common.cancel", "取消")}
+            {t("common.cancel")}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving}>
             <Save className="h-3.5 w-3.5 mr-1.5" />
             {saving
-              ? t("routes.modelDiscovery.saving", "保存中...")
-              : t("routes.modelDiscovery.save", "保存")}
+              ? t("routes.modelDiscovery.saving")
+              : t("routes.modelDiscovery.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
