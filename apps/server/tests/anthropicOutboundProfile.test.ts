@@ -111,7 +111,9 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
     });
     expect(thinking.cache_control).toEqual({ type: "ephemeral" });
     expect(finalBody.messages[0].content[1].cache_control).toEqual({ type: "ephemeral" });
-    expect(finalBody.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(finalBody.system).toEqual([
+      { type: "text", text: "You are Claude Code.", cache_control: { type: "ephemeral" } },
+    ]);
     expect(finalBody.tools[0].cache_control).toEqual({ type: "ephemeral" });
     expect(finalBody.tools[0].defer_loading).toBe(true);
     expect(finalBody.tools[0].input_schema).toBeDefined();
@@ -128,7 +130,13 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
       "gemini-3.6-flash-high",
     );
 
-    const blocks = finalBody.messages[0].content;
+    expect(finalBody.system).toBeUndefined();
+    expect(finalBody.systemInstruction).toBeUndefined();
+    expect(finalBody.messages[0]).toEqual({
+      role: "user",
+      content: "You are Claude Code.",
+    });
+    const blocks = finalBody.messages[1].content;
     expect(blocks.some((b: any) => b.type === "thinking")).toBe(false);
     expect(blocks[0]).toEqual({ type: "text", text: "I should list files first." });
     expect(blocks[1]).toEqual({ type: "text", text: "Let me look." });
@@ -176,11 +184,12 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
         rawBaseUrl: "http://10.8.0.200:7861/antigravity/v1",
       },
     );
-    expect(finalBody.messages[0].role).toBe("assistant");
+    expect(finalBody.messages[0].role).toBe("user");
+    expect(finalBody.messages[1].role).toBe("assistant");
     expect(finalBody.tools[0].input_schema).toBeDefined();
     expect(finalBody.tools[0].type).toBeUndefined();
     expect(finalBody.tools[0].function).toBeUndefined();
-    expect(Array.isArray(finalBody.messages[0].content)).toBe(true);
+    expect(Array.isArray(finalBody.messages[1].content)).toBe(true);
   });
 
   it("does not rewrite model ids; that stays in provider/route config", () => {

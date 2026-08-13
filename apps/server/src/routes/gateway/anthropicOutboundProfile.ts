@@ -84,6 +84,28 @@ function normalizeContentBlocks(content: any): any {
   return out;
 }
 
+function flattenSystemToUserContent(system: any): any {
+  if (typeof system === "string") return system;
+  if (Array.isArray(system)) {
+    const texts = system
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object" && typeof block.text === "string") {
+          return block.text;
+        }
+        return "";
+      })
+      .filter((t) => t.trim());
+    if (texts.length === 1) return texts[0];
+    if (texts.length > 1) return texts.map((text) => ({ type: "text", text }));
+    return "";
+  }
+  if (system && typeof system === "object" && typeof system.text === "string") {
+    return system.text;
+  }
+  return "";
+}
+
 function normalizeCompatibleTool(tool: any): any {
   if (!tool || typeof tool !== "object") return tool;
   const next: Record<string, any> = {};
@@ -101,28 +123,37 @@ export function normalizeCompatibleAnthropicBody(body: any): any {
   if (!body || typeof body !== "object") return body;
   const next = stripCacheControl({ ...body });
 
-  if (Array.isArray(next.system)) {
-    next.system = next.system.map((block: any) => {
-      if (!block || typeof block !== "object") return block;
-      const cleaned: Record<string, any> = {};
-      for (const [key, value] of Object.entries(block)) {
-        if (key === "cache_control") continue;
-        cleaned[key] = stripCacheControl(value);
-      }
-      return cleaned;
-    });
+  const systemUserContent = next.system !== undefined && next.system !== null
+    ? flattenSystemToUserContent(next.system)
+    : "";
+  delete next.system;
+  delete next.systemInstruction;
+
+  const messages = Array.isArray(next.messages) ? [...next.messages] : [];
+  const folded: any[] = [];
+  if (typeof systemUserContent === "string" ? systemUserContent.trim() : systemUserContent) {
+    folded.push({ role: "user", content: systemUserContent });
   }
 
-  if (Array.isArray(next.messages)) {
-    next.messages = next.messages.map((msg: any) => {
-      if (!msg || typeof msg !== "object") return msg;
-      const copy = { ...msg };
-      if (Array.isArray(copy.content)) {
-        copy.content = normalizeContentBlocks(copy.content);
+  for (const msg of messages) {
+    if (!msg || typeof msg !== "object") {
+      folded.push(msg);
+      continue;
+    }
+    const copy = { ...msg };
+    if (copy.role === "system") {
+      const content = flattenSystemToUserContent(copy.content);
+      if (typeof content === "string" ? content.trim() : content) {
+        folded.push({ role: "user", content });
       }
-      return copy;
-    });
+      continue;
+    }
+    if (Array.isArray(copy.content)) {
+      copy.content = normalizeContentBlocks(copy.content);
+    }
+    folded.push(copy);
   }
+  next.messages = folded;
 
   if (Array.isArray(next.tools)) {
     next.tools = next.tools.map(normalizeCompatibleTool);
