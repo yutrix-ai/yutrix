@@ -669,7 +669,12 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     });
 
     const modifiedResponse = await strategy.onExhausted(context);
-    expect(modifiedResponse.data.choices[0].message.content).toContain("0 输出 token");
+    const fallback = modifiedResponse.data.choices[0].message.content;
+    expect(fallback).toContain("0 output tokens");
+    expect(fallback).toContain("Please resend");
+    expect(fallback).toContain("0 输出 token");
+    expect(fallback).toContain("请重新发送");
+    expect(fallback).not.toMatch(/换模型|switch models/i);
   });
 });
 

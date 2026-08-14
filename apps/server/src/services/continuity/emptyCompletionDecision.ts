@@ -1,7 +1,7 @@
 import { detectProviderUsagePresence, normalizeUsagePayload } from "../../utils/gatewayContent";
 
 export const ZERO_COMPLETION_FALLBACK =
-  "\n\n*(系统提示：上游返回 0 输出 token，已重试仍为空。请换模型或重新发送。)*";
+  "\n\n*(System: upstream returned 0 output tokens; retry was still empty. Please resend.)\n（系统提示：上游返回 0 输出 token，已重试仍为空。请重新发送。）*";
 
 export function isExplicitZeroOutput(payload: any, presenceHint?: { outputProvided?: boolean }): boolean {
   const presence = presenceHint || detectProviderUsagePresence(payload);
