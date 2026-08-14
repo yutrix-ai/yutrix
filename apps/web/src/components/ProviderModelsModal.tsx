@@ -264,22 +264,21 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleToggleAllModels(true)}
+                onClick={() => handleToggleAllModels(!allModelsEnabled)}
                 disabled={loadingModels || providerModels.length === 0}
                 className="gap-1.5 text-xs font-medium"
               >
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                {t("providers.modelList.enableAll", "一键启用")}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleToggleAllModels(false)}
-                disabled={loadingModels || providerModels.length === 0}
-                className="gap-1.5 text-xs font-medium"
-              >
-                <XCircle className="h-3.5 w-3.5 text-rose-500" />
-                {t("providers.modelList.disableAll", "一键关闭")}
+                {allModelsEnabled ? (
+                  <>
+                    <XCircle className="h-3.5 w-3.5 text-rose-500" />
+                    {t("providers.modelList.disableAll", "一键关闭")}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    {t("providers.modelList.enableAll", "一键启用")}
+                  </>
+                )}
               </Button>
             </div>
             <div className="text-sm text-muted-foreground font-medium">
@@ -292,19 +291,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
               <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10 shadow-sm">
                 <TableRow className="border-b-0 hover:bg-transparent">
                   <TableHead className="font-semibold">{t("providers.modelList.table.name", "模型名称 / ID")}</TableHead>
-                  <TableHead className="w-28 font-semibold">
-                    <div className="flex items-center gap-2">
-                      <span>{t("providers.modelList.table.enable", "启用")}</span>
-                      {providerModels.length > 0 && (
-                        <Switch
-                          checked={allModelsEnabled}
-                          onCheckedChange={(checked) => handleToggleAllModels(checked)}
-                          disabled={loadingModels}
-                          title={t("providers.modelList.toggleAll", "一键启用/关闭所有")}
-                        />
-                      )}
-                    </div>
-                  </TableHead>
+                  <TableHead className="w-24 font-semibold">{t("providers.modelList.table.enable", "启用")}</TableHead>
                   <TableHead className="w-40 font-semibold">{t("providers.modelList.table.alias", "别名")}</TableHead>
                   <TableHead className="w-36 font-semibold">{t("providers.modelList.table.tokenizer", "分词器")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.contextWindow", "最大上下文")}</TableHead>

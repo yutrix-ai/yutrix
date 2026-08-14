@@ -51,6 +51,7 @@ export default function RoutesPage() {
         openScheduleDialog={state.openScheduleDialog} 
         setDeleteConfirm={state.setDeleteConfirm} 
         openCreate={state.openCreate}
+        loading={state.loading}
       />
 
       <ConfirmDialog

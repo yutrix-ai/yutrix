@@ -86,8 +86,8 @@ export function useRoutesState() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const [rData, pData, polData, gData, uData, mData] = await Promise.all([
         fetchApi("/admin/routes"),

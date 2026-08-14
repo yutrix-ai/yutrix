@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Edit2, Trash2, CalendarRange, Route as RouteIcon, Clock, SlidersHorizontal, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/EmptyState";
+import { Skeleton } from "@/components/ui/skeleton";
 import { STRATEGY_TASKS } from "./strategyRoutingConfig";
 
 function getStrategyModelsText(route: any) {
@@ -70,14 +71,20 @@ function renderStrategyBadges(rules: any, allModels: any[], t: any) {
 
 export function RouteList({ 
   routes, providers, allModels = [], getReadinessBadge, toggleEnable, 
-  openEdit, openScheduleDialog, setDeleteConfirm, openCreate
+  openEdit, openScheduleDialog, setDeleteConfirm, openCreate, loading = false
 }: any) {
   const { t } = useTranslation();
 
   return (
     <Card>
-      <CardContent className="p-0">
-        {routes.length === 0 ? (
+      <CardContent className={loading ? "p-6" : "p-0"}>
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))}
+          </div>
+        ) : routes.length === 0 ? (
           <EmptyState
             icon={<RouteIcon className="h-12 w-12" />}
             title={t("routes.empty.title", "暂无路由")}

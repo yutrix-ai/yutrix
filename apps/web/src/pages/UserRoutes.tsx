@@ -83,8 +83,8 @@ export default function UserRoutes() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const data = await fetchApi("/user/routes");
       setRoutes(data);
@@ -278,8 +278,14 @@ export default function UserRoutes() {
       </Dialog>
 
       <Card>
-        <CardContent className="p-0">
-          {routes.length === 0 ? (
+        <CardContent className={loading ? "p-6" : "p-0"}>
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full" />
+              ))}
+            </div>
+          ) : routes.length === 0 ? (
             <EmptyState
               icon={<RouteIcon className="h-12 w-12" />}
               title={t("routes.empty.title", "暂无路由")}
