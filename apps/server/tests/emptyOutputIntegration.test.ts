@@ -90,6 +90,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
       loggedActions.push({
         code: entry.code || entry.params?.code,
         modelId: entry.modelId || entry.params?.modelId,
+        strategy: entry.strategy || entry.params?.strategy,
       });
     });
   });
@@ -614,6 +615,12 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(callCount).toBe(2);
     expect(res.body).toContain("0 输出 token");
     expect(res.body).toContain("[DONE]");
+    const fallbackAt = res.body.indexOf("0 输出 token");
+    const stopAt = res.body.indexOf("\"finish_reason\":\"stop\"");
+    expect(fallbackAt).toBeGreaterThan(-1);
+    expect(stopAt).toBeGreaterThan(fallbackAt);
+    const exhausted = loggedActions.find((a) => a.code === "request.continuity.exhausted");
+    expect(exhausted?.strategy).toBe("EmptyOutput");
   });
 
   it("stream=true forwards empty native SSE stop/[DONE] without holding the stream", async () => {
@@ -995,6 +1002,107 @@ describe("Empty Output Auto-Continuation Integration", () => {
     const firstStop = res.body.indexOf("event: message_stop");
     expect(firstStop).toBeGreaterThan(recoveredAt);
     expect((res.body.match(/event: message_stop/g) || []).length).toBe(1);
+    expect((res.body.match(/event: message_start/g) || []).length).toBe(1);
+    expect(res.body.indexOf("event: message_start")).toBeLessThan(recoveredAt);
+  });
+
+  it("native Anthropic empty-then-empty emits fallback before message_stop", async () => {
+    await db.insert(providers).values({
+      id: "emp-prov-1",
+      name: "Native Anthropic Exhaust",
+      anthropicBaseUrl: "https://api.anthropic.com",
+      enabled: true,
+      concurrencyLimit: 10,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(providerApiKeys).values({
+      id: "emp-prov-1-key",
+      providerId: "emp-prov-1",
+      keyEncrypted: encryptText("sk-dummy"),
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(providerModels).values({
+      id: crypto.randomUUID(),
+      providerId: "emp-prov-1",
+      modelId: "gemini-3.6-flash",
+      displayName: "Gemini 3.6 Flash",
+      enabled: true,
+      createdAt: new Date(),
+    });
+    await db.insert(endpoints).values({
+      id: "emp-ep-nat-exh",
+      userId,
+      name: "Native Anthropic Exhaust Endpoint",
+      path: "/v1/messages",
+      incomingProtocol: "anthropic",
+      enabled: true,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(endpointRoutes).values({
+      id: "emp-route-nat-exh",
+      endpointId: "emp-ep-nat-exh",
+      name: "Native Anthropic Exhaust Route",
+      providerId: "emp-prov-1",
+      providerProtocol: "anthropic",
+      modelId: "gemini-3.6-flash",
+      strategyRoutingEnabled: false,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId: "emp-route-nat-exh",
+      userId,
+      createdAt: new Date(),
+    });
+
+    const emptySse = [
+      `event: message_start`,
+      `data: {"type":"message_start","message":{"id":"msg_empty","role":"assistant","content":[],"model":"claude","stop_reason":null,"usage":{"input_tokens":40,"output_tokens":0}}}`,
+      ``,
+      `event: message_delta`,
+      `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}`,
+      ``,
+      `event: message_stop`,
+      `data: {"type":"message_stop"}`,
+      ``,
+    ].join("\n");
+    vi.stubGlobal("fetch", async () => new Response(emptySse, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    }));
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/messages",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "hi" }],
+        max_tokens: 64,
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("0 输出 token");
+    const fallbackAt = res.body.indexOf("0 输出 token");
+    const stopAt = res.body.indexOf("event: message_stop");
+    expect(fallbackAt).toBeGreaterThan(-1);
+    expect(stopAt).toBeGreaterThan(fallbackAt);
+    expect((res.body.match(/event: message_start/g) || []).length).toBe(1);
+    const exhausted = loggedActions.find((a) => a.code === "request.continuity.exhausted");
+    expect(exhausted?.strategy).toBe("EmptyOutput");
   });
 
   it("sidecar title empty in/0/in retries the same messages", async () => {

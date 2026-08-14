@@ -22,7 +22,8 @@ import { writeStreamErrorResponse } from "./streamProtocol";
 import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError } from "./gatewayExecutorUtils";
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
-import { enforceInputTokenLimit } from "./inputTokenLimitGuard";
+import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
+import { overflowHopTaskOrder } from "./overflowContextHop";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTokenLimit } from "./inputTokenLimit";
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
@@ -215,6 +216,22 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             const fallbackText =
               (typeof responseData?.zeroCompletionFallback === "string" && responseData.zeroCompletionFallback)
               || "";
+            if (!(reply.raw as any).__promptgateAnthropicMessageStarted) {
+              reply.raw.write(`event: message_start\ndata: ${JSON.stringify({
+                type: "message_start",
+                message: {
+                  id: `msg_${ctx.reqLogId || "empty"}`,
+                  type: "message",
+                  role: "assistant",
+                  content: [],
+                  model: currentAttempt.modelId || "default",
+                  stop_reason: null,
+                  stop_sequence: null,
+                  usage: { input_tokens: 0, output_tokens: 0 },
+                },
+              })}\n\n`);
+              (reply.raw as any).__promptgateAnthropicMessageStarted = true;
+            }
             if (fallbackText.trim()) {
               const idx = anthropicState?.activeBlockIndex || 0;
               reply.raw.write(`event: content_block_start\ndata: ${JSON.stringify({
@@ -503,7 +520,20 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 responseData = tokenLimitResult.responseData;
                 return;
               }
-              if (tokenLimitResult.truncatedBody) {
+              if (tokenLimitResult.overflowHop && route.strategyRoutingEnabled) {
+                ctx.pendingOverflowHop = tokenLimitResult.overflowHop;
+              } else if (tokenLimitResult.overflowHop) {
+                body = await applyForcedInputTokenLimit({
+                  ctx,
+                  modifiedBody: body,
+                  provider: initialProvider || { name: "unknown" },
+                  currentAttempt,
+                  activeModelConfig: initialModelConfig,
+                  baseActionLog,
+                  logAction,
+                  maxInputTokens: ctx.inputTokenLimit.maxInputTokens,
+                });
+              } else if (tokenLimitResult.truncatedBody) {
                 body = tokenLimitResult.truncatedBody;
               }
             }
@@ -608,10 +638,17 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
             const contextBudget = resolveModelContextWindow(activeModelConfig);
             if (
+              ctx.pendingOverflowHop
+              && currentAttempt.strategyTaskType === "long_context"
+            ) {
+              ctx.overflowHopApplied = true;
+              ctx.pendingOverflowHop = undefined;
+            }
+            if (
               !longContextOverrideApplied &&
-              contextBudget.limit > 0 &&
               route.strategyRoutingEnabled &&
               currentAttempt.strategyTaskType !== "long_context"
+              && (contextBudget.limit > 0 || ctx.pendingOverflowHop)
             ) {
               const routingTokens = await estimateMultimodalInputUsage({ body });
               let estimatedTextTokens = routingTokens.textTokens;
@@ -642,15 +679,21 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
               const safetyMargin = 50; // Add 50 tokens safety margin for formatting overhead
               
-              const isContextExhausted = !fitsContextBudget({
+              const isContextExhausted = contextBudget.limit > 0 && !fitsContextBudget({
                 inputTokens: estimatedTotalTokens,
                 requestedOutputTokens: 0,
                 safetyMargin,
                 budget: contextBudget
               });
+              const overflowFromGroupClip = !!ctx.pendingOverflowHop;
+              const hopOrder = overflowHopTaskOrder(
+                estimatedImageTokens > 0
+                || routingTokens.imageCount > 0
+                || !!ctx.routingRequirements?.requiredCapabilities.vision,
+              );
 
-              if (isContextExhausted) {
-                if (ctx.routingRequirements?.requiredCapabilities.vision) {
+              if (isContextExhausted || overflowFromGroupClip) {
+                if (hopOrder.includes("vision") || ctx.routingRequirements?.requiredCapabilities.vision) {
                   let parsedTargets: any[] = [];
                   if (route.targets) {
                     try {
@@ -660,7 +703,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
                   let foundNextVisionTarget = false;
                   const currentTargetIndex = currentAttempt.targetIndex || 0;
-                  for (let i = currentTargetIndex + 1; i < parsedTargets.length; i++) {
+                  const visionSearchStart = overflowFromGroupClip ? 0 : currentTargetIndex + 1;
+                  for (let i = visionSearchStart; i < parsedTargets.length; i++) {
                     const targetRules = parseStrategyRoutingRules(parsedTargets[i].strategyRoutingRules);
                     const visionRuleRaw = targetRules.find((r: any) => r.taskType === "vision" && r.enabled !== false);
                     if (visionRuleRaw) {
@@ -669,6 +713,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                         rule: visionRuleRaw,
                       });
                       if (validation.ok) {
+                        if (
+                          validation.rule.providerId === currentAttempt.providerId
+                          && validation.rule.modelId === currentAttempt.modelId
+                        ) {
+                          continue;
+                        }
                         const matchedModelRows = await db
                           .select()
                           .from(providerModels)
@@ -727,6 +777,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           ctx.activeModelConfig = activeModelConfig;
 
                           longContextOverrideApplied = true;
+                          ctx.overflowHopApplied = overflowFromGroupClip || ctx.overflowHopApplied;
+                          ctx.pendingOverflowHop = undefined;
                           foundNextVisionTarget = true;
                           break;
                         }
@@ -742,11 +794,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   // If no vision target with sufficient context found, fall through to try long_context rules below
                 }
 
-                // Try long_context rules only when input exceeds the 1M-token strategy floor
-                // (for non-vision requests, or as fallback when no bigger vision model exists)
+                // Group-clip overflow hops skip the 1M classification floor.
+                // Model-window overflow still requires the floor (existing contract).
                 if (
                   !longContextOverrideApplied &&
-                  meetsLongContextStrategyTokenFloor(estimatedTotalTokens)
+                  hopOrder.includes("long_context")
+                  && (overflowFromGroupClip || meetsLongContextStrategyTokenFloor(estimatedTotalTokens))
                 ) {
                   let currentStrategyRoutingRules = route.strategyRoutingRules;
                   if (route.targets) {
@@ -768,6 +821,14 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                       rule: longContextRuleRaw,
                     });
                     if (validation.ok) {
+                      if (
+                        overflowFromGroupClip
+                        && validation.rule.providerId === currentAttempt.providerId
+                        && validation.rule.modelId === currentAttempt.modelId
+                      ) {
+                        ctx.overflowHopApplied = true;
+                        ctx.pendingOverflowHop = undefined;
+                      } else {
                       const matchedModelRows = await db
                         .select()
                         .from(providerModels)
@@ -821,12 +882,53 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                         };
                         ctx.currentAttempt = currentAttempt;
                         longContextOverrideApplied = true;
+                        ctx.overflowHopApplied = overflowFromGroupClip || ctx.overflowHopApplied;
+                        ctx.pendingOverflowHop = undefined;
                         attemptCount--;
                         continue;
+                      }
                       }
                     }
                   }
                 }
+              }
+            }
+
+            if (ctx.pendingOverflowHop && !ctx.overflowHopApplied) {
+              body = await applyForcedInputTokenLimit({
+                ctx,
+                modifiedBody: body,
+                provider,
+                currentAttempt,
+                activeModelConfig,
+                baseActionLog,
+                logAction,
+                maxInputTokens: ctx.inputTokenLimit.maxInputTokens,
+              });
+              ctx.pendingOverflowHop = undefined;
+            }
+
+            if (ctx.overflowHopApplied && contextBudget.limit > 0) {
+              const hoppedUsage = await estimateMultimodalInputUsage({ body });
+              const hoppedFits = fitsContextBudget({
+                inputTokens: hoppedUsage.totalTokens,
+                requestedOutputTokens: 0,
+                safetyMargin: 50,
+                budget: contextBudget,
+              });
+              if (!hoppedFits) {
+                body = await applyForcedInputTokenLimit({
+                  ctx,
+                  modifiedBody: body,
+                  provider,
+                  currentAttempt,
+                  activeModelConfig,
+                  baseActionLog,
+                  logAction,
+                  maxInputTokens: contextBudget.limit,
+                  limitSource: "model_window",
+                  limitSourceLabel: currentAttempt.modelId,
+                });
               }
             }
 
@@ -1612,6 +1714,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                         ...baseActionLog,
                         level: "WARN",
                         code: "request.continuity.exhausted",
+                        strategy: earlyDecision.strategyName || "EmptyOutput",
                         message: `Continuity loop exhausted at ${continuityCycles} cycles`,
                      });
                   }
@@ -2079,6 +2182,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                ...baseActionLog,
                level: "WARN",
                code: "request.continuity.exhausted",
+               strategy: postDecision.strategyName || "EmptyOutput",
                message: `Continuity loop exhausted at ${continuityCycles} cycles`,
             });
          } else {
@@ -2090,6 +2194,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                ...baseActionLog,
                level: "WARN",
                code: "request.continuity.exhausted",
+               strategy: postDecision.strategyName,
                message: `Continuity strategy ${postDecision.strategyName} exhausted retries`,
             });
          }

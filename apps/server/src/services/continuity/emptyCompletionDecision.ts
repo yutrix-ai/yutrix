@@ -104,3 +104,24 @@ export function shouldWithholdEmptyTerminal(input: {
   }
   return false;
 }
+
+/**
+ * Native Anthropic empty streams emit message_start before stop.
+ * Buffer those prelude events until visible content arrives or we withhold.
+ */
+export function shouldBufferNativeAnthropicPrelude(input: {
+  visibleClientOutputSent: boolean;
+  eventHasSemanticContent?: boolean;
+  anthropicEventType?: string | null;
+}): boolean {
+  if (input.visibleClientOutputSent) return false;
+  if (input.eventHasSemanticContent) return false;
+  const eventType = input.anthropicEventType || "";
+  if (eventType === "message_delta" || eventType === "message_stop") return false;
+  return (
+    eventType === "message_start"
+    || eventType === "ping"
+    || eventType === "content_block_start"
+    || eventType === ""
+  );
+}

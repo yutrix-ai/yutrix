@@ -5,6 +5,7 @@ import { ReasoningExhaustionStrategy } from "../src/services/continuity/strategi
 import { ContinuityContext } from "../src/services/continuity/types";
 import {
   shouldWithholdEmptyTerminal,
+  shouldBufferNativeAnthropicPrelude,
   wouldLogZeroEmptyCompletion,
 } from "../src/services/continuity/emptyCompletionDecision";
 
@@ -60,6 +61,22 @@ describe("shouldWithholdEmptyTerminal (shared OpenAI + Anthropic)", () => {
       visibleClientOutputSent: false,
       hasReasoningBuffer: true,
       isDone: true,
+    })).toBe(false);
+  });
+
+  it("buffers native Anthropic message_start until visible content or withhold", () => {
+    expect(shouldBufferNativeAnthropicPrelude({
+      visibleClientOutputSent: false,
+      anthropicEventType: "message_start",
+    })).toBe(true);
+    expect(shouldBufferNativeAnthropicPrelude({
+      visibleClientOutputSent: false,
+      eventHasSemanticContent: true,
+      anthropicEventType: "content_block_delta",
+    })).toBe(false);
+    expect(shouldBufferNativeAnthropicPrelude({
+      visibleClientOutputSent: true,
+      anthropicEventType: "message_start",
     })).toBe(false);
   });
 });

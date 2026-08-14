@@ -184,6 +184,14 @@ export interface GatewayRequestContext {
     source: string;
     sourceLabel: string;
   };
+  /** Group/user clip was deferred; a long_context/vision overflow hop already ran. */
+  overflowHopApplied?: boolean;
+  pendingOverflowHop?: {
+    originalTokens: number;
+    droppedTurns: number;
+    budgetTokens: number;
+    maxInputTokens: number;
+  };
 
   // Provider Adapter State
   activeProviderAdapter?: any;

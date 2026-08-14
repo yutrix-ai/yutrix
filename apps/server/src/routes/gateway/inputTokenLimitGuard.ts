@@ -1,6 +1,7 @@
 import { formatError } from "../../utils/gatewayError";
 import type { AttemptState, BaseActionLog, GatewayRequestContext } from "./types";
-import { applyInputTokenLimit, InputTokenLimitError } from "./inputTokenLimit";
+import { applyInputTokenLimit, previewInputTokenLimit, InputTokenLimitError } from "./inputTokenLimit";
+import { shouldOverflowHopInsteadOfClip } from "./overflowContextHop";
 
 type EnforceInputTokenLimitArgs = {
   ctx: GatewayRequestContext;
@@ -13,7 +14,16 @@ type EnforceInputTokenLimitArgs = {
 };
 
 type EnforceInputTokenLimitResult =
-  | { ok: true; truncatedBody?: any }
+  | {
+      ok: true;
+      truncatedBody?: any;
+      overflowHop?: {
+        originalTokens: number;
+        droppedTurns: number;
+        budgetTokens: number;
+        maxInputTokens: number;
+      };
+    }
   | { ok: false; responseData: any };
 
 export async function enforceInputTokenLimit({
@@ -25,20 +35,44 @@ export async function enforceInputTokenLimit({
   baseActionLog,
   logAction,
 }: EnforceInputTokenLimitArgs): Promise<EnforceInputTokenLimitResult> {
+  if (ctx.overflowHopApplied) {
+    return { ok: true };
+  }
+
   if (ctx.inputTokenLimit.maxInputTokens <= 0) {
     return { ok: true };
   }
 
   const { incomingProtocol } = ctx.routing;
+  const limitConfig = {
+    maxInputTokens: ctx.inputTokenLimit.maxInputTokens,
+    modelId: currentAttempt.modelId,
+    providerProtocol: currentAttempt.providerProtocol,
+    tokenizerRepo: activeModelConfig?.tokenizerRepo || null,
+    proxyUrl: provider.weightProxyUrl || null,
+  };
 
   try {
-    const truncation = await applyInputTokenLimit(modifiedBody, {
-      maxInputTokens: ctx.inputTokenLimit.maxInputTokens,
-      modelId: currentAttempt.modelId,
-      providerProtocol: currentAttempt.providerProtocol,
-      tokenizerRepo: activeModelConfig?.tokenizerRepo || null,
-      proxyUrl: provider.weightProxyUrl || null,
-    });
+    const preview = await previewInputTokenLimit(modifiedBody, limitConfig);
+    ctx.stream.estimatedPromptTokens = preview.originalTokens;
+
+    if (shouldOverflowHopInsteadOfClip(preview)) {
+      return {
+        ok: true,
+        overflowHop: {
+          originalTokens: preview.originalTokens,
+          droppedTurns: preview.droppedTurns,
+          budgetTokens: preview.budgetTokens,
+          maxInputTokens: preview.maxInputTokens,
+        },
+      };
+    }
+
+    if (!preview.truncated) {
+      return { ok: true };
+    }
+
+    const truncation = await applyInputTokenLimit(modifiedBody, limitConfig);
     ctx.stream.estimatedPromptTokens = truncation.finalTokens;
 
     if (truncation.truncated) {
@@ -87,4 +121,45 @@ export async function enforceInputTokenLimit({
 
     return { ok: false, responseData };
   }
+}
+
+/** Last-resort clip after overflow hop is unavailable or the hopped window is still too small. */
+export async function applyForcedInputTokenLimit(args: {
+  ctx: GatewayRequestContext;
+  modifiedBody: any;
+  provider: any;
+  currentAttempt: AttemptState;
+  activeModelConfig: any;
+  baseActionLog: BaseActionLog;
+  logAction: (event: any) => void;
+  maxInputTokens: number;
+  limitSource?: string;
+  limitSourceLabel?: string;
+}): Promise<any> {
+  const truncation = await applyInputTokenLimit(args.modifiedBody, {
+    maxInputTokens: args.maxInputTokens,
+    modelId: args.currentAttempt.modelId,
+    providerProtocol: args.currentAttempt.providerProtocol,
+    tokenizerRepo: args.activeModelConfig?.tokenizerRepo || null,
+    proxyUrl: args.provider?.weightProxyUrl || null,
+  });
+  args.ctx.stream.estimatedPromptTokens = truncation.finalTokens;
+  if (truncation.truncated) {
+    args.logAction({
+      ...args.baseActionLog,
+      level: "WARN",
+      code: "token.max_input.truncated",
+      providerName: args.provider?.name,
+      modelId: args.currentAttempt.modelId,
+      limitSource: args.limitSource || args.ctx.inputTokenLimit.source,
+      limitSourceLabel: args.limitSourceLabel || args.ctx.inputTokenLimit.sourceLabel,
+      maxInputTokens: truncation.maxInputTokens,
+      budgetTokens: truncation.budgetTokens,
+      originalTokens: truncation.originalTokens,
+      finalTokens: truncation.finalTokens,
+      droppedTurns: truncation.droppedTurns,
+      textTruncated: truncation.textTruncated,
+    });
+  }
+  return truncation.body;
 }

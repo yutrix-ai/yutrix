@@ -249,6 +249,15 @@ function getTargetText(message: ChatMessage, target: TextTarget): string {
   return match || candidates.sort((a, b) => b.length - a.length)[0] || "";
 }
 
+/** Clone-and-measure so overflow hop can decide before mutating the outbound body. */
+export async function previewInputTokenLimit(
+  inputBody: any,
+  config: InputTokenLimitConfig,
+): Promise<InputTokenTruncationResult> {
+  const clone = cloneJson(inputBody);
+  return applyInputTokenLimit(clone, config);
+}
+
 export async function applyInputTokenLimit(
   inputBody: any,
   config: InputTokenLimitConfig,

@@ -36,7 +36,10 @@ import { activeTranslators } from "./translators";
 import type { TranslatorState, TranslatorContext } from "./translators/types";
 import crypto from "crypto";
 import { parseSseDataLine } from "../../utils/gatewayContent";
-import { shouldWithholdEmptyTerminal } from "../../services/continuity/emptyCompletionDecision";
+import {
+  shouldWithholdEmptyTerminal,
+  shouldBufferNativeAnthropicPrelude,
+} from "../../services/continuity/emptyCompletionDecision";
 import {
   formatStreamErrorEvent,
   formatStreamKeepAlive,
@@ -445,6 +448,9 @@ export async function forwardSSEStreamTransparent(
   let streamHadDoneEvent = false;
   let pendingUsageEvents: string[] = [];
   let withheldEmptyTerminal = false;
+  let nativePreludeBuffer: string[] = [];
+  const isNativeAnthropicPassthrough = incomingProtocol === "anthropic"
+    && (sourceProtocol === "anthropic" || !sourceProtocol);
   let reasoningForOpenAIClient = "";
   let lastOpenAIChunkMeta: { id: string; created: number; model: string } = {
     id: `chatcmpl_${crypto.randomUUID()}`,
@@ -600,6 +606,30 @@ export async function forwardSSEStreamTransparent(
             if (dataCopy.id) lastOpenAIChunkMeta.id = dataCopy.id;
             if (typeof dataCopy.created === "number") lastOpenAIChunkMeta.created = dataCopy.created;
             if (typeof dataCopy.model === "string") lastOpenAIChunkMeta.model = dataCopy.model;
+            if (dataCopy.type === "content_block_delta") {
+              const deltaText = dataCopy.delta?.text;
+              if (typeof deltaText === "string" && deltaText.length > 0) {
+                eventHasSemanticContent = true;
+                if (dataCopy.delta?.type !== "thinking_delta") {
+                  visibleClientOutputSent = true;
+                }
+              }
+              if (dataCopy.delta?.type === "input_json_delta") {
+                eventHasSemanticContent = true;
+                visibleClientOutputSent = true;
+              }
+            }
+            if (dataCopy.type === "content_block_start") {
+              const block = dataCopy.content_block;
+              if (block?.type === "tool_use" || block?.type === "server_tool_use") {
+                eventHasSemanticContent = true;
+                visibleClientOutputSent = true;
+              }
+              if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
+                eventHasSemanticContent = true;
+                visibleClientOutputSent = true;
+              }
+            }
             if (dataCopy.choices && dataCopy.choices.length > 0) {
               eventHasChoices = true;
               const delta = dataCopy.choices[0].delta;
@@ -798,9 +828,20 @@ export async function forwardSSEStreamTransparent(
       if (holdEmptyTerminal) {
         shouldSkipWrite = true;
         withheldEmptyTerminal = true;
+        nativePreludeBuffer = [];
         if (eventHasUsage) {
           pendingUsageEvents.push(originalEventStr);
         }
+      } else if (
+        isNativeAnthropicPassthrough
+        && shouldBufferNativeAnthropicPrelude({
+          visibleClientOutputSent,
+          eventHasSemanticContent,
+          anthropicEventType: eventAnthropicType || eventParsedPayload?.type || null,
+        })
+      ) {
+        shouldSkipWrite = true;
+        nativePreludeBuffer.push(originalEventStr);
       }
 
       if (hadLengthCutoff) {
@@ -840,6 +881,12 @@ export async function forwardSSEStreamTransparent(
       }
 
       if (!shouldSkipWrite && modifiedEventStr) {
+         if (nativePreludeBuffer.length > 0) {
+           for (const ev of nativePreludeBuffer) {
+             downstream.write(ev);
+           }
+           nativePreludeBuffer = [];
+         }
          // Strict byte equality for completely transparent mode without cutoff
          if (isTransparentNoStitch && !hadLengthCutoff && !eventSanitized) {
            downstream.write(originalEventStr);
@@ -852,6 +899,14 @@ export async function forwardSSEStreamTransparent(
     }
 
         if (done) {
+      if (withheldEmptyTerminal || !visibleClientOutputSent) {
+        nativePreludeBuffer = [];
+      } else if (nativePreludeBuffer.length > 0) {
+        for (const ev of nativePreludeBuffer) {
+          downstream.write(ev);
+        }
+        nativePreludeBuffer = [];
+      }
       // Flush any pending usage events that were held waiting for a potential length cutoff
       if (!hadLengthCutoff && pendingUsageEvents.length > 0) {
         if (withheldEmptyTerminal && !visibleClientOutputSent) {
