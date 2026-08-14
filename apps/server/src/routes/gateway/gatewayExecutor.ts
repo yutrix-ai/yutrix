@@ -1570,11 +1570,21 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
                   const textToCheck = (ctx.continuity.accumulatedCompletionText || "") + textFromThisRound;
 
+                  if (!responseData.roundUsageCommitted) {
+                     const roundUsage = await resolveRoundUsage(
+                        ctx,
+                        responseData,
+                        responseData.roundRequestBody
+                     );
+                     commitRoundUsage(ctx, responseData, roundUsage, responseData.roundId || `continuity-${continuityCycles}`);
+                  }
+
                   // Temporarily mock context for early evaluation
                   const earlyDecision = await continuityEngine.evaluateAll({
                      originalBody,
                      responseData,
                      requestClass: classifyGatewayRequestClass(originalBody).requestClass,
+                     roundUsage: responseData.roundUsage,
                      baseActionLog,
                      currentAttempt,
                      accumulatedCompletionText: textToCheck,
@@ -1590,15 +1600,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                         code: "request.continuity.exhausted",
                         message: `Continuity loop exhausted at ${continuityCycles} cycles`,
                      });
-                  }
-
-                  if (!responseData.roundUsageCommitted) {
-                     const roundUsage = await resolveRoundUsage(
-                        ctx,
-                        responseData,
-                        responseData.roundRequestBody
-                     );
-                     commitRoundUsage(ctx, responseData, roundUsage, responseData.roundId || `continuity-${continuityCycles}`);
                   }
 
                   if (shouldPerformRetry) {
@@ -2048,6 +2049,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
          originalBody,
          responseData,
          requestClass: classifyGatewayRequestClass(originalBody).requestClass,
+         roundUsage: responseData.roundUsage,
          streamResult: respResult,
          baseActionLog,
          currentAttempt,

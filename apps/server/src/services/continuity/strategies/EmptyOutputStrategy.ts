@@ -42,13 +42,17 @@ function isExplicitZeroOutput(payload: any, presenceHint?: { outputProvided?: bo
   return normalizeUsagePayload(payload)?.outputTokens === 0;
 }
 
-/** Only trust an explicit upstream completion/output count of 0. Missing usage is not zero. */
-export function providerReportedZeroOutput(responseData: any): boolean {
+/** Explicit upstream 0, or the same in/0/in totals the completed log will print. */
+export function providerReportedZeroOutput(responseData: any, roundUsage?: { inputTokens?: number; outputTokens?: number }): boolean {
   if (isExplicitZeroOutput(responseData?.data, responseData?.rawProviderUsage)) {
     return true;
   }
-  // Live SSE usage arrives in the trailer, not the JSON envelope.
-  return isExplicitZeroOutput(responseData?.roundStreamUsage);
+  if (isExplicitZeroOutput(responseData?.roundStreamUsage)) {
+    return true;
+  }
+  const usage = roundUsage || responseData?.roundUsage;
+  if (!usage) return false;
+  return Number(usage.inputTokens) > 0 && Number(usage.outputTokens) === 0;
 }
 
 export class EmptyOutputStrategy implements ContinuityStrategy {
@@ -56,13 +60,9 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
   maxRetries = 1;
 
   async evaluate(context: ContinuityContext): Promise<ContinuityDecision> {
-    const { responseData, originalBody, accumulatedCompletionText, streamResult, requestClass } = context;
+    const { responseData, originalBody, accumulatedCompletionText, streamResult } = context;
 
     if (!responseData || responseData.status >= 400) {
-      return { shouldIntervene: false };
-    }
-
-    if (requestClass === "client_sidecar") {
       return { shouldIntervene: false };
     }
 
@@ -110,7 +110,7 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    if (!providerReportedZeroOutput(responseData)) {
+    if (!providerReportedZeroOutput(responseData, context.roundUsage)) {
       return { shouldIntervene: false };
     }
 

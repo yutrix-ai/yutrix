@@ -6,8 +6,9 @@ import type { GatewayRequestClass } from "../requestRoutingClass";
 export interface ContinuityContext {
   originalBody: any;
   responseData: any;
-  /** Sidecar / title / classifier turns must not be retried. */
   requestClass?: GatewayRequestClass;
+  /** Same totals the request-completed log uses. */
+  roundUsage?: { inputTokens?: number; outputTokens?: number };
   streamResult?: {
     isLengthTruncated: boolean;
     lastToolCallState?: any;

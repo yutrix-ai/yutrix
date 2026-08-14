@@ -306,7 +306,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("should NOT intervene on sidecar / title-generation requests", async () => {
+  it("retries sidecar / title-generation when the completed log would be in/0/in", async () => {
     const context = baseContext({
       requestClass: "client_sidecar",
       responseData: {
@@ -325,7 +325,28 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(false);
+    expect(decision.shouldIntervene).toBe(true);
+  });
+
+  it("retries when resolved log totals are in/0/in even without a usage field", async () => {
+    const context = baseContext({
+      roundUsage: { inputTokens: 2916, outputTokens: 0 },
+      responseData: {
+        status: 200,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        },
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(true);
   });
 
   it("should NOT intervene after stop/[DONE] was already sent to the client", async () => {

@@ -309,7 +309,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(body.choices[0].message.content).toContain("0 输出 token");
   });
 
-  it("does not retry empty JSON when usage is omitted", async () => {
+  it("retries empty JSON when usage is omitted but the completed log would be in/0/in", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -351,8 +351,8 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(callCount).toBe(1);
-    expect(res.json().choices[0].message.content).toBe("");
+    expect(callCount).toBe(2);
+    expect(res.json().choices[0].message.content).toContain("0 输出 token");
   });
 
   it("stream=true retries empty JSON fake-stream once then forwards recovered content", async () => {
