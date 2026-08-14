@@ -265,12 +265,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               writeAnthropicEmptyClose(lastStreamResult?.stopReason || "end_turn");
             }
           } else {
-            const wasStitching = ctx.continuity.committedRoundIds.size > 1;
-
             if (lastStreamResult?.withheldEmptyTerminal) {
               writeAnthropicEmptyClose(lastStreamResult?.stopReason || "end_turn");
-            } else if (wasStitching || isTruncated) {
-              const stopReason = isTruncated ? "max_tokens" : (lastStreamResult?.stopReason || "end_turn");
+            } else if (isTruncated) {
+              const stopReason = "max_tokens";
               const totalOutput = ctx.continuity.completionTokens || 0;
               reply.raw.write(`event: message_delta\ndata: ${JSON.stringify({
                 type: "message_delta",

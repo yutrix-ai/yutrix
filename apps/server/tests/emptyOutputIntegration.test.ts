@@ -818,6 +818,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     const firstStop = res.body.indexOf("message_stop");
     expect(recoveredAt).toBeGreaterThan(-1);
     expect(firstStop).toBeGreaterThan(recoveredAt);
+    expect((res.body.match(/event: message_stop/g) || []).length).toBe(1);
   });
 
   it("native Anthropic empty stream retries once before message_stop", async () => {
@@ -936,8 +937,9 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(callCount).toBe(2);
     expect(res.body).toContain("native recovered");
     const recoveredAt = res.body.indexOf("native recovered");
-    const firstStop = res.body.indexOf("message_stop");
+    const firstStop = res.body.indexOf("event: message_stop");
     expect(firstStop).toBeGreaterThan(recoveredAt);
+    expect((res.body.match(/event: message_stop/g) || []).length).toBe(1);
   });
 
   it("sidecar title empty in/0/in retries the same messages", async () => {
