@@ -3,6 +3,7 @@ import { EmptyOutputStrategy } from "../src/services/continuity/strategies/Empty
 import { MaxTokensTruncationStrategy } from "../src/services/continuity/strategies/MaxTokensTruncationStrategy";
 import { ReasoningExhaustionStrategy } from "../src/services/continuity/strategies/ReasoningExhaustionStrategy";
 import { ContinuityContext } from "../src/services/continuity/types";
+import { shouldWithholdEmptyTerminal } from "../src/services/continuity/emptyCompletionDecision";
 
 function baseContext(overrides: Partial<ContinuityContext> & { responseData: any }): ContinuityContext {
   return {
@@ -17,6 +18,48 @@ function baseContext(overrides: Partial<ContinuityContext> & { responseData: any
     ...overrides,
   };
 }
+
+describe("shouldWithholdEmptyTerminal (shared OpenAI + Anthropic)", () => {
+  it("holds OpenAI empty stop and [DONE] when nothing visible was sent", () => {
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: false,
+      finishReason: "stop",
+    })).toBe(true);
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: false,
+      isDone: true,
+    })).toBe(true);
+  });
+
+  it("holds Anthropic empty message_delta/message_stop", () => {
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: false,
+      anthropicEventType: "message_stop",
+    })).toBe(true);
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: false,
+      anthropicEventType: "message_delta",
+      anthropicStopReason: "end_turn",
+    })).toBe(true);
+  });
+
+  it("does not hold after visible text or tool/reasoning content", () => {
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: true,
+      finishReason: "stop",
+    })).toBe(false);
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: false,
+      eventHasSemanticContent: true,
+      finishReason: "stop",
+    })).toBe(false);
+    expect(shouldWithholdEmptyTerminal({
+      visibleClientOutputSent: false,
+      hasReasoningBuffer: true,
+      isDone: true,
+    })).toBe(false);
+  });
+});
 
 describe("EmptyOutputStrategy Unit Tests", () => {
   const strategy = new EmptyOutputStrategy();

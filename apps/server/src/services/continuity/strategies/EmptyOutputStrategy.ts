@@ -1,8 +1,10 @@
-import { detectProviderUsagePresence, normalizeUsagePayload } from "../../../utils/gatewayContent";
 import { ContinuityStrategy, ContinuityContext, ContinuityDecision } from "../types";
+import {
+  ZERO_COMPLETION_FALLBACK,
+  wouldLogZeroEmptyCompletion,
+} from "../emptyCompletionDecision";
 
-const ZERO_COMPLETION_FALLBACK =
-  "\n\n*(系统提示：上游返回 0 输出 token，已重试仍为空。请换模型或重新发送。)*";
+export { wouldLogZeroEmptyCompletion as providerReportedZeroOutput } from "../emptyCompletionDecision";
 
 function hasValidContentOrActionInPayload(parsedData: any): boolean {
   if (!parsedData || typeof parsedData !== "object") return false;
@@ -36,25 +38,6 @@ function hasValidContentOrActionInPayload(parsedData: any): boolean {
   return false;
 }
 
-function isExplicitZeroOutput(payload: any, presenceHint?: { outputProvided?: boolean }): boolean {
-  const presence = presenceHint || detectProviderUsagePresence(payload);
-  if (!presence?.outputProvided) return false;
-  return normalizeUsagePayload(payload)?.outputTokens === 0;
-}
-
-/** Explicit upstream 0, or the same in/0/in totals the completed log will print. */
-export function providerReportedZeroOutput(responseData: any, roundUsage?: { inputTokens?: number; outputTokens?: number }): boolean {
-  if (isExplicitZeroOutput(responseData?.data, responseData?.rawProviderUsage)) {
-    return true;
-  }
-  if (isExplicitZeroOutput(responseData?.roundStreamUsage)) {
-    return true;
-  }
-  const usage = roundUsage || responseData?.roundUsage;
-  if (!usage) return false;
-  return Number(usage.inputTokens) > 0 && Number(usage.outputTokens) === 0;
-}
-
 export class EmptyOutputStrategy implements ContinuityStrategy {
   name = "EmptyOutput";
   maxRetries = 1;
@@ -66,12 +49,10 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    // Live SSE still in flight — wait for streamResult. Fake streams are complete JSON.
     if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
       return { shouldIntervene: false };
     }
 
-    // Stop/[DONE] already left the gateway — never hold or retry (OpenCode hang).
     if (streamResult?.terminalEventSent) {
       return { shouldIntervene: false };
     }
@@ -110,11 +91,10 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    if (!providerReportedZeroOutput(responseData, context.roundUsage)) {
+    if (!wouldLogZeroEmptyCompletion(responseData, context.roundUsage)) {
       return { shouldIntervene: false };
     }
 
-    // Same payload. Do not inject a user "continue" — that is not this case's practice.
     return {
       shouldIntervene: true,
       strategyName: this.name,

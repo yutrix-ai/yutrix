@@ -211,49 +211,65 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
         if (incomingProtocol === "anthropic") {
           const isAnthropicAdaptation = ctx.activeEffectiveUpstreamProtocol === "openai";
-
-          if (isAnthropicAdaptation) {
-            if (anthropicState) {
-              // Close active tool calls
-              for (const idx in anthropicState.activeToolCalls) {
-                const state = anthropicState.activeToolCalls[idx];
-                if (state.emittedStart && !state.closed) {
-                   reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: anthropicState.activeBlockIndex })}\n\n`);
-                   state.closed = true;
-                   anthropicState.activeBlockIndex++;
-                }
-              }
-              // Close text block if active
-              if (anthropicState.isInsideTextBlock) {
-                 reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: anthropicState.activeBlockIndex })}\n\n`);
-                 anthropicState.isInsideTextBlock = false;
-                 anthropicState.activeBlockIndex++;
-              }
-            } else if (lastStreamResult?.closingSentinel) {
-               reply.raw.write(lastStreamResult.closingSentinel);
-            } else {
-              reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);
+          const writeAnthropicEmptyClose = (stopReason: string) => {
+            const fallbackText =
+              (typeof responseData?.zeroCompletionFallback === "string" && responseData.zeroCompletionFallback)
+              || "";
+            if (fallbackText.trim()) {
+              const idx = anthropicState?.activeBlockIndex || 0;
+              reply.raw.write(`event: content_block_start\ndata: ${JSON.stringify({
+                type: "content_block_start",
+                index: idx,
+                content_block: { type: "text", text: "" },
+              })}\n\n`);
+              reply.raw.write(`event: content_block_delta\ndata: ${JSON.stringify({
+                type: "content_block_delta",
+                index: idx,
+                delta: { type: "text_delta", text: fallbackText },
+              })}\n\n`);
+              reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                type: "content_block_stop",
+                index: idx,
+              })}\n\n`);
             }
-            const stopReason = isTruncated ? "max_tokens" : (lastStreamResult?.stopReason || "end_turn");
             const totalOutput = ctx.continuity.completionTokens || 0;
-
             reply.raw.write(`event: message_delta\ndata: ${JSON.stringify({
               type: "message_delta",
-              delta: {
-                stop_reason: stopReason,
-                stop_sequence: null,
-              },
-              usage: {
-                output_tokens: totalOutput,
-              },
+              delta: { stop_reason: stopReason, stop_sequence: null },
+              usage: { output_tokens: totalOutput },
             })}\n\n`);
-
             reply.raw.write(`event: message_stop\ndata: {"type":"message_stop"}\n\n`);
+          };
+
+          if (isAnthropicAdaptation) {
+            if (isTruncated) {
+              if (anthropicState) {
+                for (const idx in anthropicState.activeToolCalls) {
+                  const state = anthropicState.activeToolCalls[idx];
+                  if (state.emittedStart && !state.closed) {
+                     reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: anthropicState.activeBlockIndex })}\n\n`);
+                     state.closed = true;
+                     anthropicState.activeBlockIndex++;
+                  }
+                }
+                if (anthropicState.isInsideTextBlock) {
+                   reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: anthropicState.activeBlockIndex })}\n\n`);
+                   anthropicState.isInsideTextBlock = false;
+                   anthropicState.activeBlockIndex++;
+                }
+              } else if (lastStreamResult?.closingSentinel) {
+                 reply.raw.write(lastStreamResult.closingSentinel);
+              }
+              writeAnthropicEmptyClose("max_tokens");
+            } else if (lastStreamResult?.withheldEmptyTerminal) {
+              writeAnthropicEmptyClose(lastStreamResult?.stopReason || "end_turn");
+            }
           } else {
-            // Native Anthropic
             const wasStitching = ctx.continuity.committedRoundIds.size > 1;
 
-            if (wasStitching || isTruncated) {
+            if (lastStreamResult?.withheldEmptyTerminal) {
+              writeAnthropicEmptyClose(lastStreamResult?.stopReason || "end_turn");
+            } else if (wasStitching || isTruncated) {
               const stopReason = isTruncated ? "max_tokens" : (lastStreamResult?.stopReason || "end_turn");
               const totalOutput = ctx.continuity.completionTokens || 0;
               reply.raw.write(`event: message_delta\ndata: ${JSON.stringify({

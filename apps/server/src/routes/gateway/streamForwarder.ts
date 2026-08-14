@@ -36,6 +36,7 @@ import { activeTranslators } from "./translators";
 import type { TranslatorState, TranslatorContext } from "./translators/types";
 import crypto from "crypto";
 import { parseSseDataLine } from "../../utils/gatewayContent";
+import { shouldWithholdEmptyTerminal } from "../../services/continuity/emptyCompletionDecision";
 import {
   formatStreamErrorEvent,
   formatStreamKeepAlive,
@@ -544,6 +545,8 @@ export async function forwardSSEStreamTransparent(
       let originalEventStr = "";
       let skippedDoneLine = false;
       let eventSanitized = false;
+      let eventParsedPayload: any = null;
+      let eventAnthropicType: string | null = null;
 
       const lineRegex = /([^\r\n]*)(\r?\n)?/g;
       let lineMatch;
@@ -558,6 +561,9 @@ export async function forwardSSEStreamTransparent(
         if (trimmedLine === "") {
           modifiedEventStr += ending;
           continue;
+        }
+        if (/^event:\s*/i.test(trimmedLine)) {
+          eventAnthropicType = trimmedLine.replace(/^event:\s*/i, "").trim() || eventAnthropicType;
         }
 
         const dataText = parseSseDataLine(trimmedLine);
@@ -582,6 +588,7 @@ export async function forwardSSEStreamTransparent(
           }
 
              if (dataCopy) {
+             eventParsedPayload = dataCopy;
              if (incomingProtocol !== "anthropic" && stripNullOpenAIDeltaContent(dataCopy)) {
                outputLine = `data: ${JSON.stringify(dataCopy)}`;
                eventSanitized = true;
@@ -779,14 +786,15 @@ export async function forwardSSEStreamTransparent(
       // zero-completion retry can reuse the same SSE response.
       const holdEmptyTerminal =
         !hadLengthCutoff
-        && !visibleClientOutputSent
-        && !reasoningForOpenAIClient
-        && !eventHasSemanticContent
-        && (
-          eventIsDone
-          || eventChunkFinishReason === "stop"
-          || eventChunkFinishReason === "end_turn"
-        );
+        && shouldWithholdEmptyTerminal({
+          visibleClientOutputSent,
+          hasReasoningBuffer: !!reasoningForOpenAIClient,
+          eventHasSemanticContent,
+          isDone: eventIsDone,
+          finishReason: eventChunkFinishReason,
+          anthropicEventType: eventAnthropicType || eventParsedPayload?.type || null,
+          anthropicStopReason: eventParsedPayload?.delta?.stop_reason || eventParsedPayload?.stop_reason || null,
+        });
       if (holdEmptyTerminal) {
         shouldSkipWrite = true;
         withheldEmptyTerminal = true;
@@ -959,6 +967,8 @@ export async function forwardSSEStreamAdapted(
   let streamTimeoutId: NodeJS.Timeout | undefined;
   let shouldSkipWrite = false;
   let meaningfulClientOutputSent = false;
+  let visibleClientOutputSent = false;
+  let withheldEmptyTerminal = false;
   const downstream = createDownstreamWriter(
     reply,
     "anthropic",
@@ -971,6 +981,9 @@ export async function forwardSSEStreamAdapted(
     if (success && payload) {
       if (hasMeaningfulOutputEvent(payload, "anthropic")) {
         meaningfulClientOutputSent = true;
+      }
+      if (hasVisibleAnswerEvent(payload, "anthropic")) {
+        visibleClientOutputSent = true;
       }
     }
     return success;
@@ -1306,7 +1319,17 @@ export async function forwardSSEStreamAdapted(
   }
 
   // ─── Anthropic stream finalization ───
-  if (!stitchState?.isStitching || stitchState?.isLastCycle) {
+  const holdAdaptedEmptyClose =
+    !hadLengthCutoff
+    && Object.keys(activeToolCalls).length === 0
+    && shouldWithholdEmptyTerminal({
+      visibleClientOutputSent,
+      anthropicEventType: "message_stop",
+    });
+
+  if (holdAdaptedEmptyClose) {
+    withheldEmptyTerminal = true;
+  } else if (!stitchState?.isStitching || stitchState?.isLastCycle || visibleClientOutputSent) {
     if (isInsideTextBlock) {
       downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
         type: "content_block_stop",
@@ -1374,5 +1397,13 @@ export async function forwardSSEStreamAdapted(
     activeToolCalls: activeToolCalls,
   };
 
-  return { gotFirstChunk, isLengthTruncated: hadLengthCutoff, closingSentinel: finalClosingSentinel, anthropicState: newAnthropicState, meaningfulClientOutputSent };
+  return {
+    gotFirstChunk,
+    isLengthTruncated: hadLengthCutoff,
+    closingSentinel: finalClosingSentinel,
+    anthropicState: newAnthropicState,
+    meaningfulClientOutputSent,
+    visibleClientOutputSent,
+    withheldEmptyTerminal,
+  };
 }
