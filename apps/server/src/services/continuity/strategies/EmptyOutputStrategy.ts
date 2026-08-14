@@ -36,13 +36,19 @@ function hasValidContentOrActionInPayload(parsedData: any): boolean {
   return false;
 }
 
+function isExplicitZeroOutput(payload: any, presenceHint?: { outputProvided?: boolean }): boolean {
+  const presence = presenceHint || detectProviderUsagePresence(payload);
+  if (!presence?.outputProvided) return false;
+  return normalizeUsagePayload(payload)?.outputTokens === 0;
+}
+
 /** Only trust an explicit upstream completion/output count of 0. Missing usage is not zero. */
 export function providerReportedZeroOutput(responseData: any): boolean {
-  const data = responseData?.data;
-  const presence = responseData?.rawProviderUsage || detectProviderUsagePresence(data);
-  if (!presence?.outputProvided) return false;
-  const normalized = normalizeUsagePayload(data);
-  return normalized?.outputTokens === 0;
+  if (isExplicitZeroOutput(responseData?.data, responseData?.rawProviderUsage)) {
+    return true;
+  }
+  // Live SSE usage arrives in the trailer, not the JSON envelope.
+  return isExplicitZeroOutput(responseData?.roundStreamUsage);
 }
 
 export class EmptyOutputStrategy implements ContinuityStrategy {
@@ -119,13 +125,24 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
   async onExhausted(context: ContinuityContext): Promise<any> {
     const { responseData } = context;
     const fallbackMsg = ZERO_COMPLETION_FALLBACK;
+    responseData.zeroCompletionFallback = fallbackMsg;
 
+    if (!responseData.data || typeof responseData.data !== "object") {
+      responseData.data = {};
+    }
     if (responseData.data?.choices?.[0]?.message) {
       responseData.data.choices[0].message.content = (responseData.data.choices[0].message.content || "") + fallbackMsg;
     } else if (responseData.data?.content && Array.isArray(responseData.data.content)) {
       responseData.data.content.push({ type: "text", text: fallbackMsg });
-    } else if (responseData.data) {
-      responseData.data.response = (responseData.data.response || "") + fallbackMsg;
+    } else if (Array.isArray(responseData.data.choices) && responseData.data.choices[0]) {
+      responseData.data.choices[0].message = {
+        ...(responseData.data.choices[0].message || { role: "assistant" }),
+        content: fallbackMsg,
+      };
+    } else {
+      responseData.data.choices = [
+        { index: 0, message: { role: "assistant", content: fallbackMsg }, finish_reason: "stop" },
+      ];
     }
 
     return responseData;

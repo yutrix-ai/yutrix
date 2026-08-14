@@ -13,7 +13,7 @@ import { finalizeStreamLog, isAuditExemptUser, appendRoutingTraceToOutput } from
 import { writeStreamErrorResponse, writeStreamHeaders } from "./streamProtocol";
 import { buildSafeNonStreamAuditOutput } from "./auditSanitizer";
 
-export async function handleGatewayResponse(ctx: GatewayRequestContext, responseData: any, logAction: any, isStitching = false, anthropicState?: any): Promise<{ isLengthTruncated: boolean, lastToolCallState?: any, closingSentinel?: string, anthropicState?: any, terminalError?: any, terminalEventSent?: boolean, meaningfulClientOutputSent?: boolean, visibleClientOutputSent?: boolean }> {
+export async function handleGatewayResponse(ctx: GatewayRequestContext, responseData: any, logAction: any, isStitching = false, anthropicState?: any): Promise<{ isLengthTruncated: boolean, lastToolCallState?: any, closingSentinel?: string, anthropicState?: any, terminalError?: any, terminalEventSent?: boolean, meaningfulClientOutputSent?: boolean, visibleClientOutputSent?: boolean, withheldEmptyTerminal?: boolean }> {
   if (!ctx.continuity) {
     ctx.continuity = {
       accumulatedCompletionText: "",
@@ -306,6 +306,7 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
           terminalEventSent: streamResult.terminalEventSent,
           meaningfulClientOutputSent: streamResult.meaningfulClientOutputSent,
           visibleClientOutputSent: streamResult.visibleClientOutputSent,
+          withheldEmptyTerminal: streamResult.withheldEmptyTerminal,
         };
       }
 }

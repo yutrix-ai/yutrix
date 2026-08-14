@@ -200,7 +200,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
           ctx.activeProviderAdapter?.id === "transparent" &&
           incomingProtocol === (ctx.activeEffectiveUpstreamProtocol || "openai") &&
           !ctx.continuity?.hasStartedContinuity &&
-          !isTruncated;
+          !isTruncated &&
+          !lastStreamResult?.withheldEmptyTerminal;
 
         if (isOrdinaryTransparentSameProtocol) {
           reply.raw.end();
@@ -277,6 +278,22 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               ...meta,
               object: "chat.completion.chunk",
               choices: [{ delta: {}, finish_reason: "length" }]
+            })}\n\n`);
+          } else if (lastStreamResult?.withheldEmptyTerminal) {
+            const fallbackText =
+              (typeof responseData?.zeroCompletionFallback === "string" && responseData.zeroCompletionFallback)
+              || responseData?.data?.choices?.[0]?.message?.content;
+            if (typeof fallbackText === "string" && fallbackText.trim()) {
+              reply.raw.write(`data: ${JSON.stringify({
+                ...meta,
+                object: "chat.completion.chunk",
+                choices: [{ delta: { content: fallbackText }, finish_reason: null }]
+              })}\n\n`);
+            }
+            reply.raw.write(`data: ${JSON.stringify({
+              ...meta,
+              object: "chat.completion.chunk",
+              choices: [{ delta: {}, finish_reason: "stop" }]
             })}\n\n`);
           }
 

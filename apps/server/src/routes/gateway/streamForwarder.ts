@@ -368,6 +368,8 @@ export interface TransparentForwardResult {
   meaningfulClientOutputSent: boolean;
   /** True if visible answer text or tool calls were sent (excludes reasoning-only). */
   visibleClientOutputSent?: boolean;
+  /** Empty stop/[DONE] held because the client has not seen visible tokens yet. */
+  withheldEmptyTerminal?: boolean;
 }
 
 /**
@@ -441,6 +443,7 @@ export async function forwardSSEStreamTransparent(
   let visibleClientOutputSent = false;
   let streamHadDoneEvent = false;
   let pendingUsageEvents: string[] = [];
+  let withheldEmptyTerminal = false;
   let reasoningForOpenAIClient = "";
   let lastOpenAIChunkMeta: { id: string; created: number; model: string } = {
     id: `chatcmpl_${crypto.randomUUID()}`,
@@ -772,6 +775,26 @@ export async function forwardSSEStreamTransparent(
          }
       }
 
+      // OpenRouter: before any visible tokens, do not commit stop/[DONE] so a
+      // zero-completion retry can reuse the same SSE response.
+      const holdEmptyTerminal =
+        !hadLengthCutoff
+        && !visibleClientOutputSent
+        && !reasoningForOpenAIClient
+        && !eventHasSemanticContent
+        && (
+          eventIsDone
+          || eventChunkFinishReason === "stop"
+          || eventChunkFinishReason === "end_turn"
+        );
+      if (holdEmptyTerminal) {
+        shouldSkipWrite = true;
+        withheldEmptyTerminal = true;
+        if (eventHasUsage) {
+          pendingUsageEvents.push(originalEventStr);
+        }
+      }
+
       if (hadLengthCutoff) {
          // Drop everything if it's DONE or usage only
          if (eventIsDone || (eventHasUsage && !eventHasSemanticContent && !eventChunkFinishReason)) {
@@ -823,15 +846,18 @@ export async function forwardSSEStreamTransparent(
         if (done) {
       // Flush any pending usage events that were held waiting for a potential length cutoff
       if (!hadLengthCutoff && pendingUsageEvents.length > 0) {
-        for (const ev of pendingUsageEvents) {
-          if (isTransparentNoStitch) {
-            downstream.write(ev);
-          } else {
+        if (withheldEmptyTerminal && !visibleClientOutputSent) {
+          if (stitchState?.terminalReplayState) {
+            stitchState.terminalReplayState.usageSuppressed = true;
+            stitchState.terminalReplayState.suppressedUsageChunkBytes = pendingUsageEvents.join("");
+          }
+        } else {
+          for (const ev of pendingUsageEvents) {
             downstream.write(ev);
           }
-        }
-        if (stitchState?.terminalReplayState) {
-          stitchState.terminalReplayState.usageForwarded = true;
+          if (stitchState?.terminalReplayState) {
+            stitchState.terminalReplayState.usageForwarded = true;
+          }
         }
         pendingUsageEvents = [];
       }
@@ -887,7 +913,7 @@ export async function forwardSSEStreamTransparent(
 
   observer?.onStreamEnd?.();
 
-  return { gotFirstChunk, isLengthTruncated: hadLengthCutoff, lastToolCallState: stitchState, meaningfulClientOutputSent, visibleClientOutputSent };
+  return { gotFirstChunk, isLengthTruncated: hadLengthCutoff, lastToolCallState: stitchState, meaningfulClientOutputSent, visibleClientOutputSent, withheldEmptyTerminal };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

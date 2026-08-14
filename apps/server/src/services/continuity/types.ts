@@ -18,6 +18,7 @@ export interface ContinuityContext {
     /** Terminal stream error from forwarder/adapters (blocks empty-output retry). */
     terminalError?: any;
     terminalEventSent?: boolean;
+    withheldEmptyTerminal?: boolean;
   };
   accumulatedCompletionText: string;
   baseActionLog: any;

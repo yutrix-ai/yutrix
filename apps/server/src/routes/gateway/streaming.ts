@@ -49,6 +49,7 @@ export interface StreamForwardResult {
   terminalEventSent?: boolean;
   meaningfulClientOutputSent?: boolean;
   visibleClientOutputSent?: boolean;
+  withheldEmptyTerminal?: boolean;
   /** Terminal error detected by provider adapter during stream observation. */
   terminalError?: StreamTerminalError;
   anthropicState?: any;
@@ -86,6 +87,7 @@ class StreamAuditObserver implements StreamForwardObserver {
   private toolCallIndex: Record<number, { id: string; name: string }> = {};
   private isGoogleThoughtStream = false;
   private providerPromptTokensReceived = false;
+  private providerCompletionTokensReceived = false;
 
   constructor(
     promptTokens: number,
@@ -173,6 +175,7 @@ class StreamAuditObserver implements StreamForwardObserver {
       }
       if (chunkUsage.outputTokens !== undefined) {
         this.completionTokens = Math.max(this.completionTokens, chunkUsage.outputTokens);
+        this.providerCompletionTokensReceived = true;
       }
       const explicitTotalTokens = firstTokenCount(rawUsage?.total_tokens);
       if (explicitTotalTokens !== undefined) {
@@ -187,8 +190,12 @@ class StreamAuditObserver implements StreamForwardObserver {
       this.streamedUsagePayload = {
         usage: {
           prompt_tokens: this.promptTokens,
-          completion_tokens: this.completionTokens,
-          total_tokens: this.streamedTotalTokens,
+          ...(this.providerCompletionTokensReceived
+            ? { completion_tokens: this.completionTokens }
+            : {}),
+          ...(this.streamedTotalTokens !== undefined
+            ? { total_tokens: this.streamedTotalTokens }
+            : {}),
         },
       };
     }
@@ -335,6 +342,7 @@ export async function forwardStream(
   let terminalEventSent = false;
   let meaningfulClientOutputSent = false;
   let visibleClientOutputSent = false;
+  let withheldEmptyTerminal = false;
 
   const translatorContext: TranslatorContext = {
     modelId: currentAttempt.modelId,
@@ -372,6 +380,7 @@ export async function forwardStream(
     terminalEventSent = result.terminalEventSent || false;
     meaningfulClientOutputSent = result.meaningfulClientOutputSent || false;
     visibleClientOutputSent = result.visibleClientOutputSent || false;
+    withheldEmptyTerminal = result.withheldEmptyTerminal || false;
     anthropicState = (result as any).anthropicState;
   } else {
     // ─── Same-protocol path ───
@@ -400,6 +409,7 @@ export async function forwardStream(
     terminalEventSent = result.terminalEventSent || false;
     meaningfulClientOutputSent = result.meaningfulClientOutputSent || false;
     visibleClientOutputSent = result.visibleClientOutputSent || false;
+    withheldEmptyTerminal = result.withheldEmptyTerminal || false;
   }
 
   // ─── Post-stream processing ───
@@ -442,6 +452,7 @@ export async function forwardStream(
     terminalEventSent,
     meaningfulClientOutputSent,
     visibleClientOutputSent,
+    withheldEmptyTerminal,
     terminalError: ctx.activeProviderAdapterState?.terminalError || undefined,
     anthropicState: anthropicState,
   };

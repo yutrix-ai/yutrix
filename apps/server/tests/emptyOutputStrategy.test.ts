@@ -250,6 +250,42 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.modifiedBody.messages.at(-1).content).toBe("hello");
   });
 
+  it("retries when live SSE trailer reports completion_tokens=0", async () => {
+    const originalBody = {
+      model: "gemini-3.6-flash",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    const context = baseContext({
+      originalBody,
+      responseData: {
+        status: 200,
+        isStream: true,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        },
+        roundStreamUsage: {
+          usage: { prompt_tokens: 2916, completion_tokens: 0, total_tokens: 2916 },
+        },
+      },
+      streamResult: {
+        isLengthTruncated: false,
+        withheldEmptyTerminal: true,
+        visibleClientOutputSent: false,
+        meaningfulClientOutputSent: false,
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.modifiedBody).toBe(originalBody);
+  });
+
   it("should NOT intervene when usage is missing (estimated 0 is not a signal)", async () => {
     const context = baseContext({
       responseData: {

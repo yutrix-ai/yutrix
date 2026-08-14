@@ -469,6 +469,98 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(emptyStopBeforeContent).toBe(false);
   });
 
+  it("stream=true retries native SSE when trailer reports completion_tokens=0", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      callCount++;
+      if (callCount === 1) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: {"usage":{"prompt_tokens":2916,"completion_tokens":0,"total_tokens":2916}}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"export const getRecordList = () => {}"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "Generate API code" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(2);
+    expect(res.body).toContain("export const getRecordList = () => {}");
+    expect(res.body).toContain("[DONE]");
+    const firstStop = res.body.indexOf("\"finish_reason\":\"stop\"");
+    const firstContent = res.body.indexOf("export const getRecordList");
+    expect(firstContent).toBeGreaterThan(-1);
+    expect(firstStop).toBeGreaterThan(firstContent);
+  });
+
+  it("stream=true emits visible fallback after native SSE still returns 0 tokens", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      callCount++;
+      const streamText =
+        `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: {"usage":{"prompt_tokens":100,"completion_tokens":0,"total_tokens":100}}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(streamText, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "Generate API code" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(2);
+    expect(res.body).toContain("0 输出 token");
+    expect(res.body).toContain("[DONE]");
+  });
+
   it("stream=true forwards empty native SSE stop/[DONE] without holding the stream", async () => {
     await setupEnvironment();
 
