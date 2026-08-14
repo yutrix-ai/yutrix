@@ -23,11 +23,16 @@ describe("EmptyOutputStrategy Unit Tests", () => {
 
   it("has correct strategy name and default maxRetries", () => {
     expect(strategy.name).toBe("EmptyOutput");
-    expect(strategy.maxRetries).toBe(2);
+    expect(strategy.maxRetries).toBe(1);
   });
 
-  it("should intervene when response is 200 with empty content and no tool calls", async () => {
+  it("retries the same body when provider reports completion_tokens=0", async () => {
+    const originalBody = {
+      model: "gemini-3.6-flash",
+      messages: [{ role: "user", content: "hello" }],
+    };
     const context = baseContext({
+      originalBody,
       responseData: {
         status: 200,
         data: {
@@ -46,16 +51,11 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     const decision = await strategy.evaluate(context);
     expect(decision.shouldIntervene).toBe(true);
     expect(decision.strategyName).toBe("EmptyOutput");
-    expect(decision.modifiedBody).toBeDefined();
-
-    // Verify injected message in modified body
-    const messages = decision.modifiedBody.messages;
-    expect(messages.length).toBe(2);
-    expect(messages[1].role).toBe("user");
-    expect(messages[1].content).toContain("System Guard Note");
+    expect(decision.modifiedBody).toBe(originalBody);
+    expect(decision.modifiedBody.messages).toHaveLength(1);
   });
 
-  it("should intervene for Anthropic-style empty content array", async () => {
+  it("should NOT intervene for Anthropic empty content without reported output tokens", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -69,8 +69,26 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     });
 
     const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("should intervene for Anthropic empty content when output_tokens is 0", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        data: {
+          type: "message",
+          role: "assistant",
+          content: [],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 80, output_tokens: 0 },
+        },
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
     expect(decision.shouldIntervene).toBe(true);
-    expect(decision.strategyName).toBe("EmptyOutput");
+    expect(decision.modifiedBody.messages).toHaveLength(1);
   });
 
   it("should NOT intervene when content is non-empty", async () => {
@@ -224,13 +242,82 @@ describe("EmptyOutputStrategy Unit Tests", () => {
           usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
         },
       },
-      // Stage 1 early continuity has no streamResult yet
     });
 
     const decision = await strategy.evaluate(context);
     expect(decision.shouldIntervene).toBe(true);
     expect(decision.strategyName).toBe("EmptyOutput");
-    expect(decision.modifiedBody.messages.at(-1).content).toContain("System Guard Note");
+    expect(decision.modifiedBody.messages.at(-1).content).toBe("hello");
+  });
+
+  it("should NOT intervene when usage is missing (estimated 0 is not a signal)", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        },
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("should NOT intervene on sidecar / title-generation requests", async () => {
+    const context = baseContext({
+      requestClass: "client_sidecar",
+      responseData: {
+        status: 200,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 40, completion_tokens: 0, total_tokens: 40 },
+        },
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("should NOT intervene after stop/[DONE] was already sent to the client", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        isStream: true,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 50, completion_tokens: 0, total_tokens: 50 },
+        },
+      },
+      streamResult: {
+        isLengthTruncated: false,
+        terminalEventSent: true,
+        visibleClientOutputSent: false,
+        meaningfulClientOutputSent: false,
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(false);
   });
 
   it("should NOT intervene when visible client output was already sent", async () => {
@@ -259,7 +346,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("should intervene after reasoning-only stream (no visible answer for OpenCode)", async () => {
+  it("should NOT treat reasoning-only as zero-completion (ReasoningExhaustion owns that)", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -268,10 +355,15 @@ describe("EmptyOutputStrategy Unit Tests", () => {
           choices: [
             {
               index: 0,
-              message: { role: "assistant", content: "" },
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "ok",
+              },
               finish_reason: "stop",
             },
           ],
+          usage: { prompt_tokens: 20, completion_tokens: 0, total_tokens: 20 },
         },
       },
       streamResult: {
@@ -283,8 +375,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(true);
-    expect(decision.strategyName).toBe("EmptyOutput");
+    expect(decision.shouldIntervene).toBe(false);
   });
 
   it("should NOT intervene when fakeStreamText carries non-empty content", async () => {
@@ -328,7 +419,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     });
 
     const modifiedResponse = await strategy.onExhausted(context);
-    expect(modifiedResponse.data.choices[0].message.content).toContain("模型响应结果为空");
+    expect(modifiedResponse.data.choices[0].message.content).toContain("0 输出 token");
   });
 });
 

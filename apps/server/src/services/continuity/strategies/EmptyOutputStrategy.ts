@@ -1,4 +1,8 @@
+import { detectProviderUsagePresence, normalizeUsagePayload } from "../../../utils/gatewayContent";
 import { ContinuityStrategy, ContinuityContext, ContinuityDecision } from "../types";
+
+const ZERO_COMPLETION_FALLBACK =
+  "\n\n*(系统提示：上游返回 0 输出 token，已重试仍为空。请换模型或重新发送。)*";
 
 function hasValidContentOrActionInPayload(parsedData: any): boolean {
   if (!parsedData || typeof parsedData !== "object") return false;
@@ -18,7 +22,6 @@ function hasValidContentOrActionInPayload(parsedData: any): boolean {
     return false;
   };
 
-  // 1. Check choices[0].message
   const message = parsedData.choices?.[0]?.message;
   if (message) {
     if (message.tool_calls && message.tool_calls.length > 0) return true;
@@ -27,36 +30,46 @@ function hasValidContentOrActionInPayload(parsedData: any): boolean {
     if (Array.isArray(message.content) && checkBlocks(message.content)) return true;
   }
 
-  // 2. Check top-level content (Anthropic style)
   if (typeof parsedData.content === "string" && parsedData.content.trim().length > 0) return true;
   if (Array.isArray(parsedData.content) && checkBlocks(parsedData.content)) return true;
 
   return false;
 }
 
+/** Only trust an explicit upstream completion/output count of 0. Missing usage is not zero. */
+export function providerReportedZeroOutput(responseData: any): boolean {
+  const data = responseData?.data;
+  const presence = responseData?.rawProviderUsage || detectProviderUsagePresence(data);
+  if (!presence?.outputProvided) return false;
+  const normalized = normalizeUsagePayload(data);
+  return normalized?.outputTokens === 0;
+}
+
 export class EmptyOutputStrategy implements ContinuityStrategy {
   name = "EmptyOutput";
-  maxRetries = 2;
+  maxRetries = 1;
 
   async evaluate(context: ContinuityContext): Promise<ContinuityDecision> {
-    const { responseData, originalBody, accumulatedCompletionText, streamResult } = context;
+    const { responseData, originalBody, accumulatedCompletionText, streamResult, requestClass } = context;
 
-    // Check if responseData is valid and 200 OK
     if (!responseData || responseData.status >= 400) {
       return { shouldIntervene: false };
     }
 
-    // Defer only for live native streams that have not finished yet.
-    // Fake streams already wrap a complete JSON payload (isFakeStream=true) and are
-    // evaluated in Stage 1 early continuity BEFORE any SSE (including empty stop/[DONE])
-    // is forwarded to the client — treating them as incomplete would skip auto-continue.
+    if (requestClass === "client_sidecar") {
+      return { shouldIntervene: false };
+    }
+
+    // Live SSE still in flight — wait for streamResult. Fake streams are complete JSON.
     if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
       return { shouldIntervene: false };
     }
 
-    // Do not retry if visible answer/tool output already went to the client, or on terminal errors.
-    // Reasoning-only streams set meaningfulClientOutputSent but not visibleClientOutputSent —
-    // OpenCode/agents ignore reasoning_content, so those must still auto-continue.
+    // Stop/[DONE] already left the gateway — never hold or retry (OpenCode hang).
+    if (streamResult?.terminalEventSent) {
+      return { shouldIntervene: false };
+    }
+
     const visibleAlreadySent = streamResult?.visibleClientOutputSent === true
       || (streamResult?.visibleClientOutputSent !== false && streamResult?.meaningfulClientOutputSent === true && streamResult?.visibleClientOutputSent === undefined);
     if (visibleAlreadySent || streamResult?.terminalError) {
@@ -64,8 +77,6 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
     }
 
     let parsedData = responseData?.data;
-
-    // Check if the payload already contains valid text, reasoning, or tool actions
     if (hasValidContentOrActionInPayload(parsedData)) {
       return { shouldIntervene: false };
     }
@@ -80,21 +91,8 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       }
     }
 
-    // Check embedded tags in text
     if (textToCheck && (textToCheck.includes("<tool_calls>") || textToCheck.includes("\"tool_calls\""))) {
       return { shouldIntervene: false };
-    }
-
-    // Extract reasoning tags <reasoning> or <think>
-    let reasoningText = "";
-    if (parsedData?.choices?.[0]?.message?.reasoning_content) {
-      reasoningText += parsedData.choices[0].message.reasoning_content;
-    }
-    if (textToCheck) {
-      const rMatches = textToCheck.matchAll(/<reasoning>([\s\S]*?)<\/reasoning>/g);
-      for (const m of rMatches) { reasoningText += m[1].trim(); }
-      const tMatches = textToCheck.matchAll(/<think>([\s\S]*?)<\/think>/g);
-      for (const m of tMatches) { reasoningText += m[1].trim(); }
     }
 
     let cleanVisibleText = textToCheck
@@ -102,34 +100,25 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       .replace(/<think>[\s\S]*?<\/think>/g, "")
       .trim();
 
-    // Condition for 0-Token Empty Output hit:
-    // visible text is empty, reasoning text is empty, and NO valid content/action blocks exist.
-    const isEmptyOutputHit = cleanVisibleText === "" && reasoningText.trim() === "";
-
-    if (isEmptyOutputHit) {
-      const injectPrompt = "[System Guard Note]: The previous response was empty. Please continue processing the task and output the requested result.";
-      const modifiedBody = { ...originalBody };
-
-      if (modifiedBody.messages && Array.isArray(modifiedBody.messages)) {
-        modifiedBody.messages = [...modifiedBody.messages];
-        modifiedBody.messages.push({ role: "user", content: injectPrompt });
-      } else if (modifiedBody.prompt && typeof modifiedBody.prompt === "string") {
-        modifiedBody.prompt += "\n\n[System Guard Note]: The previous response was empty. Please continue processing the task.\n\nAssistant:";
-      }
-
-      return {
-        shouldIntervene: true,
-        strategyName: this.name,
-        modifiedBody,
-      };
+    if (cleanVisibleText !== "") {
+      return { shouldIntervene: false };
     }
 
-    return { shouldIntervene: false };
+    if (!providerReportedZeroOutput(responseData)) {
+      return { shouldIntervene: false };
+    }
+
+    // Same payload. Do not inject a user "continue" — that is not this case's practice.
+    return {
+      shouldIntervene: true,
+      strategyName: this.name,
+      modifiedBody: originalBody,
+    };
   }
 
   async onExhausted(context: ContinuityContext): Promise<any> {
     const { responseData } = context;
-    const fallbackMsg = "\n\n*(系统提示：模型响应结果为空 [0-Token]，已自动终止等待。请轻微调整提示词或重试)*";
+    const fallbackMsg = ZERO_COMPLETION_FALLBACK;
 
     if (responseData.data?.choices?.[0]?.message) {
       responseData.data.choices[0].message.content = (responseData.data.choices[0].message.content || "") + fallbackMsg;

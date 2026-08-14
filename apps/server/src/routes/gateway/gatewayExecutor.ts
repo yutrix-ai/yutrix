@@ -1557,6 +1557,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   const earlyDecision = await continuityEngine.evaluateAll({
                      originalBody,
                      responseData,
+                     requestClass: classifyGatewayRequestClass(originalBody).requestClass,
                      baseActionLog,
                      currentAttempt,
                      accumulatedCompletionText: textToCheck,
@@ -2029,6 +2030,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       const postDecision = await continuityEngine.evaluateAll({
          originalBody,
          responseData,
+         requestClass: classifyGatewayRequestClass(originalBody).requestClass,
          streamResult: respResult,
          baseActionLog,
          currentAttempt,

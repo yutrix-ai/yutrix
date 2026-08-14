@@ -184,7 +184,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
   }
 
-  it("does not auto-continue empty JSON while EmptyOutput is unregistered (OpenCode regression)", async () => {
+  it("retries the same body once when provider reports completion_tokens=0", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -196,7 +196,6 @@ describe("Empty Output Auto-Continuation Integration", () => {
       receivedBodies.push(body);
 
       if (callCount === 1) {
-        // Turn 1: Empty 0-token response from upstream model
         return {
           ok: true,
           status: 200,
@@ -216,28 +215,26 @@ describe("Empty Output Auto-Continuation Integration", () => {
             usage: { prompt_tokens: 50, completion_tokens: 0, total_tokens: 50 },
           }),
         };
-      } else {
-        // Turn 2: Recovered response after auto-injected continuation prompt
-        return {
-          ok: true,
-          status: 200,
-          headers: new Headers({ "content-type": "application/json" }),
-          json: async () => ({
-            id: "chatcmpl-success-2",
-            object: "chat.completion",
-            created: Math.floor(Date.now() / 1000),
-            model: "gemini-3.6-flash",
-            choices: [
-              {
-                index: 0,
-                message: { role: "assistant", content: "export const getRecordList = () => {}" },
-                finish_reason: "stop",
-              },
-            ],
-            usage: { prompt_tokens: 70, completion_tokens: 25, total_tokens: 95 },
-          }),
-        };
       }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          id: "chatcmpl-success-2",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "gemini-3.6-flash",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "export const getRecordList = () => {}" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 70, completion_tokens: 25, total_tokens: 95 },
+        }),
+      };
     });
 
     vi.stubGlobal("fetch", mockFetch);
@@ -258,11 +255,12 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
 
-    expect(body.choices[0].message.content).toBe("");
-    expect(callCount).toBe(1);
+    expect(callCount).toBe(2);
+    expect(receivedBodies[1].messages).toEqual(receivedBodies[0].messages);
+    expect(body.choices[0].message.content).toBe("export const getRecordList = () => {}");
   });
 
-  it("does not inject EmptyOutput fallback while the strategy is unregistered", async () => {
+  it("emits a visible fallback after one same-body retry still returns 0 tokens", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -307,11 +305,57 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
 
-    expect(body.choices[0].message.content).toBe("");
-    expect(callCount).toBe(1);
+    expect(callCount).toBe(2);
+    expect(body.choices[0].message.content).toContain("0 输出 token");
   });
 
-  it("stream=true forwards empty JSON fake-stream once without EmptyOutput retry", async () => {
+  it("does not retry empty JSON when usage is omitted", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      callCount++;
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          id: "chatcmpl-empty-nousage",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "gemini-3.6-flash",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      };
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "Generate API code" }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(1);
+    expect(res.json().choices[0].message.content).toBe("");
+  });
+
+  it("stream=true retries empty JSON fake-stream once then forwards recovered content", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -381,7 +425,8 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(callCount).toBe(1);
+    expect(callCount).toBe(2);
+    expect(receivedBodies[1].messages).toEqual(receivedBodies[0].messages);
 
     // Client SSE should carry recovered content and a single terminal stop/[DONE]
     // without a premature empty terminal completion from turn 1.
@@ -418,10 +463,10 @@ describe("Empty Output Auto-Continuation Integration", () => {
       }
     }
 
-    expect(text).toBe("");
+    expect(text).toBe("export const getRecordList = () => {}");
     expect(finishReasons.at(-1)).toBe("stop");
     expect(doneFound).toBe(true);
-    expect(callCount).toBe(1);
+    expect(emptyStopBeforeContent).toBe(false);
   });
 
   it("stream=true forwards empty native SSE stop/[DONE] without holding the stream", async () => {

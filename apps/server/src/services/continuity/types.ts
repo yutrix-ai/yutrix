@@ -1,4 +1,4 @@
-import { FastifyRequest, FastifyReply } from "fastify";
+import type { GatewayRequestClass } from "../requestRoutingClass";
 
 /**
  * Context provided to strategies for evaluation.
@@ -6,6 +6,8 @@ import { FastifyRequest, FastifyReply } from "fastify";
 export interface ContinuityContext {
   originalBody: any;
   responseData: any;
+  /** Sidecar / title / classifier turns must not be retried. */
+  requestClass?: GatewayRequestClass;
   streamResult?: {
     isLengthTruncated: boolean;
     lastToolCallState?: any;
