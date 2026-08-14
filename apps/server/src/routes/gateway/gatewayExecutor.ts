@@ -23,7 +23,7 @@ import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, r
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
-import { overflowHopTaskOrder } from "./overflowContextHop";
+import { overflowHopTaskOrder, resolveGroupClipOverflowHop } from "./overflowContextHop";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTokenLimit } from "./inputTokenLimit";
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
@@ -821,14 +821,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                       rule: longContextRuleRaw,
                     });
                     if (validation.ok) {
-                      if (
-                        overflowFromGroupClip
-                        && validation.rule.providerId === currentAttempt.providerId
-                        && validation.rule.modelId === currentAttempt.modelId
-                      ) {
-                        ctx.overflowHopApplied = true;
-                        ctx.pendingOverflowHop = undefined;
-                      } else {
                       const matchedModelRows = await db
                         .select()
                         .from(providerModels)
@@ -841,15 +833,38 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                         .limit(1);
                       const targetModelConfig = matchedModelRows.length > 0 ? matchedModelRows[0] : null;
                       const targetContextBudget = resolveModelContextWindow(targetModelConfig);
-
+                      const overflowHop = overflowFromGroupClip
+                        ? resolveGroupClipOverflowHop({
+                            hasImages: hopOrder.includes("vision"),
+                            estimatedTokens: estimatedTotalTokens,
+                            currentProviderId: currentAttempt.providerId,
+                            currentModelId: currentAttempt.modelId,
+                            safetyMargin,
+                            visionCandidates: [],
+                            longContextCandidate: {
+                              providerId: validation.rule.providerId,
+                              providerProtocol: validation.rule.providerProtocol,
+                              modelId: validation.rule.modelId,
+                              windowLimit: targetContextBudget.limit,
+                            },
+                          })
+                        : null;
                       const isTargetContextSufficient = fitsContextBudget({
                         inputTokens: estimatedTotalTokens,
                         requestedOutputTokens: 0,
                         safetyMargin,
                         budget: targetContextBudget
                       });
+                      // Group-clip overflow hops even when the LC window is smaller
+                      // than the unclipped estimate; post-hop clip uses that window.
+                      const shouldHopLongContext = overflowHop
+                        ? overflowHop.action === "hop"
+                        : isTargetContextSufficient;
 
-                      if (isTargetContextSufficient) {
+                      if (overflowHop?.action === "stay") {
+                        ctx.overflowHopApplied = true;
+                        ctx.pendingOverflowHop = undefined;
+                      } else if (shouldHopLongContext) {
                         const longContextRule = validation.rule;
                         logAction({
                           ...baseActionLog,
@@ -867,7 +882,9 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           toProviderId: longContextRule.providerId,
                           toProviderProtocol: longContextRule.providerProtocol,
                           toModelId: longContextRule.modelId,
-                          reason: `long_context_override:input_${estimatedTotalTokens}>${contextBudget.limit}`,
+                          reason: overflowFromGroupClip
+                            ? `group_clip_overflow_hop:dropped_turns_unclipped_${estimatedTotalTokens}`
+                            : `long_context_override:input_${estimatedTotalTokens}>${contextBudget.limit}`,
                           hop: ctx.routingTrace.length + 1,
                           latencyMs: 0,
                           createdAt: new Date().toISOString(),
@@ -878,7 +895,9 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           providerProtocol: longContextRule.providerProtocol,
                           modelId: longContextRule.modelId,
                           strategyTaskType: "long_context",
-                          strategyReason: "override:input_exceeds_model_limit",
+                          strategyReason: overflowFromGroupClip
+                            ? "override:group_clip_would_drop_turns"
+                            : "override:input_exceeds_model_limit",
                         };
                         ctx.currentAttempt = currentAttempt;
                         longContextOverrideApplied = true;
@@ -886,7 +905,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                         ctx.pendingOverflowHop = undefined;
                         attemptCount--;
                         continue;
-                      }
                       }
                     }
                   }

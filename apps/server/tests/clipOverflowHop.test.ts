@@ -3,6 +3,7 @@ import {
   decideGroupClipOverflow,
   shouldOverflowHopInsteadOfClip,
   overflowHopTaskOrder,
+  resolveGroupClipOverflowHop,
 } from "../src/routes/gateway/overflowContextHop";
 import {
   applyInputTokenLimit,
@@ -57,6 +58,103 @@ describe("decideGroupClipOverflow", () => {
   it("orders vision before long_context when the request has images", () => {
     expect(overflowHopTaskOrder(true)).toEqual(["vision", "long_context"]);
     expect(overflowHopTaskOrder(false)).toEqual(["long_context"]);
+  });
+});
+
+describe("resolveGroupClipOverflowHop (shipped hop resolution)", () => {
+  it("hops to configured LC then clips to the LC window when that window is smaller than unclipped", () => {
+    const resolved = resolveGroupClipOverflowHop({
+      hasImages: false,
+      estimatedTokens: 276348,
+      currentProviderId: "prov-flash",
+      currentModelId: "gemini-3.7-flash-tiered",
+      visionCandidates: [],
+      longContextCandidate: {
+        providerId: "prov-lc",
+        providerProtocol: "openai",
+        modelId: "qwen-long",
+        windowLimit: 200000,
+      },
+    });
+    expect(resolved.action).toBe("hop");
+    if (resolved.action === "hop") {
+      expect(resolved.taskType).toBe("long_context");
+      expect(resolved.modelId).toBe("qwen-long");
+      expect(resolved.providerId).toBe("prov-lc");
+      expect(resolved.clipToWindow).toBe(200000);
+    }
+  });
+
+  it("does not last-resort clip on the original model when LC window cannot hold unclipped tokens", () => {
+    const resolved = resolveGroupClipOverflowHop({
+      hasImages: false,
+      estimatedTokens: 276348,
+      currentProviderId: "prov-flash",
+      currentModelId: "gemini-3.7-flash-tiered",
+      visionCandidates: [],
+      longContextCandidate: {
+        providerId: "prov-lc",
+        providerProtocol: "anthropic",
+        modelId: "claude-long",
+        windowLimit: 120000,
+      },
+    });
+    expect(resolved.action).not.toBe("last_resort_group_clip");
+    expect(resolved.action).toBe("hop");
+    if (resolved.action === "hop") {
+      expect(resolved.clipToWindow).toBe(120000);
+      expect(resolved.modelId).not.toBe("gemini-3.7-flash-tiered");
+    }
+  });
+
+  it("falls through to LC hop when no vision window holds the unclipped estimate", () => {
+    const resolved = resolveGroupClipOverflowHop({
+      hasImages: true,
+      estimatedTokens: 276348,
+      currentProviderId: "prov-flash",
+      currentModelId: "gemini-3.7-flash-tiered",
+      visionCandidates: [
+        {
+          providerId: "prov-vision",
+          providerProtocol: "openai",
+          modelId: "gemini-vision-small",
+          targetIndex: 1,
+          windowLimit: 80000,
+        },
+      ],
+      longContextCandidate: {
+        providerId: "prov-lc",
+        providerProtocol: "openai",
+        modelId: "qwen-long",
+        windowLimit: 160000,
+      },
+    });
+    expect(resolved.action).toBe("hop");
+    if (resolved.action === "hop") {
+      expect(resolved.taskType).toBe("long_context");
+      expect(resolved.modelId).toBe("qwen-long");
+      expect(resolved.clipToWindow).toBe(160000);
+    }
+  });
+
+  it("stays when the configured LC target is already the current model", () => {
+    const resolved = resolveGroupClipOverflowHop({
+      hasImages: false,
+      estimatedTokens: 276348,
+      currentProviderId: "prov-lc",
+      currentModelId: "qwen-long",
+      visionCandidates: [],
+      longContextCandidate: {
+        providerId: "prov-lc",
+        providerProtocol: "openai",
+        modelId: "qwen-long",
+        windowLimit: 200000,
+      },
+    });
+    expect(resolved.action).toBe("stay");
+    if (resolved.action === "stay") {
+      expect(resolved.clipToWindow).toBe(200000);
+    }
   });
 });
 
