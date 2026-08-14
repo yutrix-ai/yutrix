@@ -522,6 +522,61 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(firstStop).toBeGreaterThan(firstContent);
   });
 
+  it("stream=true retries empty native SSE when usage is omitted", async () => {
+    await setupEnvironment();
+
+    let callCount = 0;
+    const receivedBodies: any[] = [];
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      callCount++;
+      receivedBodies.push(JSON.parse(init.body));
+      if (callCount === 1) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"export const getRecordList = () => {}"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gemini-3.6-flash",
+        messages: [{ role: "user", content: "Generate API code" }],
+        stream: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(2);
+    expect(receivedBodies[1].messages).toEqual(receivedBodies[0].messages);
+    expect(JSON.stringify(receivedBodies[1].messages)).not.toMatch(/请继续|continue/i);
+    expect(res.body).toContain("export const getRecordList = () => {}");
+    const omittedFirstStop = res.body.indexOf("\"finish_reason\":\"stop\"");
+    const omittedFirstContent = res.body.indexOf("export const getRecordList");
+    expect(omittedFirstContent).toBeGreaterThan(-1);
+    expect(omittedFirstStop).toBeGreaterThan(omittedFirstContent);
+  });
+
   it("stream=true emits visible fallback after native SSE still returns 0 tokens", async () => {
     await setupEnvironment();
 

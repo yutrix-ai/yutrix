@@ -91,7 +91,7 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    if (!wouldLogZeroEmptyCompletion(responseData, context.roundUsage)) {
+    if (!wouldLogZeroEmptyCompletion(responseData, context.roundUsage, originalBody)) {
       return { shouldIntervene: false };
     }
 

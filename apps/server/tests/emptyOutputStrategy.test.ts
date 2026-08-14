@@ -3,7 +3,10 @@ import { EmptyOutputStrategy } from "../src/services/continuity/strategies/Empty
 import { MaxTokensTruncationStrategy } from "../src/services/continuity/strategies/MaxTokensTruncationStrategy";
 import { ReasoningExhaustionStrategy } from "../src/services/continuity/strategies/ReasoningExhaustionStrategy";
 import { ContinuityContext } from "../src/services/continuity/types";
-import { shouldWithholdEmptyTerminal } from "../src/services/continuity/emptyCompletionDecision";
+import {
+  shouldWithholdEmptyTerminal,
+  wouldLogZeroEmptyCompletion,
+} from "../src/services/continuity/emptyCompletionDecision";
 
 function baseContext(overrides: Partial<ContinuityContext> & { responseData: any }): ContinuityContext {
   return {
@@ -61,6 +64,54 @@ describe("shouldWithholdEmptyTerminal (shared OpenAI + Anthropic)", () => {
   });
 });
 
+describe("wouldLogZeroEmptyCompletion (shared withhold/retry signal)", () => {
+  const helloBody = {
+    model: "gemini-3.6-flash",
+    messages: [{ role: "user", content: "hello" }],
+  };
+
+  it("treats omitted usage plus a non-empty request as in/0/in", () => {
+    expect(wouldLogZeroEmptyCompletion(
+      { status: 200, data: { choices: [{ message: { content: "" }, finish_reason: "stop" }] } },
+      undefined,
+      helloBody,
+    )).toBe(true);
+  });
+
+  it("does not treat omitted usage as in/0/in when the request has no input", () => {
+    expect(wouldLogZeroEmptyCompletion(
+      { status: 200, data: { choices: [{ message: { content: "" }, finish_reason: "stop" }] } },
+      undefined,
+      { model: "gemini-3.6-flash", messages: [] },
+    )).toBe(false);
+  });
+
+  it("does not treat an explicit positive completion as empty even if the request has input", () => {
+    expect(wouldLogZeroEmptyCompletion(
+      {
+        status: 200,
+        data: {
+          choices: [{ message: { content: "" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 539, completion_tokens: 2, total_tokens: 541 },
+        },
+      },
+      undefined,
+      helloBody,
+    )).toBe(false);
+  });
+
+  it("still treats explicit completion_tokens=0 as empty", () => {
+    expect(wouldLogZeroEmptyCompletion(
+      {
+        status: 200,
+        data: {
+          usage: { prompt_tokens: 40, completion_tokens: 0, total_tokens: 40 },
+        },
+      },
+    )).toBe(true);
+  });
+});
+
 describe("EmptyOutputStrategy Unit Tests", () => {
   const strategy = new EmptyOutputStrategy();
 
@@ -98,7 +149,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.modifiedBody.messages).toHaveLength(1);
   });
 
-  it("should NOT intervene for Anthropic empty content without reported output tokens", async () => {
+  it("retries Anthropic empty content when usage is omitted but the request has input", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -112,7 +163,9 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(false);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("EmptyOutput");
+    expect(decision.modifiedBody.messages).toHaveLength(1);
   });
 
   it("should intervene for Anthropic empty content when output_tokens is 0", async () => {
@@ -329,7 +382,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.modifiedBody).toBe(originalBody);
   });
 
-  it("should NOT intervene when usage is missing (estimated 0 is not a signal)", async () => {
+  it("retries when usage is omitted and the request would estimate in>0", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -342,6 +395,86 @@ describe("EmptyOutputStrategy Unit Tests", () => {
             },
           ],
         },
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("EmptyOutput");
+  });
+
+  it("does not retry omitted usage when the request has no input material", async () => {
+    const context = baseContext({
+      originalBody: { model: "gemini-3.6-flash", messages: [] },
+      responseData: {
+        status: 200,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        },
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("retries withheld empty terminal when usage is omitted and the request has input", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        isStream: true,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+        },
+      },
+      streamResult: {
+        isLengthTruncated: false,
+        withheldEmptyTerminal: true,
+        visibleClientOutputSent: false,
+        meaningfulClientOutputSent: false,
+      },
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.modifiedBody.messages).toEqual([
+      { role: "user", content: "hello" },
+    ]);
+  });
+
+  it("does not retry a withheld empty terminal when the trailer reports completion_tokens>0", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        isStream: true,
+        data: {
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 539, completion_tokens: 2, total_tokens: 541 },
+        },
+      },
+      streamResult: {
+        isLengthTruncated: false,
+        withheldEmptyTerminal: true,
+        visibleClientOutputSent: false,
+        meaningfulClientOutputSent: false,
       },
     });
 
