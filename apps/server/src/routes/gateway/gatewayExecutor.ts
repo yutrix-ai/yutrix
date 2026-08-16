@@ -28,7 +28,7 @@ import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTo
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
-import { snapshotUncutInboundBody, resolveEmptyOutputLayerHopFromRoute } from "./emptyOutputLayerHop";
+import { freezeUncutInboundBody, snapshotUncutInboundBody, resolveEmptyOutputLayerHopFromRoute } from "./emptyOutputLayerHop";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
 import { buildUpstreamRequestDiagnostic } from "./diagnostics";
@@ -164,14 +164,14 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   let keepContinuity = true;
   let continuityCycles = 0;
   const MAX_CONTINUITY_CYCLES = 5; // Hard limit on total engine loops per request
-  const uncutInboundBody = snapshotUncutInboundBody(ctx.body);
-  const originalBody = uncutInboundBody;
+  const frozenInboundBody = freezeUncutInboundBody(ctx.body);
+  const originalBody = snapshotUncutInboundBody(frozenInboundBody);
   const applyEmptyOutputLayerHop = async (): Promise<boolean> => {
     if (ctx.emptyOutputLayerHopApplied) return false;
     const hop = await resolveEmptyOutputLayerHopFromRoute({
       route,
       currentIndex: currentAttempt.targetIndex || 0,
-      body: uncutInboundBody,
+      body: frozenInboundBody,
     });
     if (!hop) return false;
     logAction({
@@ -207,7 +207,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     };
     ctx.currentAttempt = currentAttempt;
     ctx.emptyOutputLayerHopApplied = true;
-    body = snapshotUncutInboundBody(uncutInboundBody);
+    body = snapshotUncutInboundBody(frozenInboundBody);
     ctx.body = body;
     return true;
   };

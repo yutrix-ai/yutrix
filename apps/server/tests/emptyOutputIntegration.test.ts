@@ -122,6 +122,9 @@ describe("Empty Output Auto-Continuation Integration", () => {
         await db.delete(providers).where(like(providers.id, "emp-%"));
         await db.delete(requestLogs);
         await db.delete(chatLogs);
+        if (userId) {
+          await db.update(users).set({ maxInputTokensOverride: null }).where(eq(users.id, userId));
+        }
       } catch (e) {
         console.error("Cleanup error:", e);
       }
@@ -1268,6 +1271,56 @@ describe("Empty Output Auto-Continuation Integration", () => {
       }),
     };
   }
+
+  it("after L0 is clipped by the user input cap, L1 hop still sends the original uncut messages", async () => {
+    await setupFunnelEnvironment(2);
+    await db.update(users).set({ maxInputTokensOverride: 200 }).where(eq(users.id, userId));
+
+    const messages = [
+      { role: "user", content: "old turn one ".repeat(400) },
+      { role: "assistant", content: "old answer one" },
+      { role: "user", content: "old turn two ".repeat(400) },
+      { role: "assistant", content: "old answer two" },
+      { role: "user", content: "latest question with enough leftover room" },
+    ];
+    const urls: string[] = [];
+    const receivedBodies: any[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: any) => {
+      urls.push(String(url));
+      receivedBodies.push(JSON.parse(init.body));
+      if (String(url).includes("l0.empty.test")) return emptyJson(`empty-l0-${urls.length}`);
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          id: "ok-l1-uncut",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "gemini-pro-agent",
+          choices: [{ index: 0, message: { role: "assistant", content: "L1 uncut recovered" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 80, completion_tokens: 8, total_tokens: 88 },
+        }),
+      };
+    });
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(urls.filter((u) => u.includes("l0.empty.test")).length).toBe(2);
+    expect(urls.filter((u) => u.includes("l1.empty.test")).length).toBe(1);
+    const l0Messages = receivedBodies[0].messages;
+    expect(l0Messages.length).toBeLessThan(messages.length);
+    expect(l0Messages).not.toEqual(messages);
+    expect(receivedBodies[2].messages).toEqual(messages);
+    expect(res.json().choices[0].message.content).toContain("L1 uncut recovered");
+    expect(res.json().choices[0].message.content).not.toContain("请重新发送");
+  });
 
   it("after L0 empty twice hops once to L1 with the uncut messages and no resend fallback", async () => {
     await setupFunnelEnvironment(2);

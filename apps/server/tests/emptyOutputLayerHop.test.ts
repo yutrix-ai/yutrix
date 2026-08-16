@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  freezeUncutInboundBody,
   parseFunnelLayersFromRoute,
   selectEmptyOutputLayerHop,
   snapshotUncutInboundBody,
@@ -144,6 +145,28 @@ describe("selectEmptyOutputLayerHop", () => {
         layers: [layers[0]],
       }),
     ).toBeNull();
+  });
+});
+
+describe("freezeUncutInboundBody", () => {
+  it("stays uncut when a sibling clone is later clipped in place", () => {
+    const inbound = {
+      model: "gemini-3.7-flash-high",
+      messages: [
+        { role: "user", content: "old turn ".repeat(20) },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: "latest" },
+      ],
+    };
+    const frozen = freezeUncutInboundBody(inbound);
+    const sibling = snapshotUncutInboundBody(frozen);
+    sibling.messages = [sibling.messages[2]];
+    expect(frozen.messages).toHaveLength(3);
+    expect(frozen.messages[0].content).toContain("old turn");
+    expect(sibling.messages).toHaveLength(1);
+    expect(() => {
+      (frozen as any).messages = [];
+    }).toThrow();
   });
 });
 

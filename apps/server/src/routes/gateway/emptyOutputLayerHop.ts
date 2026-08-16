@@ -37,6 +37,18 @@ export function snapshotUncutInboundBody(body: any): any {
   return JSON.parse(JSON.stringify(body ?? {}));
 }
 
+/** Deep clone that hop/restore always read. Never assign this object to `body`. */
+export function freezeUncutInboundBody(body: any): any {
+  const snap = snapshotUncutInboundBody(body);
+  if (Array.isArray(snap.messages)) {
+    for (const message of snap.messages) {
+      if (message && typeof message === "object") Object.freeze(message);
+    }
+    Object.freeze(snap.messages);
+  }
+  return Object.freeze(snap);
+}
+
 function windowHolds(windowLimit: number | undefined, estimatedTokens: number, safetyMargin: number): boolean {
   if (windowLimit === undefined || windowLimit === null || windowLimit <= 0) return true;
   return estimatedTokens + safetyMargin <= windowLimit;
