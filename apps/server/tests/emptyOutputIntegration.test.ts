@@ -1171,4 +1171,206 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(JSON.stringify(receivedBodies[1].messages)).not.toMatch(/请继续|continue/i);
     expect(res.json().choices[0].message.content).toBe("长护险审核字段");
   });
+
+  async function setupFunnelEnvironment(layerCount: 2 | 3 = 2) {
+    const now = new Date();
+    await db.insert(providers).values([
+      {
+        id: "emp-prov-l0",
+        name: "Empty L0",
+        openaiBaseUrl: "https://l0.empty.test/v1",
+        enabled: true,
+        concurrencyLimit: 10,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "emp-prov-l1",
+        name: "Empty L1",
+        openaiBaseUrl: "https://l1.empty.test/v1",
+        enabled: true,
+        concurrencyLimit: 10,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "emp-prov-l2",
+        name: "Empty L2",
+        openaiBaseUrl: "https://l2.empty.test/v1",
+        enabled: true,
+        concurrencyLimit: 10,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(providerApiKeys).values([
+      { id: "emp-prov-l0-key", providerId: "emp-prov-l0", keyEncrypted: encryptText("sk-l0"), status: "active", createdAt: now, updatedAt: now },
+      { id: "emp-prov-l1-key", providerId: "emp-prov-l1", keyEncrypted: encryptText("sk-l1"), status: "active", createdAt: now, updatedAt: now },
+      { id: "emp-prov-l2-key", providerId: "emp-prov-l2", keyEncrypted: encryptText("sk-l2"), status: "active", createdAt: now, updatedAt: now },
+    ]);
+    await db.insert(providerModels).values([
+      { id: crypto.randomUUID(), providerId: "emp-prov-l0", modelId: "gemini-3.6-flash", displayName: "L0", enabled: true, createdAt: now },
+      { id: crypto.randomUUID(), providerId: "emp-prov-l1", modelId: "gemini-pro-agent", displayName: "L1", enabled: true, createdAt: now },
+      { id: crypto.randomUUID(), providerId: "emp-prov-l2", modelId: "qwen-long", displayName: "L2", enabled: true, createdAt: now },
+    ]);
+    const targets = [
+      { providerId: "emp-prov-l0", modelId: "gemini-3.6-flash", providerProtocol: "openai" },
+      { providerId: "emp-prov-l1", modelId: "gemini-pro-agent", providerProtocol: "openai" },
+    ];
+    if (layerCount === 3) {
+      targets.push({ providerId: "emp-prov-l2", modelId: "qwen-long", providerProtocol: "openai" });
+    }
+    await db.insert(endpoints).values({
+      id: "emp-ep-1",
+      userId,
+      name: "Funnel Endpoint",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(endpointRoutes).values({
+      id: "emp-route-1",
+      endpointId: "emp-ep-1",
+      name: "Funnel Route",
+      providerId: "emp-prov-l0",
+      providerProtocol: "openai",
+      modelId: "gemini-3.6-flash",
+      strategyRoutingEnabled: false,
+      targets: JSON.stringify(targets),
+      retryCount: 5,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId: "emp-route-1",
+      userId,
+      createdAt: now,
+    });
+  }
+
+  function emptyJson(id: string) {
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        id,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: "gemini-3.6-flash",
+        choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 40, completion_tokens: 0, total_tokens: 40 },
+      }),
+    };
+  }
+
+  it("after L0 empty twice hops once to L1 with the uncut messages and no resend fallback", async () => {
+    await setupFunnelEnvironment(2);
+    const urls: string[] = [];
+    const receivedBodies: any[] = [];
+    let callCount = 0;
+    vi.stubGlobal("fetch", async (url: string, init: any) => {
+      callCount++;
+      urls.push(String(url));
+      receivedBodies.push(JSON.parse(init.body));
+      if (String(url).includes("l0.empty.test")) return emptyJson(`empty-l0-${callCount}`);
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          id: "ok-l1",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "gemini-pro-agent",
+          choices: [{ index: 0, message: { role: "assistant", content: "L1 recovered answer" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 40, completion_tokens: 8, total_tokens: 48 },
+        }),
+      };
+    });
+
+    const messages = [{ role: "user", content: "Generate API code" }];
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(3);
+    expect(urls[0]).toContain("l0.empty.test");
+    expect(urls[1]).toContain("l0.empty.test");
+    expect(urls[2]).toContain("l1.empty.test");
+    expect(receivedBodies[2].messages).toEqual(messages);
+    expect(JSON.stringify(receivedBodies[2].messages)).not.toMatch(/请继续|continue/i);
+    const content = res.json().choices[0].message.content;
+    expect(content).toContain("L1 recovered answer");
+    expect(content).not.toContain("0 输出 token");
+    expect(content).not.toContain("请重新发送");
+  });
+
+  it("L1 empty emits fallback and never calls L2", async () => {
+    await setupFunnelEnvironment(3);
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(String(url));
+      return emptyJson(`empty-${urls.length}`);
+    });
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages: [{ role: "user", content: "hello" }] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(urls.filter((u) => u.includes("l0.empty.test")).length).toBe(2);
+    expect(urls.filter((u) => u.includes("l1.empty.test")).length).toBe(1);
+    expect(urls.some((u) => u.includes("l2.empty.test"))).toBe(false);
+    expect(res.json().choices[0].message.content).toContain("请重新发送");
+  });
+
+  it("stream=true withholds empty stop until L1 content", async () => {
+    await setupFunnelEnvironment(2);
+    let callCount = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      callCount++;
+      if (String(url).includes("l0.empty.test")) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: {"usage":{"prompt_tokens":40,"completion_tokens":0,"total_tokens":40}}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"content":"L1 stream answer"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages: [{ role: "user", content: "hello" }], stream: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(3);
+    expect(res.body).toContain("L1 stream answer");
+    expect(res.body).not.toContain("0 输出 token");
+    const firstStop = res.body.indexOf("\"finish_reason\":\"stop\"");
+    const firstContent = res.body.indexOf("L1 stream answer");
+    expect(firstContent).toBeGreaterThan(-1);
+    expect(firstStop).toBeGreaterThan(firstContent);
+  });
 });

@@ -28,7 +28,10 @@ export class ContinuityEngine {
    * Evaluates all registered strategies to see if one needs to intervene.
    * Strategies are evaluated in order; the first one that triggers wins.
    */
-  async evaluateAll(context: ContinuityContext): Promise<ContinuityDecision> {
+  async evaluateAll(
+    context: ContinuityContext,
+    options?: { skipOnExhausted?: boolean },
+  ): Promise<ContinuityDecision> {
     for (const strategy of this.strategies) {
       const currentRetries = this.strategyRetries.get(strategy.name) || 0;
 
@@ -40,8 +43,7 @@ export class ContinuityEngine {
           this.strategyRetries.set(strategy.name, currentRetries + 1);
           return decision;
         } else {
-          // Exhausted retries, trigger exhaustion hook
-          if (strategy.onExhausted) {
+          if (!options?.skipOnExhausted && strategy.onExhausted) {
             context.responseData = await strategy.onExhausted(context);
           }
           return { shouldIntervene: false, isExhausted: true, strategyName: strategy.name };
@@ -50,6 +52,13 @@ export class ContinuityEngine {
     }
 
     return { shouldIntervene: false };
+  }
+
+  async applyExhaustedHook(context: ContinuityContext, strategyName?: string): Promise<void> {
+    const strategy = this.strategies.find((item) => item.name === strategyName);
+    if (strategy?.onExhausted) {
+      context.responseData = await strategy.onExhausted(context);
+    }
   }
 
   /**

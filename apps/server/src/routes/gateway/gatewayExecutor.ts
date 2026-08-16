@@ -28,6 +28,7 @@ import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTo
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
+import { snapshotUncutInboundBody, resolveEmptyOutputLayerHopFromRoute } from "./emptyOutputLayerHop";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
 import { buildUpstreamRequestDiagnostic } from "./diagnostics";
@@ -163,7 +164,53 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   let keepContinuity = true;
   let continuityCycles = 0;
   const MAX_CONTINUITY_CYCLES = 5; // Hard limit on total engine loops per request
-  const originalBody = { ...ctx.body };
+  const uncutInboundBody = snapshotUncutInboundBody(ctx.body);
+  const originalBody = uncutInboundBody;
+  const applyEmptyOutputLayerHop = async (): Promise<boolean> => {
+    if (ctx.emptyOutputLayerHopApplied) return false;
+    const hop = await resolveEmptyOutputLayerHopFromRoute({
+      route,
+      currentIndex: currentAttempt.targetIndex || 0,
+      body: uncutInboundBody,
+    });
+    if (!hop) return false;
+    logAction({
+      ...baseActionLog,
+      level: "INFO",
+      code: "request.continuity.empty_output_layer_hop",
+      strategy: "EmptyOutput",
+      fromModelId: currentAttempt.modelId,
+      toModelId: hop.modelId,
+      targetIndex: hop.index,
+    });
+    ctx.routingTrace.push({
+      fromProviderId: currentAttempt.providerId,
+      fromModelId: currentAttempt.modelId,
+      toProviderId: hop.providerId,
+      toProviderProtocol: hop.providerProtocol,
+      toModelId: hop.modelId,
+      reason: `empty_output_layer_hop:L${currentAttempt.targetIndex || 0}->L${hop.index}`,
+      hop: ctx.routingTrace.length + 1,
+      latencyMs: 0,
+      createdAt: new Date().toISOString(),
+    });
+    currentAttempt = {
+      ...currentAttempt,
+      providerId: hop.providerId,
+      providerProtocol: hop.providerProtocol,
+      modelId: hop.modelId,
+      isFallback: true,
+      fallbackReason: "EmptyOutput next-layer hop",
+      targetIndex: hop.index,
+      strategyTaskType: undefined,
+      strategyReason: "empty_output_layer_hop",
+    };
+    ctx.currentAttempt = currentAttempt;
+    ctx.emptyOutputLayerHopApplied = true;
+    body = snapshotUncutInboundBody(uncutInboundBody);
+    ctx.body = body;
+    return true;
+  };
   let anthropicState: any = null;
     let earlyAnthropicMessageId: string | undefined;
   let lastStreamResultIsTruncated = false;
@@ -488,8 +535,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     ctx.continuity.isLastCycle = (continuityCycles >= MAX_CONTINUITY_CYCLES);
     if (continuityCycles > 0) {
       attemptCount = 0;
-      strategyRoutingChecked = false;
-      strategyDecisionApplied = false;
+      if (!ctx.emptyOutputLayerHopApplied) {
+        strategyRoutingChecked = false;
+        strategyDecisionApplied = false;
+      }
       responseData = null;
     }
 
@@ -520,7 +569,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 responseData = tokenLimitResult.responseData;
                 return;
               }
-              if (tokenLimitResult.overflowHop && route.strategyRoutingEnabled) {
+              if (tokenLimitResult.overflowHop && route.strategyRoutingEnabled && !ctx.emptyOutputLayerHopApplied) {
                 ctx.pendingOverflowHop = tokenLimitResult.overflowHop;
               } else if (tokenLimitResult.overflowHop) {
                 body = await applyForcedInputTokenLimit({
@@ -646,6 +695,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             }
             if (
               !longContextOverrideApplied &&
+              !ctx.emptyOutputLayerHopApplied &&
               route.strategyRoutingEnabled &&
               currentAttempt.strategyTaskType !== "long_context"
               && (contextBudget.limit > 0 || ctx.pendingOverflowHop)
@@ -1723,7 +1773,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                      currentAttempt,
                      accumulatedCompletionText: textToCheck,
                      state: new Map()
-                  });
+                  }, { skipOnExhausted: true });
 
                   const shouldPerformRetry = earlyDecision.shouldIntervene && (continuityCycles < MAX_CONTINUITY_CYCLES);
 
@@ -1747,7 +1797,36 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                      releaseAttemptResources();
                      continuityCycles++;
                      continue;
+                  } else if (
+                    earlyDecision.isExhausted
+                    && earlyDecision.strategyName === "EmptyOutput"
+                    && await applyEmptyOutputLayerHop()
+                  ) {
+                     attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
+                     attemptCount--;
+                     responseData = null;
+                     releaseAttemptResources();
+                     continue;
                   } else {
+                     if (earlyDecision.isExhausted) {
+                        await continuityEngine.applyExhaustedHook({
+                           originalBody,
+                           responseData,
+                           requestClass: classifyGatewayRequestClass(originalBody).requestClass,
+                           roundUsage: responseData.roundUsage,
+                           baseActionLog,
+                           currentAttempt,
+                           accumulatedCompletionText: textToCheck,
+                           state: new Map(),
+                        }, earlyDecision.strategyName);
+                        logAction?.({
+                           ...baseActionLog,
+                           level: "WARN",
+                           code: "request.continuity.exhausted",
+                           strategy: earlyDecision.strategyName,
+                           message: `Continuity strategy ${earlyDecision.strategyName} exhausted retries`,
+                        });
+                     }
                      ctx.continuity.hiddenContinuityText += textFromThisRound;
                      ctx.continuity.accumulatedCompletionText = ctx.continuity.forwardedStreamText + ctx.continuity.hiddenContinuityText;
                      const accum = ctx.continuity.accumulatedCompletionText;
@@ -2190,9 +2269,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
          currentAttempt,
          accumulatedCompletionText: ctx.continuity.accumulatedCompletionText || "",
          state: new Map()
-      });
+      }, { skipOnExhausted: true });
 
       let willContinue = false;
+      let hoppedEmptyOutputLayer = false;
 
       if (postDecision.shouldIntervene) {
          if (continuityCycles >= MAX_CONTINUITY_CYCLES) {
@@ -2206,8 +2286,23 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
          } else {
             willContinue = true;
          }
-      } else {
-         if (postDecision.isExhausted) {
+      } else if (postDecision.isExhausted && postDecision.strategyName === "EmptyOutput") {
+         if (await applyEmptyOutputLayerHop()) {
+            willContinue = true;
+            hoppedEmptyOutputLayer = true;
+            attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
+         } else {
+            await continuityEngine.applyExhaustedHook({
+               originalBody,
+               responseData,
+               requestClass: classifyGatewayRequestClass(originalBody).requestClass,
+               roundUsage: responseData.roundUsage,
+               streamResult: respResult,
+               baseActionLog,
+               currentAttempt,
+               accumulatedCompletionText: ctx.continuity.accumulatedCompletionText || "",
+               state: new Map(),
+            }, postDecision.strategyName);
             logAction?.({
                ...baseActionLog,
                level: "WARN",
@@ -2216,21 +2311,44 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                message: `Continuity strategy ${postDecision.strategyName} exhausted retries`,
             });
          }
+      } else if (postDecision.isExhausted) {
+         await continuityEngine.applyExhaustedHook({
+            originalBody,
+            responseData,
+            requestClass: classifyGatewayRequestClass(originalBody).requestClass,
+            roundUsage: responseData.roundUsage,
+            streamResult: respResult,
+            baseActionLog,
+            currentAttempt,
+            accumulatedCompletionText: ctx.continuity.accumulatedCompletionText || "",
+            state: new Map(),
+         }, postDecision.strategyName);
+         logAction?.({
+            ...baseActionLog,
+            level: "WARN",
+            code: "request.continuity.exhausted",
+            strategy: postDecision.strategyName,
+            message: `Continuity strategy ${postDecision.strategyName} exhausted retries`,
+         });
       }
 
       if (willContinue) {
          continuityCycles++;
          ctx.continuity.hasStartedContinuity = true;
          ctx.continuity.streamRoundCount = continuityCycles + 1;
-         logAction({
-            ...baseActionLog,
-            level: "INFO",
-            code: "request.continuity.round_truncated",
-            strategy: postDecision.strategyName,
-            attempt: continuityCycles,
-         });
-         body = postDecision.modifiedBody;
-         ctx.body = body;
+         if (!hoppedEmptyOutputLayer) {
+            logAction({
+               ...baseActionLog,
+               level: "INFO",
+               code: "request.continuity.round_truncated",
+               strategy: postDecision.strategyName || "EmptyOutput",
+               attempt: continuityCycles,
+               targetIndex: currentAttempt.targetIndex,
+               modelId: currentAttempt.modelId,
+            });
+            body = postDecision.modifiedBody;
+            ctx.body = body;
+         }
       } else {
          keepContinuity = false;
          if (ctx.isStreaming) {

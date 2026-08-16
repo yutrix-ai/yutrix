@@ -35,7 +35,7 @@ export async function enforceInputTokenLimit({
   baseActionLog,
   logAction,
 }: EnforceInputTokenLimitArgs): Promise<EnforceInputTokenLimitResult> {
-  if (ctx.overflowHopApplied) {
+  if (ctx.overflowHopApplied || ctx.emptyOutputLayerHopApplied) {
     return { ok: true };
   }
 
