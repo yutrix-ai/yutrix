@@ -184,7 +184,7 @@ export interface GatewayRequestContext {
     source: string;
     sourceLabel: string;
   };
-  /** EmptyOutput already degraded once to a later funnel layer. */
+  /** EmptyOutput already walked to a later funnel layer at least once. */
   emptyOutputLayerHopApplied?: boolean;
   /** Group/user clip was deferred; a long_context/vision overflow hop already ran. */
   overflowHopApplied?: boolean;

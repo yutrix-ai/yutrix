@@ -1,5 +1,5 @@
 /**
- * EmptyOutput exhaust: one hop to a later funnel layer.
+ * EmptyOutput exhaust: walk later funnel layers like a 500 degrade.
  * Not same-layer strategy reroute, not long_context.
  */
 

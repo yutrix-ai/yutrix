@@ -167,7 +167,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   const frozenInboundBody = freezeUncutInboundBody(ctx.body);
   const originalBody = snapshotUncutInboundBody(frozenInboundBody);
   const applyEmptyOutputLayerHop = async (): Promise<boolean> => {
-    if (ctx.emptyOutputLayerHopApplied) return false;
     const hop = await resolveEmptyOutputLayerHopFromRoute({
       route,
       currentIndex: currentAttempt.targetIndex || 0,

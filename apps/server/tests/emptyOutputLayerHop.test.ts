@@ -136,6 +136,26 @@ describe("selectEmptyOutputLayerHop", () => {
     });
   });
 
+  it("from a later layer still picks the next funnel layer, not the current one", () => {
+    const hop = selectEmptyOutputLayerHop({
+      currentIndex: 1,
+      hasImages: false,
+      estimatedTokens: 6208,
+      layers: [
+        layers[0],
+        layers[1],
+        { ...layers[1], index: 2, providerId: "p2", modelId: "claude-sonnet" },
+        { ...layers[1], index: 3, providerId: "p3", modelId: "gemini-pro-agent" },
+      ],
+    });
+    expect(hop).toEqual({
+      index: 2,
+      providerId: "p2",
+      modelId: "claude-sonnet",
+      providerProtocol: "openai",
+    });
+  });
+
   it("returns null when there is no later viable layer", () => {
     expect(
       selectEmptyOutputLayerHop({

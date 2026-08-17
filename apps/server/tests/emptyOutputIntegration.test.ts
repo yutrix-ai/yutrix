@@ -1175,7 +1175,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.json().choices[0].message.content).toBe("长护险审核字段");
   });
 
-  async function setupFunnelEnvironment(layerCount: 2 | 3 = 2) {
+  async function setupFunnelEnvironment(layerCount: 2 | 3 | 4 = 2) {
     const now = new Date();
     await db.insert(providers).values([
       {
@@ -1205,23 +1205,37 @@ describe("Empty Output Auto-Continuation Integration", () => {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        id: "emp-prov-l3",
+        name: "Empty L3",
+        openaiBaseUrl: "https://l3.empty.test/v1",
+        enabled: true,
+        concurrencyLimit: 10,
+        createdAt: now,
+        updatedAt: now,
+      },
     ]);
     await db.insert(providerApiKeys).values([
       { id: "emp-prov-l0-key", providerId: "emp-prov-l0", keyEncrypted: encryptText("sk-l0"), status: "active", createdAt: now, updatedAt: now },
       { id: "emp-prov-l1-key", providerId: "emp-prov-l1", keyEncrypted: encryptText("sk-l1"), status: "active", createdAt: now, updatedAt: now },
       { id: "emp-prov-l2-key", providerId: "emp-prov-l2", keyEncrypted: encryptText("sk-l2"), status: "active", createdAt: now, updatedAt: now },
+      { id: "emp-prov-l3-key", providerId: "emp-prov-l3", keyEncrypted: encryptText("sk-l3"), status: "active", createdAt: now, updatedAt: now },
     ]);
     await db.insert(providerModels).values([
       { id: crypto.randomUUID(), providerId: "emp-prov-l0", modelId: "gemini-3.6-flash", displayName: "L0", enabled: true, createdAt: now },
       { id: crypto.randomUUID(), providerId: "emp-prov-l1", modelId: "gemini-pro-agent", displayName: "L1", enabled: true, createdAt: now },
-      { id: crypto.randomUUID(), providerId: "emp-prov-l2", modelId: "qwen-long", displayName: "L2", enabled: true, createdAt: now },
+      { id: crypto.randomUUID(), providerId: "emp-prov-l2", modelId: "claude-sonnet", displayName: "L2", enabled: true, createdAt: now },
+      { id: crypto.randomUUID(), providerId: "emp-prov-l3", modelId: "gemini-pro-agent", displayName: "L3", enabled: true, createdAt: now },
     ]);
     const targets = [
       { providerId: "emp-prov-l0", modelId: "gemini-3.6-flash", providerProtocol: "openai" },
       { providerId: "emp-prov-l1", modelId: "gemini-pro-agent", providerProtocol: "openai" },
     ];
-    if (layerCount === 3) {
-      targets.push({ providerId: "emp-prov-l2", modelId: "qwen-long", providerProtocol: "openai" });
+    if (layerCount >= 3) {
+      targets.push({ providerId: "emp-prov-l2", modelId: "claude-sonnet", providerProtocol: "openai" });
+    }
+    if (layerCount >= 4) {
+      targets.push({ providerId: "emp-prov-l3", modelId: "gemini-pro-agent", providerProtocol: "openai" });
     }
     await db.insert(endpoints).values({
       id: "emp-ep-1",
@@ -1368,8 +1382,50 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(content).not.toContain("请重新发送");
   });
 
-  it("L1 empty emits fallback and never calls L2", async () => {
-    await setupFunnelEnvironment(3);
+  it("walks remaining funnel layers after EmptyOutput like a 500 degrade and recovers on L3", async () => {
+    await setupFunnelEnvironment(4);
+    const urls: string[] = [];
+    const receivedBodies: any[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: any) => {
+      urls.push(String(url));
+      receivedBodies.push(JSON.parse(init.body));
+      if (!String(url).includes("l3.empty.test")) return emptyJson(`empty-${urls.length}`);
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          id: "ok-l3",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "gemini-pro-agent",
+          choices: [{ index: 0, message: { role: "assistant", content: "L3 recovered answer" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 40, completion_tokens: 8, total_tokens: 48 },
+        }),
+      };
+    });
+
+    const messages = [{ role: "user", content: "hello" }];
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(urls.filter((u) => u.includes("l0.empty.test")).length).toBe(2);
+    expect(urls.filter((u) => u.includes("l1.empty.test")).length).toBe(1);
+    expect(urls.filter((u) => u.includes("l2.empty.test")).length).toBe(1);
+    expect(urls.filter((u) => u.includes("l3.empty.test")).length).toBe(1);
+    expect(receivedBodies[4].messages).toEqual(messages);
+    const content = res.json().choices[0].message.content;
+    expect(content).toContain("L3 recovered answer");
+    expect(content).not.toContain("请重新发送");
+  });
+
+  it("emits fallback only after every later funnel layer is also empty", async () => {
+    await setupFunnelEnvironment(4);
     const urls: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
       urls.push(String(url));
@@ -1386,8 +1442,47 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.statusCode).toBe(200);
     expect(urls.filter((u) => u.includes("l0.empty.test")).length).toBe(2);
     expect(urls.filter((u) => u.includes("l1.empty.test")).length).toBe(1);
-    expect(urls.some((u) => u.includes("l2.empty.test"))).toBe(false);
+    expect(urls.filter((u) => u.includes("l2.empty.test")).length).toBe(1);
+    expect(urls.filter((u) => u.includes("l3.empty.test")).length).toBe(1);
     expect(res.json().choices[0].message.content).toContain("请重新发送");
+  });
+
+  it("stream=true walks L1 empty to L2 content and withholds stop until then", async () => {
+    await setupFunnelEnvironment(3);
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(String(url));
+      if (!String(url).includes("l2.empty.test")) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: {"usage":{"prompt_tokens":40,"completion_tokens":0,"total_tokens":40}}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"content":"L2 stream answer"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages: [{ role: "user", content: "hello" }], stream: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(urls.filter((u) => u.includes("l0.empty.test")).length).toBe(2);
+    expect(urls.filter((u) => u.includes("l1.empty.test")).length).toBe(1);
+    expect(urls.filter((u) => u.includes("l2.empty.test")).length).toBe(1);
+    expect(res.body).toContain("L2 stream answer");
+    expect(res.body).not.toContain("请重新发送");
+    const firstStop = res.body.indexOf("\"finish_reason\":\"stop\"");
+    const firstContent = res.body.indexOf("L2 stream answer");
+    expect(firstStop).toBeGreaterThan(firstContent);
   });
 
   it("stream=true withholds empty stop until L1 content", async () => {
