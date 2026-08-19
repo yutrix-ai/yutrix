@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { forwardSSEStreamTransparent } from "../src/routes/gateway/streamForwarder";
+import {
+  forwardSSEStreamTransparent,
+  hasMeaningfulOutputEvent,
+  hasVisibleAnswerEvent,
+} from "../src/routes/gateway/streamForwarder";
 
 function createReply() {
   const writes: string[] = [];
@@ -40,6 +44,19 @@ async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
 }
+
+describe("opaque SSE data vs empty-terminal withhold", () => {
+  it("counts unparseable data: lines as already-sent client bytes", () => {
+    expect(hasVisibleAnswerEvent("data: {choices: invalid_json}\n\n", "openai")).toBe(true);
+    expect(hasMeaningfulOutputEvent("data: {choices: invalid_json}\n\n", "openai")).toBe(true);
+  });
+
+  it("does not count parseable empty-content stop as visible", () => {
+    const emptyStop = 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n';
+    expect(hasVisibleAnswerEvent(emptyStop, "openai")).toBe(false);
+    expect(hasMeaningfulOutputEvent(emptyStop, "openai")).toBe(false);
+  });
+});
 
 describe("characterization: transparent/unmatched forwarding behavior", () => {
   it("keeps raw SSE lines byte-for-byte identical when no translator/transform matches", async () => {

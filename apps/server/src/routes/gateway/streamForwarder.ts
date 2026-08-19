@@ -171,7 +171,9 @@ export function hasMeaningfulOutputEvent(chunk: string, protocol: string | undef
         }
       }
     } catch {
-      // Non-JSON or corrupt payload
+      // Opaque bytes already go downstream in transparent mode. Treat them as
+      // client-visible so we do not withhold [DONE]/stop for EmptyOutput retry.
+      if (dataContent.length > 0) return true;
     }
   }
 
@@ -226,7 +228,9 @@ export function hasVisibleAnswerEvent(chunk: string, protocol: string | undefine
         }
       }
     } catch {
-      // Non-JSON or corrupt payload
+      // Opaque bytes already go downstream. Withholding [DONE] after that
+      // leaves the client hanging and blocks EmptyOutput hops.
+      if (dataContent.length > 0) return true;
     }
   }
 
@@ -590,7 +594,9 @@ export async function forwardSSEStreamTransparent(
           try {
             dataCopy = JSON.parse(dataText);
           } catch {
-            // Unparseable data line — ignore
+            // Unparseable data is still forwarded as-is. Count it so a later
+            // [DONE]/stop is not withheld as an "empty" terminal.
+            eventHasSemanticContent = true;
           }
 
              if (dataCopy) {
