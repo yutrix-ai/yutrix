@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { db } from "../db";
 import { requestLogs, systemSettings, providerModels } from "../db/schema";
 import { eq, and, sql, gte, lt, like, desc } from "drizzle-orm";
+import { requestLogUsageWindow } from "../utils/usageStatEligibility";
 import { requireAdmin } from "../middleware/auth";
 import { getQueryDateRange } from "../utils/timeRange";
 import { PassThrough } from "stream";
@@ -215,10 +216,7 @@ export default async function (fastify: FastifyInstance) {
     async (request, reply) => {
       const { startDate, endDate } = await getQueryDateRange(request.query, "7");
 
-      const conditions = [gte(requestLogs.createdAt, startDate)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = requestLogUsageWindow(startDate, endDate);
 
       const stats = await db
         .select({

@@ -1,16 +1,17 @@
 import { db } from "../db";
 import { requestLogs, users, providers, endpoints, subdomains, apiKeys, providerModels, providerApiKeys } from "../db/schema";
-import { eq, and, sql, gte, lt } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { summedRequestCostSql } from "../utils/requestCostSql";
 import { publicModelSql } from "../utils/modelAlias";
 import { decryptText } from "../utils/crypto";
 import { maskApiKey } from "./analyticsFormatter";
+import {
+  chatLogUsageStatEligibleSql,
+  requestLogUsageWindow,
+} from "../utils/usageStatEligibility";
 
 export async function getOverallStats(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -47,10 +48,7 @@ export async function getOverallStats(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageByUser(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -81,10 +79,7 @@ export async function getUsageByUser(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageByProvider(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -150,10 +145,7 @@ export async function getUsageByProvider(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageByProviderKey(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -191,10 +183,7 @@ export async function getUsageByProviderKey(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageByModel(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -223,10 +212,7 @@ export async function getUsageByModel(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageByEndpoint(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -258,10 +244,7 @@ export async function getUsageByEndpoint(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageBySubdomain(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -293,10 +276,7 @@ export async function getUsageBySubdomain(startDate: Date, endDate?: Date) {
 }
 
 export async function getUsageByApiKey(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -327,10 +307,7 @@ export async function getUsageByApiKey(startDate: Date, endDate?: Date) {
 }
 
 export async function getTimeSeries(startDate: Date, endDate?: Date) {
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   const stats = await db
     .select({
@@ -366,7 +343,7 @@ export async function getRadarMetrics(type: string, value: string, startDate: Da
   const startSec = Math.floor(startDate.getTime() / 1000);
   const endSec = endDate ? Math.floor(endDate.getTime() / 1000) : undefined;
 
-  let conditionsSql = sql`c.createdAt >= ${startSec}`;
+  let conditionsSql = sql`c.createdAt >= ${startSec} AND ${chatLogUsageStatEligibleSql()}`;
   const radarPublicModelSql = sql`COALESCE(NULLIF((
     SELECT pm.alias
     FROM provider_models pm

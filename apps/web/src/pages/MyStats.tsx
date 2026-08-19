@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { useTimeRange } from "@/contexts/TimeRangeContext";
 import { useEventStream } from "@/hooks/useEventStream";
 import { StatsGrid, RecentLogs, ErrorDialog } from "@/components/MyStats/MyStatsComponents";
+import { isUsageStatEligible, liveUsageRequestDelta } from "@promptgate/shared";
 
 const PAGE_SIZE = 20;
 const MAX_LOGS_IN_MEMORY = 500;
@@ -117,19 +118,26 @@ export default function MyStats() {
           const costDelta = (data.cost || 0) - oldReq.cost;
           
           const isFailed = data.usageStatus === "failed";
-
-          setStats(s => {
-            if (!s) return s;
-            return {
-              ...s,
-              totalRequests: oldReq.isNew ? s.totalRequests + 1 : s.totalRequests,
-              totalTokens: s.totalTokens + tokensDelta,
-              totalPromptTokens: (s.totalPromptTokens || 0) + inputDelta,
-              totalCompletionTokens: (s.totalCompletionTokens || 0) + outputDelta,
-              totalCost: (s.totalCost || 0) + costDelta,
-              errorCount: isFailed && !oldReq.wasFailed ? s.errorCount + 1 : s.errorCount
-            };
+          const countsTowardUsage = isUsageStatEligible(data.usageStatus);
+          const requestDelta = liveUsageRequestDelta({
+            usageStatus: data.usageStatus,
+            isNewRequest: oldReq.isNew,
           });
+
+          if (countsTowardUsage) {
+            setStats(s => {
+              if (!s) return s;
+              return {
+                ...s,
+                totalRequests: s.totalRequests + requestDelta,
+                totalTokens: s.totalTokens + tokensDelta,
+                totalPromptTokens: (s.totalPromptTokens || 0) + inputDelta,
+                totalCompletionTokens: (s.totalCompletionTokens || 0) + outputDelta,
+                totalCost: (s.totalCost || 0) + costDelta,
+                errorCount: isFailed && !oldReq.wasFailed ? s.errorCount + 1 : s.errorCount
+              };
+            });
+          }
 
           // Also update recentLogs if it's new
           if (oldReq.isNew) {

@@ -9,10 +9,15 @@ import {
   users,
   providerModels,
 } from "../db/schema";
-import { eq, and, sql, gte, lt } from "drizzle-orm";
+import { eq, and, sql, gte } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth";
 import { getQueryDateRange } from "../utils/timeRange";
 import { requestCostSql, summedRequestCostSql } from "../utils/requestCostSql";
+import {
+  isUsageStatEligible,
+  requestLogUsageWindow,
+  usageStatEligibleSql,
+} from "../utils/usageStatEligibility";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -40,10 +45,7 @@ export default async function (fastify: FastifyInstance) {
     { onRequest: [requireAdmin] },
     async (request, reply) => {
       const { startDate, endDate } = await getQueryDateRange(request.query, "day");
-      const conditions = [gte(requestLogs.createdAt, startDate)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = requestLogUsageWindow(startDate, endDate);
 
       // Period requests
       const periodRequests = await db
@@ -125,7 +127,7 @@ export default async function (fastify: FastifyInstance) {
           total: sql<number>`COALESCE(SUM(${requestLogs.inputTokens} + ${requestLogs.outputTokens}), 0)`,
         })
         .from(requestLogs)
-        .where(gte(requestLogs.createdAt, oneMinuteAgo));
+        .where(and(gte(requestLogs.createdAt, oneMinuteAgo), usageStatEligibleSql()));
 
       const tpm = Math.round(realTimeTokens[0]?.total || 0);
 
@@ -171,15 +173,13 @@ export default async function (fastify: FastifyInstance) {
         };
       });
 
-      const conditions = [gte(requestLogs.createdAt, startHour)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = requestLogUsageWindow(startHour, endDate);
 
       const usageRows = await db
         .select({
           userId: requestLogs.userId,
           username: users.username,
+          usageStatus: requestLogs.usageStatus,
           totalTokens: sql<number>`COALESCE(${requestLogs.inputTokens}, 0) + COALESCE(${requestLogs.outputTokens}, 0)`,
           inputTokens: requestLogs.inputTokens,
           outputTokens: requestLogs.outputTokens,
@@ -211,6 +211,7 @@ export default async function (fastify: FastifyInstance) {
       >();
 
       for (const row of usageRows) {
+        if (!isUsageStatEligible(row.usageStatus)) continue;
         const createdAt = toDate(row.createdAt);
         if (!createdAt) continue;
 
@@ -282,10 +283,7 @@ export default async function (fastify: FastifyInstance) {
     { onRequest: [requireAdmin] },
     async (request, reply) => {
       const { startDate, endDate } = await getQueryDateRange(request.query, "week");
-      const conditions = [gte(requestLogs.createdAt, startDate)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = requestLogUsageWindow(startDate, endDate);
 
       const logs = await db
         .select({

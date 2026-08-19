@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { db } from "../db";
 import { users, apiKeys, requestLogs, providerModels, userGroups, userGroupMembers } from "../db/schema";
-import { eq, and, ne, sql, gte, lt } from "drizzle-orm";
+import { eq, and, ne, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
 import { requireAdmin } from "../middleware/auth";
@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs";
 import { strongPasswordSchema } from "../utils/password";
 import { summedRequestCostSql } from "../utils/requestCostSql";
 import { normalizeTokenLimit, resolveEffectiveMaxInputTokens } from "../services/userTokenLimits";
+import { requestLogUsageWindow } from "../utils/usageStatEligibility";
 
 const createUserSchema = z.object({
   username: z.string().min(2, "用户名至少需要 2 个字符"),
@@ -41,10 +42,7 @@ export default async function (fastify: FastifyInstance) {
             .from(apiKeys)
             .where(eq(apiKeys.userId, user.id));
 
-          const conditions = [eq(requestLogs.userId, user.id), gte(requestLogs.createdAt, startDate)];
-          if (endDate) {
-            conditions.push(lt(requestLogs.createdAt, endDate));
-          }
+          const conditions = [eq(requestLogs.userId, user.id), ...requestLogUsageWindow(startDate, endDate)];
 
           const usageStats = await db
             .select({
@@ -240,10 +238,7 @@ export default async function (fastify: FastifyInstance) {
       const { id } = request.params as any;
       const { startDate, endDate } = await getQueryDateRange(request.query, "all");
 
-      const conditions = [eq(requestLogs.userId, id), gte(requestLogs.createdAt, startDate)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = [eq(requestLogs.userId, id), ...requestLogUsageWindow(startDate, endDate)];
 
       const stats = await db
         .select({

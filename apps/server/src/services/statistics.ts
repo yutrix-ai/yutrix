@@ -1,8 +1,12 @@
 import { db } from "../db";
 import { requestLogs, users, providerModels } from "../db/schema";
-import { eq, sql, gte, lte, and } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { getRadarMetrics } from "./analyticsQueryBuilder";
 import { publicModelSql } from "../utils/modelAlias";
+import {
+  isUsageStatEligible,
+  requestLogUsageWindow,
+} from "../utils/usageStatEligibility";
 
 export async function getStatisticsData(startTime: Date, endTime: Date, excludedUsers: string[] = []) {
   const usageRows = await db
@@ -11,6 +15,7 @@ export async function getStatisticsData(startTime: Date, endTime: Date, excluded
       username: users.username,
       model: publicModelSql(),
       providerId: requestLogs.providerId,
+      usageStatus: requestLogs.usageStatus,
       totalTokens: sql<number>`COALESCE(${requestLogs.inputTokens}, 0) + COALESCE(${requestLogs.outputTokens}, 0)`,
       inputTokens: requestLogs.inputTokens,
       outputTokens: requestLogs.outputTokens,
@@ -27,12 +32,7 @@ export async function getStatisticsData(startTime: Date, endTime: Date, excluded
         eq(requestLogs.model, providerModels.modelId)
       )
     )
-    .where(
-      and(
-        gte(requestLogs.createdAt, startTime),
-        lte(requestLogs.createdAt, endTime)
-      )
-    );
+    .where(and(...requestLogUsageWindow(startTime, endTime, { endInclusive: true })));
 
   const userUsage = new Map<
     string,
@@ -80,6 +80,8 @@ export async function getStatisticsData(startTime: Date, endTime: Date, excluded
   let totalOutputTokensVal = 0;
 
   for (const row of usageRows) {
+    if (!isUsageStatEligible(row.usageStatus)) continue;
+
     const userKey = row.userId || "unknown";
     if (excludedUsers.includes(userKey)) continue;
 

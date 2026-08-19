@@ -1,11 +1,12 @@
 import { FastifyInstance } from "fastify";
 import { db } from "../db";
 import { requestLogs, apiKeys, providerModels } from "../db/schema";
-import { desc, eq, sql, and, gte, lt, gt } from "drizzle-orm";
+import { desc, eq, sql, and, lt, gt } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { getQueryDateRange } from "../utils/timeRange";
 import { requestCostSql, summedRequestCostSql } from "../utils/requestCostSql";
 import { publicModelSql } from "../utils/modelAlias";
+import { requestLogUsageWindow } from "../utils/usageStatEligibility";
 
 export default async function (fastify: FastifyInstance) {
   fastify.get(
@@ -14,10 +15,7 @@ export default async function (fastify: FastifyInstance) {
     async (request, reply) => {
       const user = request.user as any;
       const { startDate, endDate } = await getQueryDateRange(request.query, "all");
-      const conditions = [eq(requestLogs.userId, user.id), gte(requestLogs.createdAt, startDate)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = [eq(requestLogs.userId, user.id), ...requestLogUsageWindow(startDate, endDate)];
 
       const apiKeyUsage = await db
         .select({
@@ -183,10 +181,7 @@ export default async function (fastify: FastifyInstance) {
     async (request, reply) => {
       const user = request.user as any;
       const { startDate, endDate } = await getQueryDateRange(request.query, "all");
-      const conditions = [eq(requestLogs.userId, user.id), gte(requestLogs.createdAt, startDate)];
-      if (endDate) {
-        conditions.push(lt(requestLogs.createdAt, endDate));
-      }
+      const conditions = [eq(requestLogs.userId, user.id), ...requestLogUsageWindow(startDate, endDate)];
 
       const avgLatencyResult = await db
         .select({

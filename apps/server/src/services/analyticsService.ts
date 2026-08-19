@@ -1,8 +1,9 @@
 import { db } from "../db";
 import { requestLogs, providerModels, systemSettings } from "../db/schema";
-import { eq, and, sql, gte, lt, isNull, inArray } from "drizzle-orm";
+import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import { summedRequestCostSql } from "../utils/requestCostSql";
 import { publicModelSql } from "../utils/modelAlias";
+import { requestLogUsageWindow } from "../utils/usageStatEligibility";
 
 export * from "./analyticsFormatter";
 export * from "./analyticsQueryBuilder";
@@ -22,10 +23,7 @@ export async function getDetailedAnalytics(type: string, value: string, startDat
   const startHour = parseInt(startOfDayStr.split(":")[0] || "0", 10);
   const startMinute = parseInt(startOfDayStr.split(":")[1] || "0", 10);
   const startOfWeek = parseInt(startOfWeekStr, 10); // 0 = Sunday, 1 = Monday
-  const conditions = [gte(requestLogs.createdAt, startDate)];
-  if (endDate) {
-    conditions.push(lt(requestLogs.createdAt, endDate));
-  }
+  const conditions = requestLogUsageWindow(startDate, endDate);
 
   // Add dimension filter
   if (type === "user") {

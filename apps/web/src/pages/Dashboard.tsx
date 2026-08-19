@@ -12,6 +12,7 @@ import {
   DashboardCharts,
   UserDashboardExtra,
 } from "@/components/Dashboard/types";
+import { isUsageStatEligible, liveUsageRequestDelta } from "@promptgate/shared";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -75,44 +76,51 @@ export default function Dashboard() {
           const outputDelta = (data.outputTokens || 0) - oldReq.outputTokens;
           const tokensDelta = inputDelta + outputDelta;
           const costDelta = (data.cost || 0) - oldReq.cost;
-
-          setUserUsage(s => {
-            if (!s) return s;
-            return {
-              ...s,
-              totalRequests: oldReq.isNew ? s.totalRequests + 1 : s.totalRequests,
-              totalTokens: s.totalTokens + tokensDelta,
-              totalPromptTokens: (s.totalPromptTokens || 0) + inputDelta,
-              totalCompletionTokens: (s.totalCompletionTokens || 0) + outputDelta,
-              totalCost: (s.totalCost || 0) + costDelta,
-            };
+          const countsTowardUsage = isUsageStatEligible(data.usageStatus);
+          const requestDelta = liveUsageRequestDelta({
+            usageStatus: data.usageStatus,
+            isNewRequest: oldReq.isNew,
           });
 
-          setUserDashboardExtra(extra => {
-            if (!extra) return extra;
-            const updated = { ...extra };
+          if (countsTowardUsage) {
+            setUserUsage(s => {
+              if (!s) return s;
+              return {
+                ...s,
+                totalRequests: s.totalRequests + requestDelta,
+                totalTokens: s.totalTokens + tokensDelta,
+                totalPromptTokens: (s.totalPromptTokens || 0) + inputDelta,
+                totalCompletionTokens: (s.totalCompletionTokens || 0) + outputDelta,
+                totalCost: (s.totalCost || 0) + costDelta,
+              };
+            });
 
-            if (data.latencyMs && oldReq.isNew) {
-              const totalReqs = userUsage?.totalRequests || 0;
-              const newTotal = totalReqs + 1;
-              updated.avgLatencyMs = Math.round(((extra.avgLatencyMs * totalReqs) + data.latencyMs) / newTotal);
-            }
+            setUserDashboardExtra(extra => {
+              if (!extra) return extra;
+              const updated = { ...extra };
 
-            if (data.model && oldReq.isNew) {
-              const existing = updated.modelBreakdown.find(m => m.model === data.model);
-              if (existing) {
-                updated.modelBreakdown = updated.modelBreakdown.map(m =>
-                  m.model === data.model
-                    ? { ...m, totalRequests: m.totalRequests + 1, totalTokens: m.totalTokens + tokensDelta, totalCost: m.totalCost + costDelta }
-                    : m
-                );
-              } else {
-                updated.modelBreakdown = [...updated.modelBreakdown, { model: data.model, totalRequests: 1, totalTokens: tokensDelta, totalCost: costDelta }];
+              if (data.latencyMs && requestDelta) {
+                const totalReqs = userUsage?.totalRequests || 0;
+                const newTotal = totalReqs + 1;
+                updated.avgLatencyMs = Math.round(((extra.avgLatencyMs * totalReqs) + data.latencyMs) / newTotal);
               }
-            }
 
-            return updated;
-          });
+              if (data.model && requestDelta) {
+                const existing = updated.modelBreakdown.find(m => m.model === data.model);
+                if (existing) {
+                  updated.modelBreakdown = updated.modelBreakdown.map(m =>
+                    m.model === data.model
+                      ? { ...m, totalRequests: m.totalRequests + 1, totalTokens: m.totalTokens + tokensDelta, totalCost: m.totalCost + costDelta }
+                      : m
+                  );
+                } else {
+                  updated.modelBreakdown = [...updated.modelBreakdown, { model: data.model, totalRequests: 1, totalTokens: tokensDelta, totalCost: costDelta }];
+                }
+              }
+
+              return updated;
+            });
+          }
 
           activeRequestsRef.current = {
             ...prev,

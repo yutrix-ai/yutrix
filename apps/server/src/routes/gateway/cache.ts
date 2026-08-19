@@ -47,7 +47,7 @@ export async function checkAndServeCachedResponse(
           lastHitAt: new Date(),
         }).where(eq(responseCache.id, cached.id));
 
-        // Log request with cached status
+        // Persist an audit row. Usage aggregations skip usageStatus === "cached".
         const cachedLog = {
           id: baseActionLog.requestId,
           requestId: baseActionLog.requestId,
