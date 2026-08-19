@@ -104,6 +104,7 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
       route,
       incomingProtocol,
       reply,
+      request,
     );
     if (!authzResult) return;
 
@@ -112,6 +113,7 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
       { incomingProtocol, reqPath, endpoint, route, subdomainRecord: subdomainResult.subdomainRecord },
       request.hostname,
       authzResult.username,
+      authzResult.clientIp,
     );
 
     let currentAttempt = createInitialAttemptState(route);

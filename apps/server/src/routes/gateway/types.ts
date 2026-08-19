@@ -126,6 +126,7 @@ export interface BaseActionLog {
   host: string;
   path: string;
   routeName: string;
+  ip?: string;
   [key: string]: any;
 }
 

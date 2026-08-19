@@ -27,19 +27,20 @@
         }
       },
       "request": {
-        "started": "请求进入 requestId={{requestId}} path={{path}} route={{routeName}}",
+        "started": "请求进入 requestId={{requestId}} ip={{ip}} path={{path}} route={{routeName}}",
         "queued": "请求入队 provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "dequeued": "请求出队 queueMs={{queueMs}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
-        "completed": "请求完成 requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
+        "completed": "请求完成 requestId={{requestId}} ip={{ip}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
         "empty_stream": "上游返回空数据流 requestId={{requestId}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
-        "failed": "请求失败 requestId={{requestId}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
+        "failed": "请求失败 requestId={{requestId}} ip={{ip}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
         "fallback": "触发降级 primary={{primaryProviderName}}/{{primaryModelId}} fallback={{fallbackProviderName}}/{{fallbackModelId}} reason={{reasonText}}",
         "protocol_adapted": "协议适配 (Anthropic -> OpenAI) provider={{providerName}} model={{modelId}}",
         "protocol_adapted_failed": "协议适配失败 reason={{reasonText}}",
         "timeout": "请求超时 provider={{providerName}} model={{modelId}}",
         "error": "请求报错 msg={{message}}",
         "override_ignored": "请求覆盖被忽略 msg=用户自选模型 '{{overrideModelId}}' 不属于当前路由供应商配置，已忽略并回退使用路由默认模型。",
-        "cache_hit": "命中缓存 requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms cacheId={{cacheId}}",
+        "cache_hit": "命中缓存 requestId={{requestId}} ip={{ip}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms cacheId={{cacheId}}",
+        "ip_forbidden": "IP 拦截 ip={{ip}} 路由={{routeName}} path={{path}} msg={{message}}",
         "strategy_routing": {
           "applied": "策略路由生效 requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}}",
           "skipped": "策略路由跳过 requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}} skip={{skipReason}}",
@@ -776,7 +777,8 @@
       "queueTimeout": "排队超时 (ms)",
       "maxBody": "最大请求体 (MB)",
       "routingMode": "路由模式",
-      "bestEffort": "尽力而为 (逐级降级时优先使用同名模型)"
+      "bestEffort": "尽力而为 (逐级降级时优先使用同名模型)",
+      "ipWhitelist": "来源限制"
     },
     "targets": {
       "description": "根据漏斗顺序逐级转发请求，每一行可为各类任务配置特定的执行目标。",
@@ -798,7 +800,8 @@
       "noPolicy": "无策略",
       "select": "请选择",
       "addGroup": "添加用户组",
-      "addUser": "添加用户"
+      "addUser": "添加用户",
+      "ipWhitelist": "0.0.0.0/0"
     },
     "hints": {
       "openaiProtocol": "OpenAI 格式",
@@ -806,6 +809,7 @@
       "noPolicyOption": "无策略",
       "allowClientModel": "开启后，普通用户可以在他们专属的路由配置页面中选择当前路由供应商下的其它模型覆盖此路由。",
       "authorization": "选择可以访问此路由的用户和用户组。未选择则默认授权给默认组。",
+      "ipWhitelist": "空或 0.0.0.0/0 表示不限制。多个 IP / CIDR 用逗号分隔，例如 192.168.1.0/24, 10.0.0.1。",
       "defaultAuth": "默认授权给默认组",
       "primaryAdapter": "该供应商未配置 Anthropic 协议 URL，当前路由将使用 Anthropic → OpenAI-compatible 协议适配。",
       "fallbackAdapter": "降级供应商未配置 Anthropic 协议 URL，fallback 将使用 Anthropic → OpenAI-compatible 协议适配。",

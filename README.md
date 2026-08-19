@@ -1,4 +1,4 @@
-# Yutrix（驭算）
+# Yutrix
 
 > Formerly **PromptGate**. Open-source Community edition for cost control, routing, and audit.
 
@@ -20,6 +20,7 @@ Yutrix focuses on the gateway layer of LLM applications: one entry point, one au
 It gives you a deployable control plane for:
 
 - routing requests by `Host`, path, and protocol;
+- restricting each route by client source IP (single address, CIDR, or a comma-separated list; empty or `0.0.0.0/0` means no restriction);
 - validating Yutrix API keys;
 - replacing upstream provider API keys;
 - rewriting the request `model` field from route configuration;
@@ -66,6 +67,7 @@ The Yutrix logo features a modern arch or gateway with a central glowing code sp
 ## Features
 
 ### Recent Updates
+- **Route-level source IP restriction**: Each routing rule can allow only specific client IPs. Leave the field empty or set `0.0.0.0/0` (or `::/0`) for no restriction. A configured list accepts single IPv4/IPv6 addresses, CIDR subnets (`192.168.1.0/24`), and comma-separated mixes (`192.168.1.0/24, 10.0.0.1, 203.0.113.195`). Clients outside the list are rejected with `403` before the request reaches upstream, fallback, or token accounting. Allowed requests still follow the existing funnel / EmptyOutput / 429 hop path. Action logs include the client IP so `/logs` can filter by it.
 - **Client Override (user route model mode)**: When a route has **Allow Client Model Override** enabled, authorized users can choose **Client Override** in Select Custom Model. The gateway then matches the client request’s model name (`body.model`) against that route’s **L0** configuration (strategy rule models + L0 base). A hit uses the matched L0 model; if nothing matches, resolution falls through to **General**. This mode is mutually exclusive with a page-specified fixed model (and with custom strategy mapping for the same user+route override).
 - **Provider models batch enable/disable**: In the provider model configuration modal, admins can enable or disable all listed models in one action (toolbar buttons + header switch). Changes still apply only after save, matching the existing per-row toggle workflow.
 - **Route-based `/v1/models` when discovery is disabled**: With **Model Discovery** on (default), `/v1/models` still returns the admin-configured OpenAI/Anthropic discovery lists (independent of provider models). When discovery is **off**, the list is built from the requesting host’s enabled **L0** routes: prefers `virtualModelAlias` when set, otherwise L0 `targets[0].modelId` / route `modelId`; if no routes apply, returns a single `default` placeholder.
@@ -101,7 +103,24 @@ A route maps:
 ```text
 Host + Path + incoming protocol
   -> provider + modelId + prompt policy + fallback provider
+  -> optional source IP allowlist
 ```
+
+### Source IP restriction
+
+Source restriction is a route-level allowlist, configured in **Edit Routing Rule**.
+
+| Value | Behavior |
+| --- | --- |
+| empty / unset | No restriction |
+| `0.0.0.0/0` or `::/0` | No restriction |
+| `203.0.113.10` | Only that address |
+| `192.168.1.0/24` | Only that IPv4 subnet |
+| `192.168.1.0/24, 10.0.0.1, 2001:db8::/32` | Any listed address or CIDR |
+
+Multiple entries may be separated by commas, semicolons, or newlines. Invalid tokens are rejected when the route is saved. A miss returns the same client-facing `403` shape as a permission denial; it does not skip or alter later funnel hops for requests that *do* match.
+
+Client IP is taken from Fastify `request.ip` (with `trustProxy` and IPv4-mapped `::ffff:` normalization). Do not treat raw `CF-Connecting-IP` / `X-Real-IP` from the client as authoritative.
 
 Example:
 

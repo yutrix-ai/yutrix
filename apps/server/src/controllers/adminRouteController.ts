@@ -133,6 +133,7 @@ export async function getAdminRoutes(request: FastifyRequest, reply: FastifyRepl
       schedules: parsedSchedules,
       isScheduleActive: !!activeSchedule,
       activeSchedule,
+      ipWhitelist: route.ipWhitelist || "",
       readiness,
       errorMessage,
       createdAt: route.createdAt,
@@ -237,6 +238,7 @@ export async function getAdminRouteById(request: FastifyRequest, reply: FastifyR
     strategyRoutingRules: parseStrategyRoutingRules(route.strategyRoutingRules),
     targets: route.targets ? (() => { try { return JSON.parse(route.targets); } catch { return null; } })() : null,
     schedules: parsedSchedules,
+    ipWhitelist: route.ipWhitelist || "",
     authorizedUserIds: auth.userIds,
     authorizedGroupIds: auth.groupIds,
   };

@@ -14,6 +14,7 @@ import {
   publishRequestLogUpdate,
   updateRequestLog,
 } from "../../services/requestLogService";
+import { getClientIp } from "../../utils/ipAcl";
 import type {
   GatewayRequestContext,
   StreamAccumulator,
@@ -52,7 +53,9 @@ export function buildBaseLog(ctx: GatewayRequestContext, provider: any, activeKe
     protocol: ctx.currentAttempt.providerProtocol,
     model: ctx.currentAttempt.modelId,
     alias: ctx.activeModelConfig?.alias || undefined,
-    ipAddress: ctx.request.ip,
+    ipAddress: ctx.baseActionLog.ip && ctx.baseActionLog.ip !== "-"
+      ? ctx.baseActionLog.ip
+      : getClientIp(ctx.request),
     streaming: ctx.isStreaming,
     createdAt: new Date(),
   };

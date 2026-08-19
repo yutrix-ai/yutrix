@@ -27,19 +27,20 @@
         }
       },
       "request": {
-        "started": "Request started requestId={{requestId}} path={{path}} route={{routeName}}",
+        "started": "Request started requestId={{requestId}} ip={{ip}} path={{path}} route={{routeName}}",
         "queued": "Request queued provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "dequeued": "Request dequeued queueMs={{queueMs}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
-        "completed": "Request completed requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
+        "completed": "Request completed requestId={{requestId}} ip={{ip}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
         "empty_stream": "Empty upstream stream requestId={{requestId}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
-        "failed": "Request failed requestId={{requestId}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
+        "failed": "Request failed requestId={{requestId}} ip={{ip}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
         "fallback": "Fallback triggered primary={{primaryProviderName}}/{{primaryModelId}} fallback={{fallbackProviderName}}/{{fallbackModelId}} reason={{reasonText}}",
         "protocol_adapted": "Protocol adapted (Anthropic -> OpenAI) provider={{providerName}} model={{modelId}}",
         "protocol_adapted_failed": "Protocol adaptation failed reason={{reasonText}}",
         "timeout": "Request timeout provider={{providerName}} model={{modelId}}",
         "error": "Request error msg={{message}}",
         "override_ignored": "Request override ignored msg=Custom model '{{overrideModelId}}' is not configured for current route provider, ignored and fallback to default model.",
-        "cache_hit": "Cache hit requestId={{requestId}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms cacheId={{cacheId}}",
+        "cache_hit": "Cache hit requestId={{requestId}} ip={{ip}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms cacheId={{cacheId}}",
+        "ip_forbidden": "IP forbidden ip={{ip}} route={{routeName}} path={{path}} msg={{message}}",
         "strategy_routing": {
           "applied": "Strategy routing applied requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}}",
           "skipped": "Strategy routing skipped requestId={{requestId}} task={{taskType}} target={{targetProviderId}}/{{targetModelId}} reason={{reason}} skip={{skipReason}}",
@@ -779,7 +780,8 @@
       "queueTimeout": "Queue Timeout (ms)",
       "maxBody": "Max Request Body (MB)",
       "routingMode": "Routing mode",
-      "bestEffort": "Best Effort (prefer same-name model on fallback)"
+      "bestEffort": "Best Effort (prefer same-name model on fallback)",
+      "ipWhitelist": "Source IP restriction"
     },
     "targets": {
       "description": "Forward requests through funnel layers in priority order. Each row can configure specific execution targets for various task types.",
@@ -801,7 +803,8 @@
       "noPolicy": "No Policy",
       "select": "Please select",
       "addGroup": "Add group",
-      "addUser": "Add user"
+      "addUser": "Add user",
+      "ipWhitelist": "0.0.0.0/0"
     },
     "hints": {
       "openaiProtocol": "OpenAI Format",
@@ -809,6 +812,7 @@
       "noPolicyOption": "No Policy",
       "allowClientModel": "When enabled, normal users can select a different model from the current route's provider to override this route in their own routes config page.",
       "authorization": "Select which users and groups can access this route. If none selected, defaults to the default group.",
+      "ipWhitelist": "Leave empty or 0.0.0.0/0 for no restriction. Separate multiple IPs / CIDRs with commas, e.g. 192.168.1.0/24, 10.0.0.1.",
       "defaultAuth": "Default authorized to default group",
       "primaryAdapter": "This provider does not have Anthropic protocol URL configured. Protocol adaptation (Anthropic -> OpenAI-compatible) will be applied.",
       "fallbackAdapter": "The fallback provider does not have Anthropic protocol URL configured. Fallback protocol adaptation (Anthropic -> OpenAI-compatible) will be applied.",

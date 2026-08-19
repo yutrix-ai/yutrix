@@ -19,15 +19,19 @@ export function renderActionLogServerLine(
   }
 
   if (code === "request.completed") {
-    return `${timestamp} ${event.level} Request completed requestId=${event.requestId} user=${event.username} apiKey=${event.apiKeyPrefix} host=${event.host} path=${event.path} route=${event.routeName} provider=${event.providerName} model=${event.modelId} status=${event.statusCode} inputTokens=${event.promptTokens} outputTokens=${event.completionTokens} totalTokens=${event.totalTokens} latency=${event.latencyMs}ms queue=${event.queueMs}ms fallback=${event.fallbackText}`;
+    return `${timestamp} ${event.level} Request completed requestId=${event.requestId} ip=${event.ip || "-"} user=${event.username} apiKey=${event.apiKeyPrefix} host=${event.host} path=${event.path} route=${event.routeName} provider=${event.providerName} model=${event.modelId} status=${event.statusCode} inputTokens=${event.promptTokens} outputTokens=${event.completionTokens} totalTokens=${event.totalTokens} latency=${event.latencyMs}ms queue=${event.queueMs}ms fallback=${event.fallbackText}`;
   }
 
   if (code === "request.started") {
-    return `${timestamp} ${event.level} Request started requestId=${event.requestId} path=${event.path} route=${event.routeName}`;
+    return `${timestamp} ${event.level} Request started requestId=${event.requestId} ip=${event.ip || "-"} path=${event.path} route=${event.routeName}`;
   }
 
   if (code === "request.cache_hit") {
-    return `${timestamp} ${event.level} Request cache hit requestId=${event.requestId} user=${event.username} apiKey=${event.apiKeyPrefix} host=${event.host} path=${event.path} route=${event.routeName} provider=${event.providerName} model=${event.modelId} status=${event.statusCode} inputTokens=${event.promptTokens} outputTokens=${event.completionTokens} totalTokens=${event.totalTokens} latency=${event.latencyMs}ms queue=${event.queueMs}ms cacheId=${event.cacheId}`;
+    return `${timestamp} ${event.level} Request cache hit requestId=${event.requestId} ip=${event.ip || "-"} user=${event.username} apiKey=${event.apiKeyPrefix} host=${event.host} path=${event.path} route=${event.routeName} provider=${event.providerName} model=${event.modelId} status=${event.statusCode} inputTokens=${event.promptTokens} outputTokens=${event.completionTokens} totalTokens=${event.totalTokens} latency=${event.latencyMs}ms queue=${event.queueMs}ms cacheId=${event.cacheId}`;
+  }
+
+  if (code === "request.ip_forbidden") {
+    return `${timestamp} ${event.level} IP forbidden ip=${event.ip || "-"} route=${event.routeName || "-"} path=${event.path || "-"} msg=${event.message || ""}`;
   }
 
   if (code === "request.queued") {
@@ -39,7 +43,7 @@ export function renderActionLogServerLine(
   }
 
   if (code === "request.failed") {
-    return `${timestamp} ${event.level} Request failed requestId=${event.requestId} statusCode=${event.statusCode} error=${event.errorCode} msg=${event.message}`;
+    return `${timestamp} ${event.level} Request failed requestId=${event.requestId} ip=${event.ip || "-"} statusCode=${event.statusCode} error=${event.errorCode} msg=${event.message}`;
   }
 
   if (code === "request.empty_stream") {

@@ -68,6 +68,7 @@ async function runAutoMigrations() {
     "ALTER TABLE endpoint_routes ADD COLUMN strategyRoutingRules text;",
     "ALTER TABLE endpoint_routes ADD COLUMN allowClientModel integer DEFAULT 0 NOT NULL;",
     "ALTER TABLE endpoint_routes ADD COLUMN schedules text;",
+    "ALTER TABLE endpoint_routes ADD COLUMN ipWhitelist text;",
 
     // ── users ──
     "ALTER TABLE users ADD COLUMN maxInputTokensOverride integer;",

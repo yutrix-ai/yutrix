@@ -53,6 +53,7 @@ export interface RouteItem {
   readiness: "ready" | "incomplete" | "disabled" | "error";
   errorMessage?: string;
   allowClientModel?: boolean;
+  ipWhitelist?: string;
   authorizedUserIds?: string[];
   authorizedGroupIds?: string[];
   schedules?: any[];

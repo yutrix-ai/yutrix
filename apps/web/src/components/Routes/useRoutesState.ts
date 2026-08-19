@@ -55,6 +55,7 @@ export function useRoutesState() {
     maxBodyMb: 0,
     enabled: true,
     allowClientModel: false,
+    ipWhitelist: "",
     authorizedUserIds: [] as string[],
     authorizedGroupIds: [] as string[],
     fallbackMatchTarget: false,
@@ -305,6 +306,7 @@ export function useRoutesState() {
         maxBodyMb: formData.maxBodyMb,
         enabled: formData.enabled,
         allowClientModel: formData.allowClientModel,
+        ipWhitelist: formData.ipWhitelist,
         authorizedUserIds: formData.authorizedUserIds,
         authorizedGroupIds: formData.authorizedGroupIds,
         fallbackMatchTarget: formData.fallbackMatchTarget,
@@ -334,7 +336,7 @@ export function useRoutesState() {
     setFormData({
       name: "", hostInput: "*", path: "/v1/chat/completions", incomingProtocol: "openai", 
       targets: [], timeoutMs: 0, retryCount: 3, queueTimeoutMs: 0, maxBodyMb: 0,
-      enabled: true, allowClientModel: false, authorizedUserIds: [], authorizedGroupIds: [],
+      enabled: true, allowClientModel: false, ipWhitelist: "", authorizedUserIds: [], authorizedGroupIds: [],
       fallbackMatchTarget: false,
     });
     setDialogOpen(true);
@@ -376,7 +378,9 @@ export function useRoutesState() {
       targets: parsedTargets,
       timeoutMs: route.timeoutMs, retryCount: route.retryCount ?? 3, queueTimeoutMs: route.queueTimeoutMs, maxBodyMb: route.maxBodyMb,
       enabled: route.enabled,
-      allowClientModel: route.allowClientModel || false, authorizedUserIds: route.authorizedUserIds || [], authorizedGroupIds: route.authorizedGroupIds || [],
+      allowClientModel: route.allowClientModel || false,
+      ipWhitelist: route.ipWhitelist || "",
+      authorizedUserIds: route.authorizedUserIds || [], authorizedGroupIds: route.authorizedGroupIds || [],
       fallbackMatchTarget: route.fallbackMatchTarget || false,
     });
     setDialogOpen(true);

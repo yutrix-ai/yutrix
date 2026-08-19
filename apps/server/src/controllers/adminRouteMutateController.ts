@@ -18,6 +18,7 @@ import {
   cleanupUnusedRouteSubdomain,
 } from "../services/routeService";
 import { stringifyStrategyRoutingRules } from "../services/strategyRouting";
+import { normalizeIpAclForStorage } from "../utils/ipAcl";
 
 export async function createAdminRoute(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -39,12 +40,20 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     authorizedUserIds,
     authorizedGroupIds,
     schedules,
-    targets
+    targets,
+    ipWhitelist: rawIpWhitelist,
   } = body;
   const hostInput = rawHostInput ?? body.host;
 
   if (!hostInput || !path || !incomingProtocol || !targets || targets.length === 0) {
     return reply.code(400).send({ error: "缺少必填字段或路由目标为空" });
+  }
+
+  let ipWhitelist: string | null = null;
+  try {
+    ipWhitelist = normalizeIpAclForStorage(rawIpWhitelist);
+  } catch (e: any) {
+    return reply.code(400).send({ error: e.message || "来源限制格式无效" });
   }
 
   const validationResult = await validateRouteConfig({
@@ -126,6 +135,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     schedules: schedules ? JSON.stringify(schedules) : null,
     targets: JSON.stringify(resolvedTargets),
     retryCount: retryCount !== undefined ? retryCount : 3,
+    ipWhitelist,
     weight: 1,
     priority: 0,
     createdAt: new Date(),
@@ -189,6 +199,15 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
   const patchEnabled = body.enabled !== undefined ? body.enabled : route.enabled;
   const patchAllowClientModel = body.allowClientModel !== undefined ? body.allowClientModel : route.allowClientModel;
   const patchRetryCount = body.retryCount !== undefined ? body.retryCount : route.retryCount;
+
+  let patchIpWhitelist = route.ipWhitelist ?? null;
+  if (body.ipWhitelist !== undefined) {
+    try {
+      patchIpWhitelist = normalizeIpAclForStorage(body.ipWhitelist);
+    } catch (e: any) {
+      return reply.code(400).send({ error: e.message || "来源限制格式无效" });
+    }
+  }
 
   // Backwards compatibility for targets: if body.targets missing, try to parse from existing or legacy
   let targets = body.targets;
@@ -301,6 +320,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     schedules: body.schedules !== undefined ? (body.schedules ? JSON.stringify(body.schedules) : null) : route.schedules,
     retryCount: patchRetryCount,
     targets: JSON.stringify(resolvedTargets),
+    ipWhitelist: patchIpWhitelist,
     status: body.status !== undefined ? body.status : (body.enabled ? "active" : route.status),
     updatedAt: new Date()
   }).where(eq(endpointRoutes.id, id));

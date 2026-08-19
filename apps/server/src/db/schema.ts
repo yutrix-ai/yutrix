@@ -160,6 +160,7 @@ export const endpointRoutes = sqliteTable("endpoint_routes", {
   status: text("status").default("active"),
   allowClientModel: integer("allowClientModel", { mode: "boolean" }).notNull().default(false),
   schedules: text("schedules"),
+  ipWhitelist: text("ipWhitelist"),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
 });

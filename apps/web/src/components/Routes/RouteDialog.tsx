@@ -105,6 +105,21 @@ export function RouteDialog() {
               </div>
             </div>
 
+            {/* 来源限制 */}
+            <div className="space-y-2">
+              <Label htmlFor="ip-whitelist">{t("routes.fields.ipWhitelist", "来源限制")}</Label>
+              <Input
+                id="ip-whitelist"
+                className="font-mono text-sm"
+                value={formData.ipWhitelist || ""}
+                onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
+                placeholder={t("routes.placeholders.ipWhitelist", "0.0.0.0/0")}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("routes.hints.ipWhitelist", "空或 0.0.0.0/0 表示不限制。多个 IP / CIDR 用逗号分隔。")}
+              </p>
+            </div>
+
             {/* 授权访问 */}
             <div className="p-3 border rounded-md bg-muted/20">
               <div className="flex items-center justify-between mb-2">

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import type { FastifyReply } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../../db/schema";
 import { logAction } from "../../utils/actionLogger";
 import { formatError } from "../../utils/gatewayError";
+import { getClientIp, isClientIpAllowed, isUnrestrictedIpAcl } from "../../utils/ipAcl";
 import type {
   AuthContext,
   RoutingContext,
@@ -29,10 +30,35 @@ export async function checkRouteAuthorization(
   route: any,
   incomingProtocol: string,
   reply: FastifyReply,
-): Promise<{ username?: string; userRole: string } | null> {
+  request: FastifyRequest,
+): Promise<{ username?: string; userRole: string; clientIp: string } | null> {
   const userList = await db.select().from(users).where(eq(users.id, userId));
   const username = userList.length > 0 ? userList[0].username : undefined;
   const userRole = userList.length > 0 ? userList[0].role : "user";
+  const clientIp = getClientIp(request);
+
+  if (!isUnrestrictedIpAcl(route.ipWhitelist) && !isClientIpAllowed(clientIp, route.ipWhitelist)) {
+    logAction({
+      level: "WARN",
+      code: "request.ip_forbidden",
+      ip: clientIp || "-",
+      routeId: route.id,
+      routeName: route.name || "",
+      path: request.url.split("?")[0],
+      host: request.hostname,
+      username,
+      message: `客户端 IP ${clientIp || "-"} 不在路由来源限制范围内`,
+    });
+    reply.code(403).send(
+      formatError(
+        incomingProtocol,
+        403,
+        "您无权访问该路由",
+        "permission_denied",
+      ),
+    );
+    return null;
+  }
 
   if (userRole !== "admin" && apiKeyRecord.id !== "system") {
     const userGroupList = await db
@@ -81,7 +107,7 @@ export async function checkRouteAuthorization(
     }
   }
 
-  return { username, userRole };
+  return { username, userRole, clientIp };
 }
 
 /**
@@ -93,6 +119,7 @@ export function createBaseActionLog(
   routing: RoutingContext,
   requestHostname: string,
   username?: string,
+  clientIp?: string,
 ): BaseActionLog {
   return {
     requestId: crypto.randomUUID(),
@@ -104,6 +131,7 @@ export function createBaseActionLog(
     host: requestHostname,
     path: routing.reqPath,
     routeName: routing.route.name || routing.endpoint.name,
+    ip: clientIp || "-",
   };
 }
 

@@ -239,6 +239,13 @@
       "when": 1785513600000,
       "tag": "0033_provider_model_context_window",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1787107200000,
+      "tag": "0034_route_ip_whitelist",
+      "breakpoints": true
     }
   ]
 }
