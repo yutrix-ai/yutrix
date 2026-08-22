@@ -105,6 +105,14 @@ export function renderActionLogServerLine(
     return `${timestamp} ${event.level} Strategy routing error requestId=${event.requestId} error=${event.error}`;
   }
 
+  if (code === "request.loop_guard.stopped") {
+    return `${timestamp} ${event.level} Loop guard stopped requestId=${event.requestId} reason=${event.reason} model=${event.modelId} msg=${event.message || ""}`;
+  }
+
+  if (code === "request.loop_guard.error") {
+    return `${timestamp} ${event.level} Loop guard failed open requestId=${event.requestId} error=${event.error || event.message || ""}`;
+  }
+
   if (code === "request.image_detected") {
     return `${timestamp} ${event.level} Image input detected requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} ${event.message || ""}`;
   }

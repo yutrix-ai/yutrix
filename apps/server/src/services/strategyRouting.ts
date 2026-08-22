@@ -278,6 +278,13 @@ export interface ClassifyStrategyOptions {
    * strategy floor rejects long_context routing).
    */
   excludeLongContext?: boolean;
+  /**
+   * Enable the debug `protocol_error` pre-check. Only the continuation path
+   * may set this: harness wrappers (`<system-reminder>`, CLAUDE.md) on a
+   * fresh user_intent must not be routed as debug because workspace docs
+   * mention 失败/error.
+   */
+  allowProtocolError?: boolean;
 }
 
 function isLogAnalysisFailureTheme(evidence: {
@@ -387,7 +394,9 @@ export function classifyStrategyTask(
   }
 
   // --- 1b. Debug Protocol: Tool errors & System crash indicators (O(1) pre-check) ---
+  // Continuation-only: user_intent with agent harness wrappers must not trip this.
   if (
+    options?.allowProtocolError &&
     /tool_result|role["\s]*:["\s]*tool|system-reminder|system_reminder/.test(
       normalized,
     ) &&
@@ -802,6 +811,7 @@ export function classifyIntentTaskType(
   const result = classifyStrategyTask(text, false, {
     skipVision: true,
     skipAgentic: !!isContinuation,
+    allowProtocolError: !!isContinuation,
   });
   if (result.taskType === "vision") {
     // Defensive: skipVision should prevent this

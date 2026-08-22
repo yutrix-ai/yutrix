@@ -4,6 +4,7 @@ import { responseCache } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
 import crypto from "crypto";
 import { requireAdmin } from "../middleware/auth";
+import { evaluateResponseCacheWrite } from "../services/loopGuard";
 
 export default async function (fastify: FastifyInstance) {
   // GET /api/admin/cache — list all cache entries
@@ -30,6 +31,11 @@ export default async function (fastify: FastifyInstance) {
         model?: string;
         sourceLogId?: string;
       };
+
+      const writeGate = evaluateResponseCacheWrite(inputText || "");
+      if (!writeGate.ok) {
+        return reply.code(writeGate.status).send({ error: writeGate.error });
+      }
 
       const inputHash = crypto
         .createHash("md5")

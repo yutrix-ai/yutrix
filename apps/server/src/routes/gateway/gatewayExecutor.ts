@@ -28,6 +28,7 @@ import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTo
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
+import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
 import { freezeUncutInboundBody, snapshotUncutInboundBody, resolveEmptyOutputLayerHopFromRoute } from "./emptyOutputLayerHop";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
@@ -145,6 +146,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     return state;
   };
   let cacheServed = false;
+  let loopStopServed = false;
   let activeModelConfig: any = ctx.activeModelConfig;
   let isStreaming: boolean = ctx.isStreaming;
   let usageRequestBody: any = ctx.usageRequestBody;
@@ -591,6 +593,34 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               try {
                 const requestClass = classifyGatewayRequestClass(body);
                 const isContinuation = requestClass.requestClass === "tool_continuation";
+                try {
+                  const loopClientSessionId = (
+                    request.headers["x-client-session-id"] ||
+                    request.headers["x-conversation-id"] ||
+                    request.headers["x-session-id"]
+                  ) as string | undefined;
+                  if (maybeServeContinuationLoopStop({
+                    userId: authCtx.userId,
+                    body,
+                    clientSessionId: loopClientSessionId,
+                    reply,
+                    incomingProtocol,
+                    modelId: currentAttempt.modelId,
+                    logAction,
+                    baseActionLog,
+                  })) {
+                    loopStopServed = true;
+                    responseData = { status: 200, data: { loopStopped: true }, isStream: false };
+                    return;
+                  }
+                } catch (guardErr: any) {
+                  logAction({
+                    ...baseActionLog,
+                    level: "WARN",
+                    code: "request.loop_guard.error",
+                    error: guardErr?.message || "unknown",
+                  });
+                }
                 let previousModelId: string | null = null;
                 if (isContinuation) {
                   const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string | undefined;
@@ -2039,6 +2069,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       });
 
       if (cacheServed) return;
+      if (loopStopServed) return;
 
       if (responseData && responseData.status === 200 && (!ctx.isStreaming || responseData.isFakeStream || !responseData.isStream)) {
          if (!responseData.roundUsageCommitted) {

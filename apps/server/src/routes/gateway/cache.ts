@@ -10,6 +10,7 @@ import { insertRequestLog } from "../../services/requestLogService";
 import type { AuthContext, RoutingContext, AttemptState, BaseActionLog } from "./types";
 import { isAuditExemptUser } from "./logging";
 import { writeStreamHeaders } from "./streamProtocol";
+import { shouldSkipResponseCacheServe } from "../../services/loopGuard";
 
 /**
  * Check the response cache and serve a cached response if available.
@@ -34,6 +35,9 @@ export async function checkAndServeCachedResponse(
   const { reqPath, route } = routing;
 
   try {
+    if (shouldSkipResponseCacheServe(body)) {
+      return false;
+    }
     const normalized = normalizeChatLogTurn(JSON.stringify(body), null);
     if (normalized.inputText) {
       const cacheInputHash = crypto.createHash("md5").update(normalized.inputText).digest("hex");
