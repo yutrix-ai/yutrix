@@ -726,8 +726,11 @@ async function regularUserAccess(user) {
   const adminKeys = await adminKeysRes.json();
   const adminViewOfCreated = adminKeys.find(k => k.id === created.id);
   if (!adminViewOfCreated) throw new Error('Admin list cannot see user-created API key');
-  if (adminViewOfCreated.concurrencyLimit !== 2) {
-    throw new Error('Regular user API key did not use system default concurrency');
+  if (adminViewOfCreated.concurrencyLimit === 99) {
+    throw new Error('Regular user API key stored caller-supplied concurrencyLimit');
+  }
+  if (adminViewOfCreated.concurrencyLimit < 8 || adminViewOfCreated.concurrencyLimit > 16) {
+    throw new Error('Regular user API key did not use system default concurrency in 8-16, got ' + adminViewOfCreated.concurrencyLimit);
   }
   if (adminViewOfCreated.expiresAt) throw new Error('Regular user API key stored custom expiresAt');
   console.log('[PASS] Regular user API Key creation ignores admin-only fields and stores defaults');

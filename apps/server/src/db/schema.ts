@@ -33,7 +33,7 @@ export const apiKeys = sqliteTable("api_keys", {
   status: text("status").notNull().default("active"),
   rpmLimit: integer("rpmLimit"),
   tpmLimit: integer("tpmLimit"),
-  concurrencyLimit: integer("concurrencyLimit").notNull().default(2),
+  concurrencyLimit: integer("concurrencyLimit").notNull().default(10),
   expiresAt: integer("expiresAt", { mode: "timestamp" }),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
   lastUsedAt: integer("lastUsedAt", { mode: "timestamp" }),

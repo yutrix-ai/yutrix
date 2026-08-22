@@ -6,11 +6,9 @@ import { normalizeChatLogTurn } from "../utils/chatTurns";
 import { ChatLogPayload } from "./chatLogTypes";
 import { getSessionTurnStats, resolveSessionMatch } from "./chatLogQuery";
 import { triggerSessionTitleSummarization } from "./chatLogSummarizer";
+import { enqueueAuditInsert } from "./chatLogInsertQueue";
 
 export { ChatLogPayload };
-
-// Serialization queue to prevent concurrent race conditions
-const userQueues = new Map<string, Promise<void>>();
 
 async function processChatLogInsert(payload: ChatLogPayload) {
   if (payload.noSummary) {
@@ -110,24 +108,10 @@ async function processChatLogInsert(payload: ChatLogPayload) {
   }
 }
 
-// 1. Event listener wrapped in a fail-safe try-catch and serialization queue
 logEmitter.on("chatLogInsert", async (payload: ChatLogPayload) => {
-  const userId = payload.userId || "anonymous";
-  const prev = userQueues.get(userId) ?? Promise.resolve();
-  const current = prev.then(() => processChatLogInsert(payload));
-
-  // Catch errors to prevent the user's promise chain from breaking permanently
-  const wrapped = current.catch((e) => {
-    console.error(`[ChatLogService] Unhandled error in queue for user ${userId}:`, e);
-  }).finally(() => {
-    // Clean up to prevent memory leaks for long-running servers
-    if (userQueues.get(userId) === wrapped) {
-      userQueues.delete(userId);
-    }
-  });
-
-  userQueues.set(userId, wrapped);
-
-  // Await the current execution so the caller (if awaiting) gets blocked until done
-  await current;
+  try {
+    await enqueueAuditInsert(payload, () => processChatLogInsert(payload));
+  } catch (error) {
+    console.error("[ChatLogService] Failed to enqueue chat log insert:", error);
+  }
 });

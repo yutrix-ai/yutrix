@@ -5,7 +5,7 @@ import path from "path";
 import crypto from "crypto";
 
 import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn } from "./startup/migrations";
-import { seedAdminUser, seedBrandingSettings, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings } from "./startup/seed";
+import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings } from "./startup/seed";
 
 export { isMigrationCompleted };
 
@@ -179,6 +179,7 @@ export async function bootstrap() {
 
   await seedAdminUser();
   await seedBrandingSettings();
+  await seedDefaultApiKeyConcurrency();
   await seedModelDiscoverySettings();
   await seedBuiltinPromptPolicies();
   await syncManualModels();

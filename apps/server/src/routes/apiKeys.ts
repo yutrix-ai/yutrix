@@ -6,8 +6,16 @@ import crypto from "crypto";
 import { z } from "zod";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { logAction } from "../utils/actionLogger";
+import { concurrencyLimitForNewUserKey } from "../services/apiKeyConcurrency";
 
-
+async function resolveConcurrencyLimitForNewUserKey(requested?: unknown): Promise<number> {
+  const settings = await db
+    .select()
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "defaultApiKeyConcurrency"))
+    .limit(1);
+  return concurrencyLimitForNewUserKey(requested, settings[0]?.value);
+}
 
 const userCreateApiKeySchema = z.object({
   name: z.string().min(1),
@@ -18,15 +26,6 @@ const adminPatchApiKeySchema = z.object({
   concurrencyLimit: z.number().int().min(1).optional(),
   expiresAt: z.string().nullable().optional(),
 });
-
-async function getDefaultApiKeyConcurrency() {
-  const settings = await db
-    .select()
-    .from(systemSettings)
-    .where(eq(systemSettings.key, "defaultApiKeyConcurrency"));
-  const parsed = settings.length > 0 ? Number(settings[0].value) : 2;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 2;
-}
 
 export default async function (fastify: FastifyInstance) {
   // Admin routes
@@ -216,7 +215,9 @@ export default async function (fastify: FastifyInstance) {
         name,
         keyHash,
         keyPrefix,
-        concurrencyLimit: await getDefaultApiKeyConcurrency(),
+        concurrencyLimit: await resolveConcurrencyLimitForNewUserKey(
+          (parsed.data as { concurrencyLimit?: unknown }).concurrencyLimit,
+        ),
         expiresAt: null,
         status: "active",
         createdAt: new Date(),

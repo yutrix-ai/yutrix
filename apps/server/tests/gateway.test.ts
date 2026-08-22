@@ -850,6 +850,50 @@ describe("Gateway Models Endpoint", () => {
     expect(logs2[0].clientSessionId).toBe(clientSessionId);
   });
 
+  it("merges concurrent inserts that share a clientSessionId with monotonic turnIds", async () => {
+    const { logEmitter } = await import("../src/utils/events");
+    await import("../src/services/chatLogService");
+
+    const clientSessionId = "concurrent-conv-" + crypto.randomUUID();
+    const firstReqId = crypto.randomUUID();
+    const secondReqId = crypto.randomUUID();
+
+    logEmitter.emit("chatLogInsert", {
+      id: firstReqId,
+      requestId: firstReqId,
+      clientSessionId,
+      userId,
+      clientName: "Test API Key",
+      model: "gpt-4o-test",
+      inputText: JSON.stringify([{ role: "user", content: "first concurrent turn" }]),
+      outputText: "one",
+    });
+    logEmitter.emit("chatLogInsert", {
+      id: secondReqId,
+      requestId: secondReqId,
+      clientSessionId,
+      userId,
+      clientName: "Test API Key",
+      model: "gpt-4o-test",
+      inputText: JSON.stringify([{ role: "user", content: "second concurrent turn" }]),
+      outputText: "two",
+    });
+
+    const deadline = Date.now() + 2000;
+    let rows: any[] = [];
+    while (Date.now() < deadline) {
+      rows = await db.select().from(chatLogs).where(eq(chatLogs.clientSessionId, clientSessionId));
+      if (rows.length >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(rows.length).toBe(2);
+    const sessionIds = new Set(rows.map((row: any) => row.serverSessionId));
+    expect(sessionIds.size).toBe(1);
+    const turnIds = rows.map((row: any) => row.turnId).sort((a: number, b: number) => a - b);
+    expect(turnIds).toEqual([0, 1]);
+  });
+
   it("merges a real prompt into a preceding generated-title session by subject text", async () => {
     const { logEmitter } = await import("../src/utils/events");
     await import("../src/services/chatLogService");

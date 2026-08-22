@@ -9,6 +9,7 @@ import {
   providerModels,
 } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { FACTORY_DEFAULT_API_KEY_CONCURRENCY } from "../services/apiKeyConcurrency";
 import * as bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -67,7 +68,7 @@ export async function seedAdminUser() {
       { key: "accentColor", value: "blue" },
       { key: "mainDomain", value: "localhost" },
       { key: "globalConcurrencyLimit", value: "100" },
-      { key: "defaultApiKeyConcurrency", value: "2" },
+      { key: "defaultApiKeyConcurrency", value: String(FACTORY_DEFAULT_API_KEY_CONCURRENCY) },
       { key: "defaultQueueTimeoutMs", value: "30000" },
       { key: "defaultConversationHeader", value: "X-Conversation-Id" },
       { key: "promptInjectionRecordTtlDays", value: "30" },
@@ -90,6 +91,31 @@ export async function seedAdminUser() {
         updatedAt: new Date(),
       });
     }
+  }
+}
+
+/** Idempotent: insert factory default, or bump leftover factory "2" to the new default. */
+export async function seedDefaultApiKeyConcurrency() {
+  const existing = await db
+    .select()
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "defaultApiKeyConcurrency"))
+    .limit(1);
+  const next = String(FACTORY_DEFAULT_API_KEY_CONCURRENCY);
+  if (existing.length === 0) {
+    await db.insert(systemSettings).values({
+      key: "defaultApiKeyConcurrency",
+      value: next,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return;
+  }
+  if (existing[0].value === "2") {
+    await db
+      .update(systemSettings)
+      .set({ value: next, updatedAt: new Date() })
+      .where(eq(systemSettings.key, "defaultApiKeyConcurrency"));
   }
 }
 
