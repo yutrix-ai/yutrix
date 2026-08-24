@@ -6,6 +6,7 @@
  */
 
 export const LOOP_GUARD_DEFAULTS = {
+  enabled: true,
   identicalErrorRepeats: 5,
   pingPongHalfCycles: 8,
   continuationCeiling: 400,
@@ -59,6 +60,7 @@ export interface LoopGuardInspection {
 }
 
 export interface LoopGuardConfig {
+  enabled: boolean;
   identicalErrorRepeats: number;
   pingPongHalfCycles: number;
   continuationCeiling: number;

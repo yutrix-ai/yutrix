@@ -41,9 +41,9 @@ export const STRATEGY_TASK_TYPES = [
 export type StrategyTaskType = (typeof STRATEGY_TASK_TYPES)[number];
 
 /**
- * Floor for routing to the long_context strategy model.
- * Only requests with estimated input tokens strictly greater than this value
- * may use the long_context strategy target (classification or override).
+ * Floor for *classifying* a request as long_context from text (logs, documents).
+ * Small "check the logs" utterances must not steal the long_context model.
+ * Capacity hops (window overflow) do not use this floor.
  */
 export const LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS = 1_000_000;
 
@@ -54,6 +54,16 @@ export function meetsLongContextStrategyTokenFloor(
     Number.isFinite(estimatedInputTokens) &&
     estimatedInputTokens > LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS
   );
+}
+
+/** @deprecated Use shouldAttemptCapacityLongContext. Kept as a compatible alias. */
+export function shouldAttemptLongContextOverride(options: {
+  isContextExhausted: boolean;
+  overflowFromGroupClip: boolean;
+  estimatedTotalTokens?: number;
+  hasImages?: boolean;
+}): boolean {
+  return options.isContextExhausted === true || options.overflowFromGroupClip === true;
 }
 
 /**
@@ -840,11 +850,7 @@ export async function computeRoutingRequirements(
 
   let requiresLongContext = false;
   const contextBudget = resolveModelContextWindow(activeModelConfig);
-  // Preemptive long_context strategy only when above the 1M floor AND over model budget
-  if (
-    meetsLongContextStrategyTokenFloor(tokenEst.totalTokens) &&
-    contextBudget.limit > 0
-  ) {
+  if (contextBudget.limit > 0) {
     let requestedOutputTokens = 0;
     if (body?.max_tokens) requestedOutputTokens = body.max_tokens;
     else if (body?.max_completion_tokens)
@@ -862,7 +868,6 @@ export async function computeRoutingRequirements(
         contextBudget.limit;
     }
   }
-
   return {
     intentTaskType,
     requiredCapabilities: {
@@ -1175,7 +1180,10 @@ export async function resolveStrategyRoutingDecision(options: {
     } catch (e) {}
   }
 
-  if (!strategyRoutingEnabled || options.currentAttempt.isFallback) {
+  if (!strategyRoutingEnabled) {
+    return null;
+  }
+  if (options.currentAttempt.isFallback && !options.currentAttempt.reapplyLayerStrategy) {
     return null;
   }
 
@@ -1306,10 +1314,56 @@ export async function resolveStrategyRoutingDecision(options: {
     };
   }
 
+  if (options.currentAttempt.reapplyLayerStrategy) {
+    const inherited = options.currentAttempt.strategyTaskType;
+    if (inherited && inherited !== "long_context" && inherited !== "vision" && isStrategyTaskType(inherited)) {
+      const rules = parseRules(strategyRoutingRules);
+      const rule = findStrategyRule(rules, inherited);
+      if (rule) {
+        const validation = await validateOneStrategyRule({
+          incomingProtocol: options.incomingProtocol,
+          rule,
+        });
+        if (validation.ok) {
+          const normalizedRule = validation.rule;
+          const sameTarget =
+            normalizedRule.providerId === options.currentAttempt.providerId &&
+            normalizedRule.providerProtocol === options.currentAttempt.providerProtocol &&
+            normalizedRule.modelId === options.currentAttempt.modelId;
+          if (sameTarget) {
+            return {
+              applied: false,
+              taskType: inherited,
+              reasons: ["availability_hop_reapply_layer_strategy"],
+              rule: normalizedRule,
+              skipReason: "already_on_target",
+            };
+          }
+          return {
+            applied: true,
+            taskType: inherited,
+            reasons: ["availability_hop_reapply_layer_strategy"],
+            rule: normalizedRule,
+            newAttempt: {
+              providerId: normalizedRule.providerId,
+              providerProtocol: normalizedRule.providerProtocol,
+              modelId: normalizedRule.modelId,
+              promptPolicyId: options.route.promptPolicyId || null,
+              isFallback: options.currentAttempt.isFallback,
+              fallbackReason: options.currentAttempt.fallbackReason || "",
+              targetIndex: options.currentAttempt.targetIndex || 0,
+            },
+          };
+        }
+      }
+    }
+  }
+
   // ── Continuation requests (tool results, system-reminders, auto-drive, etc.) ──
   // Not a real user input → unconditionally keep the current model.
-  // If we know the previous model from DB, inherit it; otherwise just stay put.
-  if (options.isContinuation) {
+  // After an availability hop, re-select this layer's strategy instead of
+  // inheriting the previous layer's model.
+  if (options.isContinuation && !options.currentAttempt.reapplyLayerStrategy) {
     if (options.previousModelId) {
       // We know what model the previous turn used — inherit it
       if (options.previousModelId === options.currentAttempt.modelId) {
@@ -1394,7 +1448,7 @@ export async function resolveStrategyRoutingDecision(options: {
                   promptPolicyId: options.route.promptPolicyId || null,
                   isFallback: false,
                   fallbackReason: "",
-                  targetIndex: 0,
+                  targetIndex: options.currentAttempt.targetIndex || 0,
                 },
               };
             }
@@ -1495,7 +1549,7 @@ export async function resolveStrategyRoutingDecision(options: {
       promptPolicyId: options.route.promptPolicyId || null,
       isFallback: false,
       fallbackReason: "",
-      targetIndex: 0,
+      targetIndex: options.currentAttempt.targetIndex || 0,
     },
   };
 }

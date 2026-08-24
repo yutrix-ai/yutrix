@@ -64,7 +64,7 @@ describe("selectEmptyOutputLayerHop", () => {
         layers[1],
       ],
     });
-    expect(hop).toEqual({
+    expect(hop).toMatchObject({
       index: 1,
       providerId: "p1",
       modelId: "gemini-pro-agent",
@@ -109,7 +109,7 @@ describe("selectEmptyOutputLayerHop", () => {
         },
       ],
     });
-    expect(hop).toEqual({
+    expect(hop).toMatchObject({
       index: 3,
       providerId: "p3",
       modelId: "claude-sonnet",
@@ -117,7 +117,7 @@ describe("selectEmptyOutputLayerHop", () => {
     });
   });
 
-  it("skips a later layer whose window cannot hold the uncut estimate", () => {
+  it("still hops to the next layer when that layer's window is too small", () => {
     const hop = selectEmptyOutputLayerHop({
       currentIndex: 0,
       hasImages: false,
@@ -128,12 +128,8 @@ describe("selectEmptyOutputLayerHop", () => {
         { ...layers[1], index: 2, providerId: "p2", modelId: "gemini-pro-agent", windowLimit: 200_000 },
       ],
     });
-    expect(hop).toEqual({
-      index: 2,
-      providerId: "p2",
-      modelId: "gemini-pro-agent",
-      providerProtocol: "openai",
-    });
+    expect(hop?.index).toBe(1);
+    expect(hop?.modelId).toBe("gemini-pro-agent");
   });
 
   it("from a later layer still picks the next funnel layer, not the current one", () => {
@@ -148,7 +144,7 @@ describe("selectEmptyOutputLayerHop", () => {
         { ...layers[1], index: 3, providerId: "p3", modelId: "gemini-pro-agent" },
       ],
     });
-    expect(hop).toEqual({
+    expect(hop).toMatchObject({
       index: 2,
       providerId: "p2",
       modelId: "claude-sonnet",
@@ -165,6 +161,24 @@ describe("selectEmptyOutputLayerHop", () => {
         layers: [layers[0]],
       }),
     ).toBeNull();
+  });
+
+  it("hops to the next layer even when 286k tokens exceed that layer's 256k window", () => {
+    const hop = selectEmptyOutputLayerHop({
+      currentIndex: 0,
+      hasImages: false,
+      estimatedTokens: 286751,
+      layers: [
+        layers[0],
+        { ...layers[1], windowLimit: 262144 },
+      ],
+    });
+    expect(hop).toMatchObject({
+      index: 1,
+      providerId: "p1",
+      modelId: "gemini-pro-agent",
+      capability: "text",
+    });
   });
 });
 

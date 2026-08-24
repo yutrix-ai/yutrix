@@ -10,6 +10,7 @@ import {
   LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS,
   meetsLongContextStrategyTokenFloor,
   parseStrategyRoutingRules,
+  shouldAttemptLongContextOverride,
 } from "../src/services/strategyRouting";
 
 describe("strategy routing helpers", () => {
@@ -824,5 +825,28 @@ describe("long_context strategy 1M token floor", () => {
         excludeLongContext: true,
       }).taskType,
     ).not.toBe("long_context");
+  });
+});
+
+describe("long_context override safety net", () => {
+  it("hops when the current model window is exhausted even below 1M", () => {
+    expect(
+      shouldAttemptLongContextOverride({
+        isContextExhausted: true,
+        overflowFromGroupClip: false,
+        estimatedTotalTokens: 286751,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not hop a large request that still fits the current model", () => {
+    expect(
+      shouldAttemptLongContextOverride({
+        isContextExhausted: false,
+        overflowFromGroupClip: false,
+        estimatedTotalTokens: 286751,
+        hasImages: false,
+      }),
+    ).toBe(false);
   });
 });

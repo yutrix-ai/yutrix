@@ -138,18 +138,15 @@ async function resolveFallbackTarget(
           budget: candidateBudget,
         });
 
-        if (!isSufficient) {
-          if (logAction && baseActionLog) {
-            logAction({
-              ...baseActionLog,
-              level: "WARN",
-              code: "request.fallback_target_skipped",
-              providerId: targetFallbackProviderId,
-              modelId: targetFallbackModelId || "",
-              reason: `context_budget_insufficient:input_${tokenEst.totalTokens}>${candidateBudget.limit}`,
-            });
-          }
-          continue;
+        if (!isSufficient && logAction && baseActionLog) {
+          logAction({
+            ...baseActionLog,
+            level: "INFO",
+            code: "request.fallback_target_capacity_deferred",
+            providerId: targetFallbackProviderId,
+            modelId: targetFallbackModelId || "",
+            reason: `availability_hop_despite_small_window:input_${tokenEst.totalTokens}>${candidateBudget.limit}`,
+          });
         }
       }
     }

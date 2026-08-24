@@ -22,6 +22,7 @@ export const identicalErrorPattern: LoopPattern = {
   name: "identical_error",
   detect(turns, _nowMs, config) {
     const n = config.identicalErrorRepeats;
+    if (n <= 0) return null;
     if (turns.length < n) return null;
     const window = turns.slice(-n);
     if (!window.every((turn) => turn.kind === "continuation" && turn.isErrorClass)) {
@@ -39,6 +40,7 @@ export const pingPongErrorPattern: LoopPattern = {
   name: "ping_pong",
   detect(turns, _nowMs, config) {
     const n = config.pingPongHalfCycles;
+    if (n <= 1) return null;
     if (turns.length < n) return null;
     const window = turns.slice(-n);
     if (!window.every((turn) => turn.kind === "continuation" && turn.isErrorClass)) {
@@ -57,6 +59,7 @@ export const pingPongErrorPattern: LoopPattern = {
 export const continuationCeilingPattern: LoopPattern = {
   name: "turn_ceiling",
   detect(turns, _nowMs, config) {
+    if (config.continuationCeiling <= 0) return null;
     const cont = continuationsSinceIntent(turns);
     if (cont.length < config.continuationCeiling) return null;
     if (turns[turns.length - 1]?.kind !== "continuation") return null;
@@ -67,6 +70,7 @@ export const continuationCeilingPattern: LoopPattern = {
 export const ageCeilingPattern: LoopPattern = {
   name: "age_ceiling",
   detect(turns, nowMs, config) {
+    if (config.continuationMaxAgeMs <= 0) return null;
     if (turns[turns.length - 1]?.kind !== "continuation") return null;
     const intentAt = lastUserIntentIndex(turns);
     if (intentAt < 0) return null;

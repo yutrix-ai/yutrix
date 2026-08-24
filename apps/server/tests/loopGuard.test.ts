@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import fs from "fs";
 import path from "path";
 import { classifyGatewayRequestClass } from "../src/services/requestRoutingClass";
@@ -12,6 +12,7 @@ import {
   inspectContinuationLoop,
   isErrorClassPayload,
   maybeServeContinuationLoopStop,
+  resetLoopGuardRuntimeForTests,
 } from "../src/services/loopGuard";
 
 function grepToolBody(dir: string, toolCallId: string) {
@@ -152,6 +153,10 @@ function readFileBody(path: string, toolCallId: string) {
     ],
   };
 }
+
+beforeEach(() => {
+  resetLoopGuardRuntimeForTests();
+});
 
 describe("loop-guard fingerprint + error-class", () => {
   it("strips tool_call_id so the same ENOENT grep hashes equal", () => {

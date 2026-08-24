@@ -33,7 +33,7 @@ export const STRATEGY_TASKS: Array<{
     labelKey: "routes.strategy.tasks.long_context",
     fallbackLabel: "长上下文",
     descriptionKey: "routes.strategy.taskDescriptions.long_context",
-    fallbackDescription: "仅当预估输入超过 100 万 tokens 时才会路由到此模型。",
+    fallbackDescription: "当前模型上下文装不下时，会路由到此模型。",
   },
   {
     type: "writing",

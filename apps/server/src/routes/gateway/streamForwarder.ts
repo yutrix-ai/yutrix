@@ -462,21 +462,6 @@ export async function forwardSSEStreamTransparent(
     model: "",
   };
 
-  const promoteReasoningToVisibleContent = () => {
-    if (incomingProtocol === "anthropic") return;
-    if (visibleClientOutputSent || !reasoningForOpenAIClient) return;
-    downstream.write(`data: ${JSON.stringify({
-      id: lastOpenAIChunkMeta.id,
-      object: "chat.completion.chunk",
-      created: lastOpenAIChunkMeta.created,
-      model: lastOpenAIChunkMeta.model,
-      choices: [{ index: 0, delta: { content: reasoningForOpenAIClient }, finish_reason: null }],
-    })}\n\n`);
-    visibleClientOutputSent = true;
-    meaningfulClientOutputSent = true;
-    reasoningForOpenAIClient = "";
-  };
-
   const isTransparentNoStitch = (!stitchState?.isStitching && incomingProtocol === (sourceProtocol || "openai") && (!adapter || adapter.id === "transparent"));
 
   const downstream = createDownstreamWriter(
@@ -583,7 +568,6 @@ export async function forwardSSEStreamTransparent(
 
         if (dataText === "[DONE]") {
           eventIsDone = true;
-          promoteReasoningToVisibleContent();
           if (!isTransparentNoStitch || hadLengthCutoff) {
             skipThisLine = true;
             skippedDoneLine = true;
@@ -667,13 +651,7 @@ export async function forwardSSEStreamTransparent(
             if (dataCopy?.choices?.[0]?.finish_reason === "length") {
               isLengthCutoff = true;
             }
-            if (
-              (dataCopy?.choices?.[0]?.finish_reason === "stop"
-                || dataCopy?.choices?.[0]?.finish_reason === "end_turn")
-              && !visibleClientOutputSent
-            ) {
-              promoteReasoningToVisibleContent();
-            } else if (dataCopy?.type === "message_delta" && dataCopy?.delta?.stop_reason === "max_tokens" && sourceProtocol === "anthropic") {
+            if (dataCopy?.type === "message_delta" && dataCopy?.delta?.stop_reason === "max_tokens" && sourceProtocol === "anthropic") {
               logAction?.({
                 ...(baseActionLog || {}),
                 level: "INFO",
@@ -824,8 +802,7 @@ export async function forwardSSEStreamTransparent(
         !hadLengthCutoff
         && shouldWithholdEmptyTerminal({
           visibleClientOutputSent,
-          hasReasoningBuffer: !!reasoningForOpenAIClient,
-          eventHasSemanticContent,
+          eventHasSemanticContent: false,
           isDone: eventIsDone,
           finishReason: eventChunkFinishReason,
           anthropicEventType: eventAnthropicType || eventParsedPayload?.type || null,

@@ -680,7 +680,7 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(res.body).toContain("[DONE]");
   });
 
-  it("stream=true forwards reasoning-only native SSE without EmptyOutput retry", async () => {
+  it("stream=true retries reasoning-only zero-completion instead of promoting think as the answer", async () => {
     await setupEnvironment();
 
     let callCount = 0;
@@ -723,10 +723,9 @@ describe("Empty Output Auto-Continuation Integration", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(callCount).toBe(1);
-    expect(res.body).toContain("reasoning_content");
-    expect(res.body).toContain("\"content\":\"ok\"");
-    expect(res.body).toContain("[DONE]");
+    expect(callCount).toBe(2);
+    expect(res.body).toContain("我是助手。");
+    expect(res.body).not.toContain("请重新发送");
   });
 
   it("stream=true OpenAI client receives visible text when upstream JSON has type=message", async () => {

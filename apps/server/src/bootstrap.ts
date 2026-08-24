@@ -5,7 +5,8 @@ import path from "path";
 import crypto from "crypto";
 
 import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn } from "./startup/migrations";
-import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings } from "./startup/seed";
+import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings, seedLoopGuardSettings } from "./startup/seed";
+import { refreshLoopGuardConfigCache } from "./services/loopGuard";
 
 export { isMigrationCompleted };
 
@@ -181,6 +182,8 @@ export async function bootstrap() {
   await seedBrandingSettings();
   await seedDefaultApiKeyConcurrency();
   await seedModelDiscoverySettings();
+  await seedLoopGuardSettings();
+  await refreshLoopGuardConfigCache();
   await seedBuiltinPromptPolicies();
   await syncManualModels();
   await ensureDefaultGroup();

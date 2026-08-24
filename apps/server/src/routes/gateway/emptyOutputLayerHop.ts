@@ -1,27 +1,17 @@
 /**
- * EmptyOutput exhaust: walk later funnel layers like a 500 degrade.
- * Not same-layer strategy reroute, not long_context.
+ * EmptyOutput exhaust: availability hop to the next capable funnel layer.
+ * Window size is ignored here — capacity (long_context) runs after landing.
  */
 
-import { and, eq } from "drizzle-orm";
-import { db } from "../../db";
-import { providerModels } from "../../db/schema";
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { estimateMultimodalInputUsage } from "./inputTokenLimit";
-import { resolveModelContextWindow } from "./gatewayExecutorUtils";
+import {
+  selectAvailabilityNextLayer,
+  type FunnelLayerCandidate,
+} from "./degradePolicy";
 
-export type EmptyOutputHopLayer = {
-  index: number;
-  providerId: string;
-  modelId: string;
-  providerProtocol: string;
-  visionRule?: {
-    providerId: string;
-    modelId: string;
-    providerProtocol: string;
-    taskType?: string;
-  } | null;
-  /** When set to long_context, this entry is a strategy target and is skipped. */
+export type EmptyOutputHopLayer = FunnelLayerCandidate & {
+  visionRule?: FunnelLayerCandidate["vision"];
   strategyTaskType?: string;
   windowLimit?: number;
 };
@@ -31,6 +21,8 @@ export type EmptyOutputLayerHop = {
   providerId: string;
   modelId: string;
   providerProtocol: string;
+  strategyTaskType?: string;
+  capability?: "vision" | "text";
 };
 
 export function snapshotUncutInboundBody(body: any): any {
@@ -49,60 +41,48 @@ export function freezeUncutInboundBody(body: any): any {
   return Object.freeze(snap);
 }
 
-function windowHolds(windowLimit: number | undefined, estimatedTokens: number, safetyMargin: number): boolean {
-  if (windowLimit === undefined || windowLimit === null || windowLimit <= 0) return true;
-  return estimatedTokens + safetyMargin <= windowLimit;
-}
-
-function isLongContextTask(taskType?: string): boolean {
-  return taskType === "long_context";
-}
-
 /**
- * Pick the first later funnel layer that can take an EmptyOutput degrade.
- * Never returns the current layer. Never returns a long_context strategy target.
+ * Next capable funnel layer for a zero-output / availability degrade.
+ * Window size is ignored. Images stay on vision targets.
  */
 export function selectEmptyOutputLayerHop(input: {
   currentIndex: number;
   hasImages: boolean;
-  estimatedTokens: number;
+  estimatedTokens?: number;
   safetyMargin?: number;
   layers: EmptyOutputHopLayer[];
+  longContextCandidates?: unknown;
+  currentProviderId?: string;
+  currentModelId?: string;
 }): EmptyOutputLayerHop | null {
-  const safetyMargin = input.safetyMargin ?? 50;
-  const estimatedTokens = Number(input.estimatedTokens) || 0;
-  const currentIndex = Number(input.currentIndex) || 0;
-
-  const later = [...input.layers]
-    .filter((layer) => layer.index > currentIndex)
-    .sort((a, b) => a.index - b.index);
-
-  for (const layer of later) {
-    if (input.hasImages) {
-      const vision = layer.visionRule;
-      if (!vision || !vision.providerId || !vision.modelId) continue;
-      if (isLongContextTask(vision.taskType)) continue;
-      if (!windowHolds(layer.windowLimit, estimatedTokens, safetyMargin)) continue;
-      return {
-        index: layer.index,
-        providerId: vision.providerId,
-        modelId: vision.modelId,
-        providerProtocol: vision.providerProtocol || layer.providerProtocol || "openai",
-      };
-    }
-
-    if (!layer.providerId || !layer.modelId) continue;
-    if (isLongContextTask(layer.strategyTaskType)) continue;
-    if (!windowHolds(layer.windowLimit, estimatedTokens, safetyMargin)) continue;
-    return {
-      index: layer.index,
-      providerId: layer.providerId,
-      modelId: layer.modelId,
-      providerProtocol: layer.providerProtocol || "openai",
-    };
-  }
-
-  return null;
+  const hop = selectAvailabilityNextLayer({
+    currentIndex: input.currentIndex,
+    hasImages: input.hasImages,
+    layers: input.layers
+      .filter((layer) => layer.strategyTaskType !== "long_context")
+      .map((layer) => {
+        const rawVision = layer.vision || layer.visionRule || null;
+        const vision = rawVision && (rawVision as { taskType?: string }).taskType === "long_context"
+          ? null
+          : rawVision;
+        return {
+          index: layer.index,
+          providerId: layer.providerId,
+          modelId: layer.modelId,
+          providerProtocol: layer.providerProtocol,
+          vision,
+        };
+      }),
+  });
+  if (!hop) return null;
+  return {
+    index: hop.index,
+    providerId: hop.providerId,
+    modelId: hop.modelId,
+    providerProtocol: hop.providerProtocol,
+    strategyTaskType: hop.capability === "vision" ? "vision" : undefined,
+    capability: hop.capability,
+  };
 }
 
 export function parseFunnelLayersFromRoute(route: any): Array<{
@@ -154,6 +134,8 @@ export async function resolveEmptyOutputLayerHopFromRoute(options: {
   route: any;
   currentIndex: number;
   body: any;
+  currentProviderId?: string;
+  currentModelId?: string;
 }): Promise<EmptyOutputLayerHop | null> {
   const parsed = parseFunnelLayersFromRoute(options.route);
   if (parsed.length === 0) return null;
@@ -163,49 +145,27 @@ export async function resolveEmptyOutputLayerHopFromRoute(options: {
 
   for (const layer of parsed) {
     const visionRuleRaw = getStrategyRuleForLayer(options.route, layer.index, "vision");
-    const visionRule = visionRuleRaw && visionRuleRaw.taskType !== "long_context"
+    const vision = visionRuleRaw && visionRuleRaw.taskType !== "long_context"
       ? {
           providerId: visionRuleRaw.providerId,
           modelId: visionRuleRaw.modelId,
           providerProtocol: visionRuleRaw.providerProtocol || layer.providerProtocol,
-          taskType: visionRuleRaw.taskType,
         }
       : null;
-
-    const hopModelId = tokenEst.imageCount > 0 && visionRule
-      ? visionRule.modelId
-      : layer.modelId;
-    const hopProviderId = tokenEst.imageCount > 0 && visionRule
-      ? visionRule.providerId
-      : layer.providerId;
-
-    let windowLimit = 0;
-    if (hopProviderId && hopModelId) {
-      const rows = await db
-        .select()
-        .from(providerModels)
-        .where(and(
-          eq(providerModels.providerId, hopProviderId),
-          eq(providerModels.modelId, hopModelId),
-        ))
-        .limit(1);
-      windowLimit = resolveModelContextWindow(rows[0] || null).limit;
-    }
 
     layers.push({
       index: layer.index,
       providerId: layer.providerId,
       modelId: layer.modelId,
       providerProtocol: layer.providerProtocol,
-      visionRule,
-      windowLimit,
+      vision,
+      visionRule: vision,
     });
   }
 
   return selectEmptyOutputLayerHop({
     currentIndex: options.currentIndex,
     hasImages: tokenEst.imageCount > 0,
-    estimatedTokens: tokenEst.totalTokens,
     layers,
   });
 }

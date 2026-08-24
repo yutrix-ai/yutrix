@@ -90,7 +90,6 @@ export function shouldWithholdEmptyTerminal(input: {
   anthropicStopReason?: string | null;
 }): boolean {
   if (input.visibleClientOutputSent) return false;
-  if (input.hasReasoningBuffer) return false;
   if (input.eventHasSemanticContent) return false;
 
   if (input.isDone) return true;

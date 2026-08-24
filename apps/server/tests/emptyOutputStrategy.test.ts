@@ -47,7 +47,7 @@ describe("shouldWithholdEmptyTerminal (shared OpenAI + Anthropic)", () => {
     })).toBe(true);
   });
 
-  it("does not hold after visible text or tool/reasoning content", () => {
+  it("does not hold after visible text or tool content", () => {
     expect(shouldWithholdEmptyTerminal({
       visibleClientOutputSent: true,
       finishReason: "stop",
@@ -57,11 +57,14 @@ describe("shouldWithholdEmptyTerminal (shared OpenAI + Anthropic)", () => {
       eventHasSemanticContent: true,
       finishReason: "stop",
     })).toBe(false);
+  });
+
+  it("still holds stop when only reasoning was produced", () => {
     expect(shouldWithholdEmptyTerminal({
       visibleClientOutputSent: false,
       hasReasoningBuffer: true,
       isDone: true,
-    })).toBe(false);
+    })).toBe(true);
   });
 
   it("buffers native Anthropic message_start until visible content or withhold", () => {
@@ -269,7 +272,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("should NOT intervene when Anthropic thinking blocks are present", async () => {
+  it("treats Anthropic thinking-only payloads as zero visible output", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -278,15 +281,16 @@ describe("EmptyOutputStrategy Unit Tests", () => {
           role: "assistant",
           content: [{ type: "thinking", thinking: "internal chain of thought" }],
           stop_reason: "end_turn",
+          usage: { input_tokens: 20, output_tokens: 0 },
         },
       },
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(false);
+    expect(decision.shouldIntervene).toBe(true);
   });
 
-  it("should NOT intervene when reasoning_content is present", async () => {
+  it("treats reasoning_content-only payloads as zero visible output", async () => {
     const context = baseContext({
       originalBody: {
         messages: [{ role: "user", content: "think" }],
@@ -305,13 +309,14 @@ describe("EmptyOutputStrategy Unit Tests", () => {
               finish_reason: "stop",
             },
           ],
+          usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
         },
       },
       accumulatedCompletionText: "<think>thinking steps...</think>",
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(false);
+    expect(decision.shouldIntervene).toBe(true);
   });
 
   it("should NOT intervene mid-stream before streamResult is available (live stream)", async () => {
@@ -596,7 +601,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("should NOT treat reasoning-only as zero-completion (ReasoningExhaustion owns that)", async () => {
+  it("treats reasoning-only zero-completion as EmptyOutput so the request walks down", async () => {
     const context = baseContext({
       responseData: {
         status: 200,
@@ -620,12 +625,13 @@ describe("EmptyOutputStrategy Unit Tests", () => {
         isLengthTruncated: false,
         meaningfulClientOutputSent: true,
         visibleClientOutputSent: false,
+        withheldEmptyTerminal: true,
       },
       accumulatedCompletionText: "",
     });
 
     const decision = await strategy.evaluate(context);
-    expect(decision.shouldIntervene).toBe(false);
+    expect(decision.shouldIntervene).toBe(true);
   });
 
   it("should NOT intervene when fakeStreamText carries non-empty content", async () => {

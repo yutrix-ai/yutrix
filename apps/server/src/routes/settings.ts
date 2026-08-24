@@ -10,6 +10,7 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 import { scheduleDingTalkJobs, triggerDingTalkPush } from "../services/dingtalk";
+import { refreshLoopGuardConfigCache, LOOP_GUARD_SETTING_STRING_DEFAULTS } from "../services/loopGuard";
 
 const execAsync = promisify(exec);
 
@@ -186,7 +187,12 @@ export default async function (fastify: FastifyInstance) {
         }
       }
 
-      return list.map((item) => ({ key: item.key, value: item.value }));
+      const payload = list.map((item) => ({ key: item.key, value: item.value }));
+      const present = new Set(payload.map((item) => item.key));
+      for (const [key, value] of Object.entries(LOOP_GUARD_SETTING_STRING_DEFAULTS)) {
+        if (!present.has(key)) payload.push({ key, value });
+      }
+      return payload;
     },
   );
 
@@ -225,6 +231,7 @@ export default async function (fastify: FastifyInstance) {
 
       // Re-initialize cron jobs after settings change
       await scheduleDingTalkJobs();
+      await refreshLoopGuardConfigCache();
 
       return { success: true };
     },

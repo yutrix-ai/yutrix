@@ -208,7 +208,19 @@
         "strictUsage": "Enable Strict Usage Calculation",
         "strictUsageDesc": "When enabled, token usage is calculated precisely for all requests",
         "unknownHostFallback": "Allow Unknown Host Fallback",
-        "unknownHostFallbackDesc": "Process requests with default route when host is unconfigured"
+        "unknownHostFallbackDesc": "Process requests with default route when host is unconfigured",
+        "loopGuardTitle": "Tool-loop circuit breaker",
+        "loopGuardDesc": "Stop runaway tool continuations that repeat the same error or ping-pong between two errors. Turning this off disables hard-stop.",
+        "loopGuardEnabled": "Enable tool-loop hard-stop",
+        "loopGuardEnabledDesc": "On by default. When off, the gateway still tracks the session but will not halt tool continuations.",
+        "loopGuardIdentical": "Identical error repeats",
+        "loopGuardIdenticalHint": "Hard-stop after this many identical tool errors in a row. Minimum 3, default 5.",
+        "loopGuardPingPong": "Ping-pong half-cycles",
+        "loopGuardPingPongHint": "Hard-stop after this many alternating A-B error half-cycles. Minimum 6, default 8.",
+        "loopGuardCeiling": "Continuation turn ceiling",
+        "loopGuardCeilingHint": "Tool continuations since the last real user message. 0 disables this signal. Default 400.",
+        "loopGuardMaxAge": "Continuation max age (hours)",
+        "loopGuardMaxAgeHint": "Hours since the last real user message. 0 disables this signal. Default 2."
       },
       "logging": {
         "title": "Logging & Operations",
@@ -961,7 +973,7 @@
         "vision": "Use when the current input contains images, screenshots, visual recognition, or image-position tasks.",
         "debug": "Use for errors, timeouts, failures, stack traces, or repair intent.",
         "code": "Use for code generation, refactoring, APIs, components, builds, or implementation tasks.",
-        "long_context": "Only routes here when estimated input exceeds 1,000,000 tokens.",
+        "long_context": "Used when the current model's context window cannot hold the request.",
         "writing": "Use for articles, copy, email, translation, rewriting, or polishing.",
         "general": "Default model when no other task type matches."
       }

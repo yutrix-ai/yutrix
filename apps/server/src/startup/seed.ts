@@ -9,6 +9,7 @@ import {
   providerModels,
 } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { LOOP_GUARD_SETTING_STRING_DEFAULTS } from "../services/loopGuard";
 import { FACTORY_DEFAULT_API_KEY_CONCURRENCY } from "../services/apiKeyConcurrency";
 import * as bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -140,6 +141,25 @@ export async function seedBrandingSettings() {
       await db.insert(systemSettings).values({
         key: setting.key,
         value: setting.value,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+  }
+}
+
+/** Factory defaults for tool-loop circuit-breaker tunables (idempotent). */
+export async function seedLoopGuardSettings() {
+  for (const [key, value] of Object.entries(LOOP_GUARD_SETTING_STRING_DEFAULTS)) {
+    const existing = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, key))
+      .limit(1);
+    if (existing.length === 0) {
+      await db.insert(systemSettings).values({
+        key,
+        value,
         createdAt: new Date(),
         updatedAt: new Date(),
       });

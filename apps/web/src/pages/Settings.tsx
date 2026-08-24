@@ -12,7 +12,7 @@ import { BrandingSettings } from "@/components/Settings/BrandingSettings";
 import { AppearanceSettings } from "@/components/Settings/AppearanceSettings";
 import { BasicSettings } from "@/components/Settings/BasicSettings";
 import { AnalyticsSettings } from "@/components/Settings/AnalyticsSettings";
-import { GatewaySettings } from "@/components/Settings/GatewaySettings";
+import { GatewaySettings, LOOP_GUARD_SETTING_UI_DEFAULTS } from "@/components/Settings/GatewaySettings";
 import { LoggingSettings } from "@/components/Settings/LoggingSettings";
 import { SecuritySettings } from "@/components/Settings/SecuritySettings";
 import { DingTalkSettings } from "@/components/Settings/DingTalkSettings";
@@ -41,7 +41,7 @@ export default function Settings() {
       res.forEach((s: any) => {
         map[s.key] = s.value;
       });
-      setSettings(map);
+      setSettings({ ...LOOP_GUARD_SETTING_UI_DEFAULTS, ...map });
       if (usersRes && Array.isArray(usersRes)) {
         setUsers(usersRes);
       }

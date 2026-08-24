@@ -25,7 +25,7 @@ import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
 import { overflowHopTaskOrder, resolveGroupClipOverflowHop } from "./overflowContextHop";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTokenLimit } from "./inputTokenLimit";
-import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, meetsLongContextStrategyTokenFloor } from "../../services/strategyRouting";
+import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
 import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
@@ -173,6 +173,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       route,
       currentIndex: currentAttempt.targetIndex || 0,
       body: frozenInboundBody,
+      currentProviderId: currentAttempt.providerId,
+      currentModelId: currentAttempt.modelId,
     });
     if (!hop) return false;
     logAction({
@@ -203,11 +205,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       isFallback: true,
       fallbackReason: "EmptyOutput next-layer hop",
       targetIndex: hop.index,
-      strategyTaskType: undefined,
+      strategyTaskType: hop.strategyTaskType || currentAttempt.strategyTaskType,
       strategyReason: "empty_output_layer_hop",
+      reapplyLayerStrategy: true,
     };
     ctx.currentAttempt = currentAttempt;
     ctx.emptyOutputLayerHopApplied = true;
+    longContextOverrideApplied = false;
+    strategyRoutingChecked = false;
+    strategyDecisionApplied = false;
     body = snapshotUncutInboundBody(frozenInboundBody);
     ctx.body = body;
     return true;
@@ -536,7 +542,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     ctx.continuity.isLastCycle = (continuityCycles >= MAX_CONTINUITY_CYCLES);
     if (continuityCycles > 0) {
       attemptCount = 0;
-      if (!ctx.emptyOutputLayerHopApplied) {
+      if (!ctx.emptyOutputLayerHopApplied || currentAttempt.reapplyLayerStrategy) {
         strategyRoutingChecked = false;
         strategyDecisionApplied = false;
       }
@@ -588,7 +594,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
             }
 
-            if (!strategyRoutingChecked && !currentAttempt.isFallback) {
+            if (!strategyRoutingChecked && (!currentAttempt.isFallback || currentAttempt.reapplyLayerStrategy)) {
               strategyRoutingChecked = true;
               try {
                 const requestClass = classifyGatewayRequestClass(body);
@@ -670,6 +676,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   strategyDecisionApplied = true;
                   currentAttempt = {
                     ...strategyDecision.newAttempt,
+                    isFallback: currentAttempt.isFallback || strategyDecision.newAttempt.isFallback,
+                    fallbackReason: currentAttempt.fallbackReason || strategyDecision.newAttempt.fallbackReason,
                     strategyTaskType: strategyDecision.taskType,
                     strategyReason: strategyDecision.reasons.join(","),
                   };
@@ -724,7 +732,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             }
             if (
               !longContextOverrideApplied &&
-              !ctx.emptyOutputLayerHopApplied &&
               route.strategyRoutingEnabled &&
               currentAttempt.strategyTaskType !== "long_context"
               && (contextBudget.limit > 0 || ctx.pendingOverflowHop)
@@ -770,9 +777,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 || routingTokens.imageCount > 0
                 || !!ctx.routingRequirements?.requiredCapabilities.vision,
               );
+              const hasImages = hopOrder.includes("vision")
+                || !!ctx.routingRequirements?.requiredCapabilities.vision;
+              const shouldOverrideLongContext = shouldAttemptLongContextOverride({
+                isContextExhausted,
+                overflowFromGroupClip,
+              });
 
               if (isContextExhausted || overflowFromGroupClip) {
-                if (hopOrder.includes("vision") || ctx.routingRequirements?.requiredCapabilities.vision) {
+                if (hasImages) {
                   let parsedTargets: any[] = [];
                   if (route.targets) {
                     try {
@@ -872,14 +885,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
                   // If no vision target with sufficient context found, fall through to try long_context rules below
                 }
+              }
 
-                // Group-clip overflow hops skip the 1M classification floor.
-                // Model-window overflow still requires the floor (existing contract).
-                if (
-                  !longContextOverrideApplied &&
-                  hopOrder.includes("long_context")
-                  && (overflowFromGroupClip || meetsLongContextStrategyTokenFloor(estimatedTotalTokens))
-                ) {
+              // Capacity hop only: current model window exceeded, or group clip
+              // would drop turns. 429 / zero-output walk vertically instead.
+              if (
+                !longContextOverrideApplied &&
+                hopOrder.includes("long_context")
+                && shouldOverrideLongContext
+              ) {
                   let currentStrategyRoutingRules = route.strategyRoutingRules;
                   if (route.targets) {
                     try {
@@ -987,7 +1001,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                       }
                     }
                   }
-                }
               }
             }
 

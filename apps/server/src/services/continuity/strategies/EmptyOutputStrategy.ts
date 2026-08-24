@@ -6,7 +6,15 @@ import {
 
 export { wouldLogZeroEmptyCompletion as providerReportedZeroOutput } from "../emptyCompletionDecision";
 
-function hasValidContentOrActionInPayload(parsedData: any): boolean {
+function hasToolCallInPayload(parsedData: any): boolean {
+  if (!parsedData || typeof parsedData !== "object") return false;
+  const message = parsedData.choices?.[0]?.message;
+  if (message?.tool_calls && message.tool_calls.length > 0) return true;
+  const blocks = Array.isArray(parsedData.content) ? parsedData.content : Array.isArray(message?.content) ? message.content : [];
+  return blocks.some((b: any) => b && (b.type === "tool_use" || b.tool_calls || b.function));
+}
+
+function hasVisibleTextInPayload(parsedData: any): boolean {
   if (!parsedData || typeof parsedData !== "object") return false;
 
   const checkBlocks = (blocks: any[]): boolean => {
@@ -15,27 +23,23 @@ function hasValidContentOrActionInPayload(parsedData: any): boolean {
       if (!b) continue;
       if (typeof b === "string" && b.trim().length > 0) return true;
       if (typeof b === "object") {
-        if (b.type === "tool_use" || b.type === "thinking" || b.type === "redacted_thinking") return true;
+        if (b.type === "thinking" || b.type === "redacted_thinking") continue;
         if (typeof b.text === "string" && b.text.trim().length > 0) return true;
-        if (typeof b.thinking === "string" && b.thinking.trim().length > 0) return true;
-        if (b.tool_calls || b.function) return true;
       }
     }
     return false;
   };
 
   const message = parsedData.choices?.[0]?.message;
-  if (message) {
-    if (message.tool_calls && message.tool_calls.length > 0) return true;
-    if (message.reasoning_content && message.reasoning_content.trim().length > 0) return true;
-    if (typeof message.content === "string" && message.content.trim().length > 0) return true;
-    if (Array.isArray(message.content) && checkBlocks(message.content)) return true;
-  }
-
+  if (typeof message?.content === "string" && message.content.trim().length > 0) return true;
+  if (Array.isArray(message?.content) && checkBlocks(message.content)) return true;
   if (typeof parsedData.content === "string" && parsedData.content.trim().length > 0) return true;
   if (Array.isArray(parsedData.content) && checkBlocks(parsedData.content)) return true;
-
   return false;
+}
+
+function hasValidContentOrActionInPayload(parsedData: any): boolean {
+  return hasToolCallInPayload(parsedData) || hasVisibleTextInPayload(parsedData);
 }
 
 export class EmptyOutputStrategy implements ContinuityStrategy {
@@ -57,9 +61,19 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    const visibleAlreadySent = streamResult?.visibleClientOutputSent === true
-      || (streamResult?.visibleClientOutputSent !== false && streamResult?.meaningfulClientOutputSent === true && streamResult?.visibleClientOutputSent === undefined);
-    if (visibleAlreadySent || streamResult?.terminalError) {
+    if (streamResult?.terminalError) {
+      return { shouldIntervene: false };
+    }
+    if (streamResult?.visibleClientOutputSent === true) {
+      return { shouldIntervene: false };
+    }
+    // Adapters that only set meaningfulClientOutputSent (legacy stream results)
+    // count as visible. Explicit visibleClientOutputSent=false still degrades,
+    // including reasoning-only payloads.
+    if (
+      streamResult?.visibleClientOutputSent === undefined
+      && streamResult?.meaningfulClientOutputSent === true
+    ) {
       return { shouldIntervene: false };
     }
 

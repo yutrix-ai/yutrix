@@ -208,7 +208,19 @@
         "strictUsage": "开启严格用量计算",
         "strictUsageDesc": "启用后，所有请求都将精确计算 token 用量",
         "unknownHostFallback": "允许未知域名回退处理",
-        "unknownHostFallbackDesc": "当请求来自未配置的域名时，使用默认路由处理"
+        "unknownHostFallbackDesc": "当请求来自未配置的域名时，使用默认路由处理",
+        "loopGuardTitle": "工具循环熔断",
+        "loopGuardDesc": "拦住反复失败的工具续写（相同错误或 A-B 乒乓），避免空转烧 Token。关闭后网关不再硬停。",
+        "loopGuardEnabled": "启用工具循环硬停",
+        "loopGuardEnabledDesc": "默认开启。关闭后仅记录会话，不再对工具续写做硬停。",
+        "loopGuardIdentical": "相同错误次数",
+        "loopGuardIdenticalHint": "同一工具错误连续出现多少次后硬停。最低 3，默认 5。",
+        "loopGuardPingPong": "乒乓半周期",
+        "loopGuardPingPongHint": "两个错误来回交替多少个半周期后硬停。最低 6，默认 8。",
+        "loopGuardCeiling": "续写轮数上限",
+        "loopGuardCeilingHint": "距上次真实用户消息的工具续写轮数。0 关闭该信号。默认 400。",
+        "loopGuardMaxAge": "续写最长时长（小时）",
+        "loopGuardMaxAgeHint": "距上次真实用户消息的时长。0 关闭该信号。默认 2。"
       },
       "logging": {
         "title": "日志与运维",
@@ -958,7 +970,7 @@
         "vision": "当前输入包含图片、截图、视觉识别或图片位置调整时使用。",
         "debug": "包含异常、超时、失败、堆栈或修复意图时使用。",
         "code": "代码生成、重构、接口、组件、编译或工程实现任务。",
-        "long_context": "仅当预估输入超过 100 万 tokens 时才会路由到此模型。",
+        "long_context": "当前模型上下文装不下时，会路由到此模型。",
         "writing": "文章、文案、邮件、翻译、改写或润色任务。",
         "general": "未命中其他任务类型时的默认模型。"
       }

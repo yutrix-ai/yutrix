@@ -3,7 +3,8 @@ import { detectLoopStop } from "./detect";
 import { fingerprintCurrentTurn } from "./fingerprint";
 import { serveLoopStopResponse } from "./stopResponse";
 import { defaultLoopGuardStore } from "./store";
-import { LOOP_GUARD_DEFAULTS, type LoopGuardInspection, type LoopGuardStore, type LoopStopReason } from "./types";
+import { peekLoopGuardRuntime } from "./runtime";
+import type { LoopGuardConfig, LoopGuardInspection, LoopGuardStore, LoopStopReason } from "./types";
 
 function resolveSessionKey(options: {
   userId: string;
@@ -80,10 +81,18 @@ export function inspectContinuationLoop(options: {
   clientSessionId?: string | null;
   store?: LoopGuardStore;
   nowMs?: number;
+  config?: LoopGuardConfig;
 }): LoopGuardInspection {
   try {
     const store = options.store || defaultLoopGuardStore;
     const nowMs = options.nowMs ?? Date.now();
+    const runtime = options.config
+      ? { config: options.config, unavailable: false }
+      : peekLoopGuardRuntime();
+    if (runtime.unavailable) {
+      return { shouldStop: false, failedOpen: true };
+    }
+    const config = runtime.config;
     const sessionKey = resolveSessionKey(options);
     if (!sessionKey) {
       return { shouldStop: false, failedOpen: true };
@@ -101,6 +110,20 @@ export function inspectContinuationLoop(options: {
     }
 
     if (fp.kind !== "continuation") {
+      return { shouldStop: false, sessionKey };
+    }
+
+    if (!config.enabled) {
+      const nextTurnsWhileOff = [
+        ...session.turns,
+        {
+          kind: "continuation" as const,
+          fingerprint: fp.fingerprint,
+          isErrorClass: fp.isErrorClass,
+          at: nowMs,
+        },
+      ];
+      store.set(sessionKey, { turns: nextTurnsWhileOff, tripped: session.tripped });
       return { shouldStop: false, sessionKey };
     }
 
@@ -122,7 +145,7 @@ export function inspectContinuationLoop(options: {
         at: nowMs,
       },
     ];
-    const hit = detectLoopStop(nextTurns, nowMs, LOOP_GUARD_DEFAULTS);
+    const hit = detectLoopStop(nextTurns, nowMs, config);
     if (hit) {
       store.set(sessionKey, { turns: nextTurns, tripped: hit });
       return {

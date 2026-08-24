@@ -41,6 +41,8 @@ export interface AttemptState {
   targetIndex: number;
   strategyTaskType?: string;
   strategyReason?: string;
+  /** After EmptyOutput/429 vertical hop, re-run this layer's strategy rules. */
+  reapplyLayerStrategy?: boolean;
 }
 
 export interface RoutingTraceEntry {
