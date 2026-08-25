@@ -9,7 +9,7 @@ import {
   applyInputTokenLimit,
   previewInputTokenLimit,
 } from "../src/routes/gateway/inputTokenLimit";
-import { enforceInputTokenLimit } from "../src/routes/gateway/inputTokenLimitGuard";
+import { applyForcedInputTokenLimit, enforceInputTokenLimit } from "../src/routes/gateway/inputTokenLimitGuard";
 import { LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS } from "../src/services/strategyRouting";
 
 function overflowBody() {
@@ -27,25 +27,25 @@ function overflowBody() {
 }
 
 describe("decideGroupClipOverflow", () => {
-  it("hops when group/user clipping would drop turns, even below the 1M floor", () => {
+  it("never hops to long_context when group/user clipping would drop turns", () => {
     const decision = decideGroupClipOverflow({
       droppedTurns: 9,
       originalTokens: 276348,
       hasImages: false,
     });
-    expect(decision.hop).toBe(true);
+    expect(decision.hop).toBe(false);
     expect(decision.applyOneMillionFloor).toBe(false);
     expect(decision.preferVision).toBe(false);
     expect(276348).toBeLessThan(LONG_CONTEXT_STRATEGY_MIN_INPUT_TOKENS);
   });
 
-  it("prefers a vision target when the unclipped request has images", () => {
+  it("still does not hop when the over-budget request has images", () => {
     const decision = decideGroupClipOverflow({
       droppedTurns: 2,
       originalTokens: 180000,
       hasImages: true,
     });
-    expect(decision.hop).toBe(true);
+    expect(decision.hop).toBe(false);
     expect(decision.preferVision).toBe(true);
     expect(decision.applyOneMillionFloor).toBe(false);
   });
@@ -55,8 +55,12 @@ describe("decideGroupClipOverflow", () => {
     expect(shouldOverflowHopInsteadOfClip({ droppedTurns: 0, truncated: false })).toBe(false);
   });
 
-  it("orders vision before long_context when the request has images", () => {
-    expect(overflowHopTaskOrder(true)).toEqual(["vision", "long_context"]);
+  it("never treats droppedTurns as a reason to hop instead of clip", () => {
+    expect(shouldOverflowHopInsteadOfClip({ droppedTurns: 9, truncated: true })).toBe(false);
+  });
+
+  it("keeps images on vision only; text overflow may use long_context", () => {
+    expect(overflowHopTaskOrder(true)).toEqual(["vision"]);
     expect(overflowHopTaskOrder(false)).toEqual(["long_context"]);
   });
 });
@@ -107,7 +111,7 @@ describe("resolveGroupClipOverflowHop (shipped hop resolution)", () => {
     }
   });
 
-  it("falls through to LC hop when no vision window holds the unclipped estimate", () => {
+  it("never falls through to long_context when the request has images", () => {
     const resolved = resolveGroupClipOverflowHop({
       hasImages: true,
       estimatedTokens: 276348,
@@ -129,11 +133,35 @@ describe("resolveGroupClipOverflowHop (shipped hop resolution)", () => {
         windowLimit: 160000,
       },
     });
+    expect(resolved.action).toBe("last_resort_group_clip");
+  });
+
+  it("hops images to a later vision window that can hold the estimate", () => {
+    const resolved = resolveGroupClipOverflowHop({
+      hasImages: true,
+      estimatedTokens: 80_000,
+      currentProviderId: "prov-flash",
+      currentModelId: "gemini-3.7-flash-tiered",
+      visionCandidates: [
+        {
+          providerId: "prov-vision",
+          providerProtocol: "openai",
+          modelId: "gemini-vision-large",
+          targetIndex: 1,
+          windowLimit: 200_000,
+        },
+      ],
+      longContextCandidate: {
+        providerId: "prov-lc",
+        providerProtocol: "openai",
+        modelId: "qwen-long",
+        windowLimit: 1_000_000,
+      },
+    });
     expect(resolved.action).toBe("hop");
     if (resolved.action === "hop") {
-      expect(resolved.taskType).toBe("long_context");
-      expect(resolved.modelId).toBe("qwen-long");
-      expect(resolved.clipToWindow).toBe(160000);
+      expect(resolved.taskType).toBe("vision");
+      expect(resolved.modelId).toBe("gemini-vision-large");
     }
   });
 
@@ -169,7 +197,7 @@ describe("previewInputTokenLimit does not mutate the outbound body", () => {
     });
     expect(preview.truncated).toBe(true);
     expect(preview.droppedTurns).toBeGreaterThan(0);
-    expect(shouldOverflowHopInsteadOfClip(preview)).toBe(true);
+    expect(shouldOverflowHopInsteadOfClip(preview)).toBe(false);
     expect(JSON.stringify(body.messages)).toBe(snapshot);
   });
 
@@ -186,7 +214,7 @@ describe("previewInputTokenLimit does not mutate the outbound body", () => {
   });
 });
 
-describe("enforceInputTokenLimit defers clip when overflow hop is recommended", () => {
+describe("enforceInputTokenLimit always clips quota overage", () => {
   function mockCtx(overrides: Record<string, any> = {}) {
     return {
       inputTokenLimit: { maxInputTokens: 200, source: "group", sourceLabel: "默认组" },
@@ -197,9 +225,8 @@ describe("enforceInputTokenLimit defers clip when overflow hop is recommended", 
     } as any;
   }
 
-  it("does not mutate the body or log token.max_input.truncated when droppedTurns > 0", async () => {
+  it("clips dropped turns and logs token.max_input.truncated instead of hopping to long_context", async () => {
     const body = overflowBody();
-    const snapshot = JSON.stringify(body.messages);
     const logged: any[] = [];
     const result = await enforceInputTokenLimit({
       ctx: mockCtx(),
@@ -213,11 +240,13 @@ describe("enforceInputTokenLimit defers clip when overflow hop is recommended", 
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.overflowHop?.droppedTurns).toBeGreaterThan(0);
-      expect(result.truncatedBody).toBeUndefined();
+      expect((result as { overflowHop?: unknown }).overflowHop).toBeUndefined();
+      expect(result.truncatedBody).toBeDefined();
     }
-    expect(JSON.stringify(body.messages)).toBe(snapshot);
-    expect(logged.some((e) => e.code === "token.max_input.truncated")).toBe(false);
+    expect(body.messages.some((m: any) => String(m.content).includes("old turn one"))).toBe(false);
+    expect(body.messages.some((m: any) => String(m.content).includes("latest question"))).toBe(true);
+    expect(logged.some((e) => e.code === "token.max_input.truncated")).toBe(true);
+    expect(logged.some((e) => e.code === "token.max_input.truncated" && e.droppedTurns > 0)).toBe(true);
   });
 
   it("clips normally when the body fits without dropping turns", async () => {
@@ -263,5 +292,37 @@ describe("enforceInputTokenLimit defers clip when overflow hop is recommended", 
     }
     expect(JSON.stringify(body.messages)).toBe(snapshot);
     expect(logged).toHaveLength(0);
+  });
+});
+
+describe("applyForcedInputTokenLimit last-resort clip", () => {
+  it("does not throw when images cannot shrink into the window", async () => {
+    const body = {
+      model: "vision-model",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: "data:image/png;base64,aaa" } },
+          { type: "image_url", image_url: { url: "data:image/png;base64,bbb" } },
+          { type: "text", text: "hi" },
+        ],
+      }],
+    };
+    const snapshot = JSON.stringify(body.messages);
+    const logged: any[] = [];
+    const clipped = await applyForcedInputTokenLimit({
+      ctx: { stream: { estimatedPromptTokens: 0 }, inputTokenLimit: { source: "model_window", sourceLabel: "vision-model" } } as any,
+      modifiedBody: body,
+      provider: { name: "vision-prov" },
+      currentAttempt: { modelId: "vision-model", providerProtocol: "openai" } as any,
+      activeModelConfig: null,
+      baseActionLog: { requestId: "req-vision-clip" } as any,
+      logAction: (e: any) => logged.push(e),
+      maxInputTokens: 100,
+      limitSource: "model_window",
+      limitSourceLabel: "vision-model",
+    });
+    expect(clipped.messages).toEqual(JSON.parse(snapshot));
+    expect(logged.some((e) => e.code === "token.max_input.rejected")).toBe(true);
   });
 });

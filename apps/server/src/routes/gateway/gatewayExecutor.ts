@@ -23,9 +23,9 @@ import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, r
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
-import { overflowHopTaskOrder, resolveGroupClipOverflowHop } from "./overflowContextHop";
-import { estimateMultimodalInputUsage, inspectOutboundCapabilities, applyInputTokenLimit } from "./inputTokenLimit";
-import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride } from "../../services/strategyRouting";
+import { overflowHopTaskOrder } from "./overflowContextHop";
+import { estimateMultimodalInputUsage, inspectOutboundCapabilities } from "./inputTokenLimit";
+import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
 import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
@@ -576,20 +576,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 responseData = tokenLimitResult.responseData;
                 return;
               }
-              if (tokenLimitResult.overflowHop && route.strategyRoutingEnabled && !ctx.emptyOutputLayerHopApplied) {
-                ctx.pendingOverflowHop = tokenLimitResult.overflowHop;
-              } else if (tokenLimitResult.overflowHop) {
-                body = await applyForcedInputTokenLimit({
-                  ctx,
-                  modifiedBody: body,
-                  provider: initialProvider || { name: "unknown" },
-                  currentAttempt,
-                  activeModelConfig: initialModelConfig,
-                  baseActionLog,
-                  logAction,
-                  maxInputTokens: ctx.inputTokenLimit.maxInputTokens,
-                });
-              } else if (tokenLimitResult.truncatedBody) {
+              if (tokenLimitResult.truncatedBody) {
                 body = tokenLimitResult.truncatedBody;
               }
             }
@@ -724,17 +711,13 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
             const contextBudget = resolveModelContextWindow(activeModelConfig);
             if (
-              ctx.pendingOverflowHop
-              && currentAttempt.strategyTaskType === "long_context"
-            ) {
-              ctx.overflowHopApplied = true;
-              ctx.pendingOverflowHop = undefined;
-            }
-            if (
               !longContextOverrideApplied &&
               route.strategyRoutingEnabled &&
               currentAttempt.strategyTaskType !== "long_context"
-              && (contextBudget.limit > 0 || ctx.pendingOverflowHop)
+              && (
+                contextBudget.limit > 0
+                || meetsLongContextSizeGate(ctx.routingRequirements?.estimatedTotalTokens ?? 0)
+              )
             ) {
               const routingTokens = await estimateMultimodalInputUsage({ body });
               let estimatedTextTokens = routingTokens.textTokens;
@@ -771,7 +754,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 safetyMargin,
                 budget: contextBudget
               });
-              const overflowFromGroupClip = !!ctx.pendingOverflowHop;
               const hopOrder = overflowHopTaskOrder(
                 estimatedImageTokens > 0
                 || routingTokens.imageCount > 0
@@ -781,11 +763,11 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 || !!ctx.routingRequirements?.requiredCapabilities.vision;
               const shouldOverrideLongContext = shouldAttemptLongContextOverride({
                 isContextExhausted,
-                overflowFromGroupClip,
+                estimatedTotalTokens,
+                hasImages,
               });
 
-              if (isContextExhausted || overflowFromGroupClip) {
-                if (hasImages) {
+              if (hasImages && isContextExhausted) {
                   let parsedTargets: any[] = [];
                   if (route.targets) {
                     try {
@@ -795,7 +777,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
                   let foundNextVisionTarget = false;
                   const currentTargetIndex = currentAttempt.targetIndex || 0;
-                  const visionSearchStart = overflowFromGroupClip ? 0 : currentTargetIndex + 1;
+                  const visionSearchStart = currentTargetIndex + 1;
                   for (let i = visionSearchStart; i < parsedTargets.length; i++) {
                     const targetRules = parseStrategyRoutingRules(parsedTargets[i].strategyRoutingRules);
                     const visionRuleRaw = targetRules.find((r: any) => r.taskType === "vision" && r.enabled !== false);
@@ -868,9 +850,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           activeModelConfig = targetModelConfig;
                           ctx.activeModelConfig = activeModelConfig;
 
-                          longContextOverrideApplied = true;
-                          ctx.overflowHopApplied = overflowFromGroupClip || ctx.overflowHopApplied;
-                          ctx.pendingOverflowHop = undefined;
+                          ctx.overflowHopApplied = true;
                           foundNextVisionTarget = true;
                           break;
                         }
@@ -883,13 +863,25 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                     continue;
                   }
 
-                  // If no vision target with sufficient context found, fall through to try long_context rules below
-                }
+                  if (contextBudget.limit > 0) {
+                    body = await applyForcedInputTokenLimit({
+                      ctx,
+                      modifiedBody: body,
+                      provider,
+                      currentAttempt,
+                      activeModelConfig,
+                      baseActionLog,
+                      logAction,
+                      maxInputTokens: contextBudget.limit,
+                      limitSource: "model_window",
+                      limitSourceLabel: currentAttempt.modelId,
+                    });
+                  }
               }
 
-              // Capacity hop only: current model window exceeded, or group clip
-              // would drop turns. 429 / zero-output walk vertically instead.
+              // Non-vision: model-window overflow or post-clip 256Ki size gate → long_context.
               if (
+                !hasImages &&
                 !longContextOverrideApplied &&
                 hopOrder.includes("long_context")
                 && shouldOverrideLongContext
@@ -914,51 +906,16 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                       rule: longContextRuleRaw,
                     });
                     if (validation.ok) {
-                      const matchedModelRows = await db
-                        .select()
-                        .from(providerModels)
-                        .where(
-                          and(
-                            eq(providerModels.providerId, validation.rule.providerId),
-                            eq(providerModels.modelId, validation.rule.modelId)
-                          )
-                        )
-                        .limit(1);
-                      const targetModelConfig = matchedModelRows.length > 0 ? matchedModelRows[0] : null;
-                      const targetContextBudget = resolveModelContextWindow(targetModelConfig);
-                      const overflowHop = overflowFromGroupClip
-                        ? resolveGroupClipOverflowHop({
-                            hasImages: hopOrder.includes("vision"),
-                            estimatedTokens: estimatedTotalTokens,
-                            currentProviderId: currentAttempt.providerId,
-                            currentModelId: currentAttempt.modelId,
-                            safetyMargin,
-                            visionCandidates: [],
-                            longContextCandidate: {
-                              providerId: validation.rule.providerId,
-                              providerProtocol: validation.rule.providerProtocol,
-                              modelId: validation.rule.modelId,
-                              windowLimit: targetContextBudget.limit,
-                            },
-                          })
-                        : null;
-                      const isTargetContextSufficient = fitsContextBudget({
-                        inputTokens: estimatedTotalTokens,
-                        requestedOutputTokens: 0,
-                        safetyMargin,
-                        budget: targetContextBudget
-                      });
-                      // Group-clip overflow hops even when the LC window is smaller
-                      // than the unclipped estimate; post-hop clip uses that window.
-                      const shouldHopLongContext = overflowHop
-                        ? overflowHop.action === "hop"
-                        : isTargetContextSufficient;
-
-                      if (overflowHop?.action === "stay") {
+                      const longContextRule = validation.rule;
+                      const alreadyOnTarget =
+                        longContextRule.providerId === currentAttempt.providerId
+                        && longContextRule.modelId === currentAttempt.modelId;
+                      if (alreadyOnTarget) {
                         ctx.overflowHopApplied = true;
-                        ctx.pendingOverflowHop = undefined;
-                      } else if (shouldHopLongContext) {
-                        const longContextRule = validation.rule;
+                      } else {
+                        const hopReason = isContextExhausted
+                          ? `long_context_override:input_${estimatedTotalTokens}>${contextBudget.limit}`
+                          : `long_context_size_gate:input_${estimatedTotalTokens}>${LONG_CONTEXT_SIZE_GATE_TOKENS}`;
                         logAction({
                           ...baseActionLog,
                           level: "WARN",
@@ -975,9 +932,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           toProviderId: longContextRule.providerId,
                           toProviderProtocol: longContextRule.providerProtocol,
                           toModelId: longContextRule.modelId,
-                          reason: overflowFromGroupClip
-                            ? `group_clip_overflow_hop:dropped_turns_unclipped_${estimatedTotalTokens}`
-                            : `long_context_override:input_${estimatedTotalTokens}>${contextBudget.limit}`,
+                          reason: hopReason,
                           hop: ctx.routingTrace.length + 1,
                           latencyMs: 0,
                           createdAt: new Date().toISOString(),
@@ -988,34 +943,19 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           providerProtocol: longContextRule.providerProtocol,
                           modelId: longContextRule.modelId,
                           strategyTaskType: "long_context",
-                          strategyReason: overflowFromGroupClip
-                            ? "override:group_clip_would_drop_turns"
-                            : "override:input_exceeds_model_limit",
+                          strategyReason: isContextExhausted
+                            ? "override:input_exceeds_model_limit"
+                            : "override:input_exceeds_256k_gate",
                         };
                         ctx.currentAttempt = currentAttempt;
                         longContextOverrideApplied = true;
-                        ctx.overflowHopApplied = overflowFromGroupClip || ctx.overflowHopApplied;
-                        ctx.pendingOverflowHop = undefined;
+                        ctx.overflowHopApplied = true;
                         attemptCount--;
                         continue;
                       }
                     }
                   }
               }
-            }
-
-            if (ctx.pendingOverflowHop && !ctx.overflowHopApplied) {
-              body = await applyForcedInputTokenLimit({
-                ctx,
-                modifiedBody: body,
-                provider,
-                currentAttempt,
-                activeModelConfig,
-                baseActionLog,
-                logAction,
-                maxInputTokens: ctx.inputTokenLimit.maxInputTokens,
-              });
-              ctx.pendingOverflowHop = undefined;
             }
 
             if (ctx.overflowHopApplied && contextBudget.limit > 0) {

@@ -834,18 +834,50 @@ describe("long_context override safety net", () => {
       shouldAttemptLongContextOverride({
         isContextExhausted: true,
         overflowFromGroupClip: false,
-        estimatedTotalTokens: 286751,
+        estimatedTotalTokens: 180_000,
+        hasImages: false,
       }),
     ).toBe(true);
   });
 
-  it("does not hop a large request that still fits the current model", () => {
+  it("hops non-vision above 256Ki even when the current window still fits", () => {
     expect(
       shouldAttemptLongContextOverride({
         isContextExhausted: false,
         overflowFromGroupClip: false,
         estimatedTotalTokens: 286751,
         hasImages: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not hop at exactly 256Ki when the current window still fits", () => {
+    expect(
+      shouldAttemptLongContextOverride({
+        isContextExhausted: false,
+        estimatedTotalTokens: 262144,
+        hasImages: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores quota clip as a hop reason below the size gate", () => {
+    expect(
+      shouldAttemptLongContextOverride({
+        isContextExhausted: false,
+        overflowFromGroupClip: true,
+        estimatedTotalTokens: 100_000,
+        hasImages: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("never hops vision onto long_context", () => {
+    expect(
+      shouldAttemptLongContextOverride({
+        isContextExhausted: true,
+        estimatedTotalTokens: 500_000,
+        hasImages: true,
       }),
     ).toBe(false);
   });

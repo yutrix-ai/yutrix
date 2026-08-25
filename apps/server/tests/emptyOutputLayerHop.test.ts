@@ -180,6 +180,26 @@ describe("selectEmptyOutputLayerHop", () => {
       capability: "text",
     });
   });
+
+  it("keeps image empty-output on later vision at 286k and never selects long_context", () => {
+    const hop = selectEmptyOutputLayerHop({
+      currentIndex: 0,
+      hasImages: true,
+      estimatedTokens: 286751,
+      layers: [
+        layers[0],
+        { ...layers[1], windowLimit: 262144 },
+        layers[2],
+      ],
+    });
+    expect(hop).toMatchObject({
+      index: 1,
+      providerId: "p1",
+      modelId: "gemini-pro-vision",
+      capability: "vision",
+    });
+    expect(hop?.modelId).not.toBe("qwen-long");
+  });
 });
 
 describe("freezeUncutInboundBody", () => {

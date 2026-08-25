@@ -189,14 +189,8 @@ export interface GatewayRequestContext {
   };
   /** EmptyOutput already walked to a later funnel layer at least once. */
   emptyOutputLayerHopApplied?: boolean;
-  /** Group/user clip was deferred; a long_context/vision overflow hop already ran. */
+  /** A long_context or later-vision overflow hop already ran; skip re-applying group/user clip. */
   overflowHopApplied?: boolean;
-  pendingOverflowHop?: {
-    originalTokens: number;
-    droppedTurns: number;
-    budgetTokens: number;
-    maxInputTokens: number;
-  };
 
   // Provider Adapter State
   activeProviderAdapter?: any;

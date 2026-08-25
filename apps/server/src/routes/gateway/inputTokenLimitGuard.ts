@@ -1,7 +1,6 @@
 import { formatError } from "../../utils/gatewayError";
 import type { AttemptState, BaseActionLog, GatewayRequestContext } from "./types";
-import { applyInputTokenLimit, previewInputTokenLimit, InputTokenLimitError } from "./inputTokenLimit";
-import { shouldOverflowHopInsteadOfClip } from "./overflowContextHop";
+import { applyInputTokenLimit, InputTokenLimitError } from "./inputTokenLimit";
 
 type EnforceInputTokenLimitArgs = {
   ctx: GatewayRequestContext;
@@ -17,12 +16,6 @@ type EnforceInputTokenLimitResult =
   | {
       ok: true;
       truncatedBody?: any;
-      overflowHop?: {
-        originalTokens: number;
-        droppedTurns: number;
-        budgetTokens: number;
-        maxInputTokens: number;
-      };
     }
   | { ok: false; responseData: any };
 
@@ -53,45 +46,28 @@ export async function enforceInputTokenLimit({
   };
 
   try {
-    const preview = await previewInputTokenLimit(modifiedBody, limitConfig);
-    ctx.stream.estimatedPromptTokens = preview.originalTokens;
-
-    if (shouldOverflowHopInsteadOfClip(preview)) {
-      return {
-        ok: true,
-        overflowHop: {
-          originalTokens: preview.originalTokens,
-          droppedTurns: preview.droppedTurns,
-          budgetTokens: preview.budgetTokens,
-          maxInputTokens: preview.maxInputTokens,
-        },
-      };
-    }
-
-    if (!preview.truncated) {
-      return { ok: true };
-    }
-
     const truncation = await applyInputTokenLimit(modifiedBody, limitConfig);
     ctx.stream.estimatedPromptTokens = truncation.finalTokens;
 
-    if (truncation.truncated) {
-      logAction({
-        ...baseActionLog,
-        level: "WARN",
-        code: "token.max_input.truncated",
-        providerName: provider.name,
-        modelId: currentAttempt.modelId,
-        limitSource: ctx.inputTokenLimit.source,
-        limitSourceLabel: ctx.inputTokenLimit.sourceLabel,
-        maxInputTokens: truncation.maxInputTokens,
-        budgetTokens: truncation.budgetTokens,
-        originalTokens: truncation.originalTokens,
-        finalTokens: truncation.finalTokens,
-        droppedTurns: truncation.droppedTurns,
-        textTruncated: truncation.textTruncated,
-      });
+    if (!truncation.truncated) {
+      return { ok: true };
     }
+
+    logAction({
+      ...baseActionLog,
+      level: "WARN",
+      code: "token.max_input.truncated",
+      providerName: provider.name,
+      modelId: currentAttempt.modelId,
+      limitSource: ctx.inputTokenLimit.source,
+      limitSourceLabel: ctx.inputTokenLimit.sourceLabel,
+      maxInputTokens: truncation.maxInputTokens,
+      budgetTokens: truncation.budgetTokens,
+      originalTokens: truncation.originalTokens,
+      finalTokens: truncation.finalTokens,
+      droppedTurns: truncation.droppedTurns,
+      textTruncated: truncation.textTruncated,
+    });
 
     return { ok: true, truncatedBody: truncation.body };
   } catch (error: any) {
@@ -136,30 +112,45 @@ export async function applyForcedInputTokenLimit(args: {
   limitSource?: string;
   limitSourceLabel?: string;
 }): Promise<any> {
-  const truncation = await applyInputTokenLimit(args.modifiedBody, {
-    maxInputTokens: args.maxInputTokens,
-    modelId: args.currentAttempt.modelId,
-    providerProtocol: args.currentAttempt.providerProtocol,
-    tokenizerRepo: args.activeModelConfig?.tokenizerRepo || null,
-    proxyUrl: args.provider?.weightProxyUrl || null,
-  });
-  args.ctx.stream.estimatedPromptTokens = truncation.finalTokens;
-  if (truncation.truncated) {
+  try {
+    const truncation = await applyInputTokenLimit(args.modifiedBody, {
+      maxInputTokens: args.maxInputTokens,
+      modelId: args.currentAttempt.modelId,
+      providerProtocol: args.currentAttempt.providerProtocol,
+      tokenizerRepo: args.activeModelConfig?.tokenizerRepo || null,
+      proxyUrl: args.provider?.weightProxyUrl || null,
+    });
+    args.ctx.stream.estimatedPromptTokens = truncation.finalTokens;
+    if (truncation.truncated) {
+      args.logAction({
+        ...args.baseActionLog,
+        level: "WARN",
+        code: "token.max_input.truncated",
+        providerName: args.provider?.name,
+        modelId: args.currentAttempt.modelId,
+        limitSource: args.limitSource || args.ctx.inputTokenLimit.source,
+        limitSourceLabel: args.limitSourceLabel || args.ctx.inputTokenLimit.sourceLabel,
+        maxInputTokens: truncation.maxInputTokens,
+        budgetTokens: truncation.budgetTokens,
+        originalTokens: truncation.originalTokens,
+        finalTokens: truncation.finalTokens,
+        droppedTurns: truncation.droppedTurns,
+        textTruncated: truncation.textTruncated,
+      });
+    }
+    return truncation.body;
+  } catch (error: any) {
     args.logAction({
       ...args.baseActionLog,
       level: "WARN",
-      code: "token.max_input.truncated",
-      providerName: args.provider?.name,
+      code: "token.max_input.rejected",
+      providerName: args.provider?.name || "",
       modelId: args.currentAttempt.modelId,
       limitSource: args.limitSource || args.ctx.inputTokenLimit.source,
       limitSourceLabel: args.limitSourceLabel || args.ctx.inputTokenLimit.sourceLabel,
-      maxInputTokens: truncation.maxInputTokens,
-      budgetTokens: truncation.budgetTokens,
-      originalTokens: truncation.originalTokens,
-      finalTokens: truncation.finalTokens,
-      droppedTurns: truncation.droppedTurns,
-      textTruncated: truncation.textTruncated,
+      maxInputTokens: args.maxInputTokens,
+      message: (error?.message || String(error)) + " (Bypassing limit and continuing)",
     });
+    return args.modifiedBody;
   }
-  return truncation.body;
 }

@@ -1,12 +1,12 @@
 /**
- * Group/user input clipping vs Long Context overflow hop.
- * Pure decision — hop is driven before the outbound body is mutated.
+ * Group/user input clipping vs overflow hop.
+ * Quota overage always clips — it is not a long_context hop.
+ * Vision overflow walks later vision layers only.
  */
 
 export type GroupClipOverflowDecision = {
   hop: boolean;
   preferVision: boolean;
-  /** This overflow path must not use the 1M long_context classification floor. */
   applyOneMillionFloor: boolean;
 };
 
@@ -15,25 +15,22 @@ export function decideGroupClipOverflow(input: {
   originalTokens?: number;
   hasImages?: boolean;
 }): GroupClipOverflowDecision {
-  if (!Number.isFinite(input.droppedTurns) || input.droppedTurns <= 0) {
-    return { hop: false, preferVision: false, applyOneMillionFloor: false };
-  }
   return {
-    hop: true,
+    hop: false,
     preferVision: input.hasImages === true,
     applyOneMillionFloor: false,
   };
 }
 
-export function shouldOverflowHopInsteadOfClip(truncation: {
+export function shouldOverflowHopInsteadOfClip(_truncation: {
   droppedTurns?: number;
   truncated?: boolean;
 }): boolean {
-  return decideGroupClipOverflow({ droppedTurns: Number(truncation.droppedTurns) || 0 }).hop;
+  return false;
 }
 
 export function overflowHopTaskOrder(hasImages: boolean): Array<"vision" | "long_context"> {
-  return hasImages ? ["vision", "long_context"] : ["long_context"];
+  return hasImages ? ["vision"] : ["long_context"];
 }
 
 export type OverflowHopCandidate = {
@@ -67,9 +64,8 @@ function windowHoldsUnclipped(windowLimit: number, estimatedTokens: number, safe
 }
 
 /**
- * Group-clip overflow: hop to configured LC even when its window is smaller
- * than the unclipped estimate. Clip to that hopped window afterwards.
- * Vision is only chosen when its window can hold the unclipped body.
+ * Model-window overflow on a vision request: later vision layers only.
+ * Never returns long_context.
  */
 export function resolveGroupClipOverflowHop(input: {
   hasImages: boolean;
@@ -103,6 +99,7 @@ export function resolveGroupClipOverflowHop(input: {
         };
       }
     }
+    return { action: "last_resort_group_clip" };
   }
 
   const lc = input.longContextCandidate;

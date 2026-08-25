@@ -1,22 +1,18 @@
 /**
- * Availability vs capacity degrade policy.
+ * Availability vs capacity vs quota.
  *
- * Availability (zero output, 429, 5xx, concurrency): keep required
- * capability and walk to the next funnel layer. Do not skip a layer
- * because its default window is too small — capacity is handled after
- * landing, via that layer's own strategy + long_context overflow.
- *
- * Capacity (model window exceeded, group-clip would drop turns): hop to
- * the current layer's long_context slot only. 429 / empty must not use
- * this path.
- *
- * Zero visible output is always availability, including reasoning-only
- * payloads with no tool call and no user-visible text.
+ * Quota (user/group max-input): always clip. Never a long_context hop.
+ * Availability (zero output, 429, 5xx, concurrency): next capable funnel
+ * layer. Images stay on vision. Window size is ignored.
+ * Capacity (current model window exceeded) and the 256Ki size gate:
+ * non-vision only → long_context. Vision never uses long_context.
  */
+
+export const LONG_CONTEXT_SIZE_GATE_TOKENS = 256 * 1024;
 
 export type RequiredCapability = "vision" | "text";
 
-export type DegradeClass = "availability" | "capacity";
+export type DegradeClass = "availability" | "capacity" | "quota";
 
 export type DegradeTrigger =
   | "zero_output"
@@ -51,21 +47,42 @@ export function requiredCapability(hasImages: boolean): RequiredCapability {
 }
 
 export function classifyDegradeTrigger(trigger: DegradeTrigger): DegradeClass {
-  if (trigger === "context_overflow" || trigger === "group_clip_overflow") {
-    return "capacity";
-  }
+  if (trigger === "group_clip_overflow") return "quota";
+  if (trigger === "context_overflow") return "capacity";
   return "availability";
 }
 
+/** Strict greater-than 256Ki. Cheap numeric gate — caller supplies a rough estimate. */
+export function meetsLongContextSizeGate(estimatedInputTokens: number): boolean {
+  return (
+    Number.isFinite(estimatedInputTokens)
+    && estimatedInputTokens > LONG_CONTEXT_SIZE_GATE_TOKENS
+  );
+}
+
 /**
- * Capacity hop only. Never use a token-count floor when the current
- * model still fits — large-but-fitting requests stay on the strategy target.
+ * Non-vision long_context override. Vision never takes this path.
+ * Group/user quota clipping (`overflowFromGroupClip`) is ignored — quota always clips.
  */
+export function shouldAttemptLongContextHop(options: {
+  hasImages?: boolean;
+  isContextExhausted: boolean;
+  estimatedTotalTokens?: number;
+  overflowFromGroupClip?: boolean;
+}): boolean {
+  if (options.hasImages) return false;
+  if (options.isContextExhausted) return true;
+  return meetsLongContextSizeGate(options.estimatedTotalTokens ?? 0);
+}
+
+/** @deprecated Prefer shouldAttemptLongContextHop. */
 export function shouldAttemptCapacityLongContext(options: {
   isContextExhausted: boolean;
-  overflowFromGroupClip: boolean;
+  overflowFromGroupClip?: boolean;
+  hasImages?: boolean;
+  estimatedTotalTokens?: number;
 }): boolean {
-  return options.isContextExhausted === true || options.overflowFromGroupClip === true;
+  return shouldAttemptLongContextHop(options);
 }
 
 /**

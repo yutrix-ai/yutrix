@@ -249,7 +249,7 @@ function getTargetText(message: ChatMessage, target: TextTarget): string {
   return match || candidates.sort((a, b) => b.length - a.length)[0] || "";
 }
 
-/** Clone-and-measure so overflow hop can decide before mutating the outbound body. */
+/** Clone-and-measure without mutating the outbound body. */
 export async function previewInputTokenLimit(
   inputBody: any,
   config: InputTokenLimitConfig,

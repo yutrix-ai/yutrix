@@ -27,7 +27,12 @@ import {
 } from "../routes/gateway/inputTokenLimit";
 import { resolveModelContextWindow } from "../routes/gateway/gatewayExecutorUtils";
 import { hasImageInput, isImageNode } from "../utils/multimodal";
+import {
+  meetsLongContextSizeGate,
+  shouldAttemptLongContextHop,
+} from "../routes/gateway/degradePolicy";
 export { hasImageInput };
+export { LONG_CONTEXT_SIZE_GATE_TOKENS, meetsLongContextSizeGate, shouldAttemptLongContextHop } from "../routes/gateway/degradePolicy";
 
 export const STRATEGY_TASK_TYPES = [
   "vision",
@@ -56,14 +61,15 @@ export function meetsLongContextStrategyTokenFloor(
   );
 }
 
-/** @deprecated Use shouldAttemptCapacityLongContext. Kept as a compatible alias. */
+/** Size/window long_context override. Vision never hops. Quota clip is not a hop. */
 export function shouldAttemptLongContextOverride(options: {
   isContextExhausted: boolean;
-  overflowFromGroupClip: boolean;
+  /** Ignored. Quota clipping is never a long_context hop. */
+  overflowFromGroupClip?: boolean;
   estimatedTotalTokens?: number;
   hasImages?: boolean;
 }): boolean {
-  return options.isContextExhausted === true || options.overflowFromGroupClip === true;
+  return shouldAttemptLongContextHop(options);
 }
 
 /**
@@ -850,22 +856,26 @@ export async function computeRoutingRequirements(
 
   let requiresLongContext = false;
   const contextBudget = resolveModelContextWindow(activeModelConfig);
-  if (contextBudget.limit > 0) {
-    let requestedOutputTokens = 0;
-    if (body?.max_tokens) requestedOutputTokens = body.max_tokens;
-    else if (body?.max_completion_tokens)
-      requestedOutputTokens = body.max_completion_tokens;
-    else if (activeModelConfig?.maxOutputTokens)
-      requestedOutputTokens = activeModelConfig.maxOutputTokens;
+  if (!outboundPayloadHasImage) {
+    if (meetsLongContextSizeGate(tokenEst.totalTokens)) {
+      requiresLongContext = true;
+    } else if (contextBudget.limit > 0) {
+      let requestedOutputTokens = 0;
+      if (body?.max_tokens) requestedOutputTokens = body.max_tokens;
+      else if (body?.max_completion_tokens)
+        requestedOutputTokens = body.max_completion_tokens;
+      else if (activeModelConfig?.maxOutputTokens)
+        requestedOutputTokens = activeModelConfig.maxOutputTokens;
 
-    const safetyMargin = 50;
-    if (contextBudget.kind === "max_input") {
-      requiresLongContext =
-        tokenEst.totalTokens + safetyMargin > contextBudget.limit;
-    } else {
-      requiresLongContext =
-        tokenEst.totalTokens + requestedOutputTokens + safetyMargin >
-        contextBudget.limit;
+      const safetyMargin = 50;
+      if (contextBudget.kind === "max_input") {
+        requiresLongContext =
+          tokenEst.totalTokens + safetyMargin > contextBudget.limit;
+      } else {
+        requiresLongContext =
+          tokenEst.totalTokens + requestedOutputTokens + safetyMargin >
+          contextBudget.limit;
+      }
     }
   }
   return {

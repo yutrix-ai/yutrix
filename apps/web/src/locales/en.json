@@ -973,7 +973,7 @@
         "vision": "Use when the current input contains images, screenshots, visual recognition, or image-position tasks.",
         "debug": "Use for errors, timeouts, failures, stack traces, or repair intent.",
         "code": "Use for code generation, refactoring, APIs, components, builds, or implementation tasks.",
-        "long_context": "Used when the current model's context window cannot hold the request.",
+        "long_context": "Used when estimated text input exceeds 256K, or the current model cannot hold the request. Image requests never use this model.",
         "writing": "Use for articles, copy, email, translation, rewriting, or polishing.",
         "general": "Default model when no other task type matches."
       }

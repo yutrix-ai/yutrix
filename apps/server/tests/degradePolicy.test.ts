@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   classifyDegradeTrigger,
   isZeroVisibleOutput,
+  LONG_CONTEXT_SIZE_GATE_TOKENS,
+  meetsLongContextSizeGate,
   requiredCapability,
   selectAvailabilityNextLayer,
   shouldAttemptCapacityLongContext,
+  shouldAttemptLongContextHop,
   shouldWithholdForZeroOutputDegrade,
   type FunnelLayerCandidate,
 } from "../src/routes/gateway/degradePolicy";
@@ -48,28 +51,64 @@ describe("degrade class", () => {
     expect(classifyDegradeTrigger("concurrency")).toBe("availability");
   });
 
-  it("treats window overflow and group-clip overflow as capacity", () => {
+  it("treats model-window overflow as capacity and group/user clip as quota", () => {
     expect(classifyDegradeTrigger("context_overflow")).toBe("capacity");
-    expect(classifyDegradeTrigger("group_clip_overflow")).toBe("capacity");
+    expect(classifyDegradeTrigger("group_clip_overflow")).toBe("quota");
+  });
+});
+
+describe("256Ki long_context size gate", () => {
+  it("is strict greater-than 256Ki", () => {
+    expect(LONG_CONTEXT_SIZE_GATE_TOKENS).toBe(256 * 1024);
+    expect(meetsLongContextSizeGate(262144)).toBe(false);
+    expect(meetsLongContextSizeGate(262145)).toBe(true);
+  });
+
+  it("hops non-vision above 256Ki even when the current window still fits", () => {
+    expect(shouldAttemptLongContextHop({
+      hasImages: false,
+      isContextExhausted: false,
+      estimatedTotalTokens: 262145,
+    })).toBe(true);
+  });
+
+  it("does not hop at exactly 256Ki when the current window still fits", () => {
+    expect(shouldAttemptLongContextHop({
+      hasImages: false,
+      isContextExhausted: false,
+      estimatedTotalTokens: 262144,
+    })).toBe(false);
   });
 });
 
 describe("capacity long_context hop", () => {
-  it("hops only when the current model cannot hold the request", () => {
+  it("hops when the current model cannot hold the request", () => {
     expect(shouldAttemptCapacityLongContext({
       isContextExhausted: true,
       overflowFromGroupClip: false,
-    })).toBe(true);
-    expect(shouldAttemptCapacityLongContext({
-      isContextExhausted: false,
-      overflowFromGroupClip: true,
+      estimatedTotalTokens: 100_000,
     })).toBe(true);
   });
 
-  it("does not hop a large request that still fits the current model", () => {
+  it("does not treat group/user clip as a hop reason", () => {
     expect(shouldAttemptCapacityLongContext({
       isContextExhausted: false,
-      overflowFromGroupClip: false,
+      overflowFromGroupClip: true,
+      estimatedTotalTokens: 100_000,
+    })).toBe(false);
+  });
+
+  it("never hops vision, including 256K+, window overflow, or quota clip", () => {
+    expect(shouldAttemptLongContextHop({
+      hasImages: true,
+      isContextExhausted: true,
+      estimatedTotalTokens: 500_000,
+    })).toBe(false);
+    expect(shouldAttemptLongContextHop({
+      hasImages: true,
+      isContextExhausted: false,
+      overflowFromGroupClip: true,
+      estimatedTotalTokens: 500_000,
     })).toBe(false);
   });
 });
