@@ -4,6 +4,7 @@ import type { ProxyAgent } from "undici";
 import type { UpstreamResponseData } from "./types";
 import { detectProviderUsagePresence, extractCompletionText, captureRoundOutputSnapshot } from "../../utils/gatewayContent";
 import { readUpstreamError } from "../../utils/gatewayError";
+import { resolveUpstreamTimeoutMs } from "./gatewayExecutorUtils";
 import { activeTranslators } from "./translators";
 import {
   googleGenerateContentToOpenAI,
@@ -210,7 +211,7 @@ export async function executeUpstreamFetch(
         apiKey,
         httpOptions: {
           baseUrl: googleNativeBaseUrlOrigin(baseUrl),
-          timeout: provider.timeoutMs > 0 ? provider.timeoutMs : undefined,
+          timeout: resolveUpstreamTimeoutMs(provider.timeoutMs),
         },
       });
 

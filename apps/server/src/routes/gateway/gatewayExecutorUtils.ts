@@ -52,6 +52,24 @@ export function isUpstreamCredentialUnavailableError(responseData: any): boolean
   );
 }
 
+/**
+ * undici's default headersTimeout is 300s. timeoutMs=0 used to inherit that,
+ * so a hung NVIDIA/OpenAI-compatible upstream delayed funnel hops by minutes
+ * per attempt. Always abort TTFB with at least this floor.
+ */
+export const DEFAULT_UPSTREAM_TIMEOUT_MS = 60_000;
+
+export function resolveUpstreamTimeoutMs(timeoutMs: unknown): number {
+  const n = typeof timeoutMs === "number" ? timeoutMs : Number(timeoutMs);
+  if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  return DEFAULT_UPSTREAM_TIMEOUT_MS;
+}
+
+/** Provider is unavailable (not a bad key). Hop before same-key retries. */
+export function isAvailabilityHopStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504 || status === 529;
+}
+
 export async function processErrorRetryLogic(params: {
   responseData: any;
   activeKeyId: string | null;
@@ -88,6 +106,18 @@ export async function processErrorRetryLogic(params: {
     // Credential-pool empty is often returned as HTTP 500, but must NOT be treated
     // as a transient same-key 5xx (burns budget before L1 funnel can run).
     const isCredentialUnavailable = isUpstreamCredentialUnavailableError(responseData);
+    // 502/503/504/529 mean the current provider is sick, not that this key is
+    // bad. Same-key retries and key rotation delay funnel fallback by up to
+    // retryCount × headersTimeout. Skip them here so checkErrorFallback can
+    // hop immediately. Last-layer retries still run in the executor's
+    // secondary 5xx path after fallback returns null.
+    if (isAvailabilityHopStatus(responseData.status) && !isCredentialUnavailable) {
+      return {
+        shouldRetrySameProvider: false,
+        preserveAttemptCount: false,
+        isAuthenticationError: false,
+      };
+    }
     const isTransientUpstreamError =
       [500, 502, 503, 504, 529].includes(responseData.status) && !isCredentialUnavailable;
 

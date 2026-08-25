@@ -19,7 +19,7 @@ import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
 import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
-import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError } from "./gatewayExecutorUtils";
+import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError, isAvailabilityHopStatus, resolveUpstreamTimeoutMs } from "./gatewayExecutorUtils";
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
@@ -1509,9 +1509,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               const abortListener = () => fetchController.abort();
               controller.signal.addEventListener("abort", abortListener);
 
-              if (provider.timeoutMs > 0) {
-                timeoutId = setTimeout(() => fetchController.abort(), provider.timeoutMs);
-              }
+              timeoutId = setTimeout(
+                () => fetchController.abort(),
+                resolveUpstreamTimeoutMs(provider.timeoutMs),
+              );
 
               let upstreamHeaders = googleNativeRequest
                 ? buildGoogleNativeHeaders(decryptedKey!)
@@ -2116,6 +2117,49 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               attemptCount--;
               continue; // retry same key
            }
+        }
+
+        // Priority 2.5: Availability hop (502/503/504/529) before key rotation.
+        // A sick upstream will fail every key the same way; waiting on retries
+        // (or undici's 300s headersTimeout) is what makes funnel degrade feel stuck.
+        const streamAvailabilityStatus = streamTermErr.statusCode || responseData?.status || 0;
+        if (currentAttempt && isAvailabilityHopStatus(streamAvailabilityStatus)) {
+          const errorFallback = await checkErrorFallback({
+            status: streamAvailabilityStatus,
+            currentAttempt,
+            route,
+            body,
+            provider: ctx.activeProvider,
+            responseData: responseData || {
+              status: streamAvailabilityStatus,
+              data: { error: { message: streamTermErr.message, type: streamTermErr.errorType } },
+              isStream: true,
+            },
+            baseActionLog,
+            logAction,
+            incomingProtocol,
+          });
+          if (errorFallback) {
+            logAction({
+              ...baseActionLog,
+              level: "WARN",
+              code: "request.upstream_retry",
+              providerName: ctx.activeProvider?.name,
+              modelId: currentAttempt.modelId,
+              statusCode: streamAvailabilityStatus,
+              reason: "stream_availability_funnel_fallback",
+            });
+            currentAttempt = errorFallback.newAttempt;
+            ctx.currentAttempt = currentAttempt;
+            keepContinuity = true;
+            if (responseData?.releaseSlots) {
+              responseData.releaseSlots();
+              responseData.releaseSlots = undefined;
+            }
+            responseData = null;
+            attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
+            continue;
+          }
         }
 
         // Priority 3: Key rotation for rate_limit / authentication / provider_unavailable

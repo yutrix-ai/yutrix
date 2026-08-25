@@ -1,9 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_UPSTREAM_TIMEOUT_MS,
+  isAvailabilityHopStatus,
   isUpstreamCredentialUnavailableError,
   processErrorRetryLogic,
   reserveAttemptBudgetForLayerSwitch,
+  resolveUpstreamTimeoutMs,
 } from "../src/routes/gateway/gatewayExecutorUtils";
+
+describe("availability hop statuses", () => {
+  it("treats 502/503/504/529 as availability hops and 500/429 as not", () => {
+    expect(isAvailabilityHopStatus(502)).toBe(true);
+    expect(isAvailabilityHopStatus(503)).toBe(true);
+    expect(isAvailabilityHopStatus(504)).toBe(true);
+    expect(isAvailabilityHopStatus(529)).toBe(true);
+    expect(isAvailabilityHopStatus(500)).toBe(false);
+    expect(isAvailabilityHopStatus(429)).toBe(false);
+  });
+});
+
+describe("resolveUpstreamTimeoutMs", () => {
+  it("uses the configured timeout when positive", () => {
+    expect(resolveUpstreamTimeoutMs(15000)).toBe(15000);
+  });
+
+  it("falls back to 60s when timeout is 0/unset so undici cannot wait 300s", () => {
+    expect(resolveUpstreamTimeoutMs(0)).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
+    expect(resolveUpstreamTimeoutMs(undefined)).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
+    expect(resolveUpstreamTimeoutMs(null)).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
+    expect(DEFAULT_UPSTREAM_TIMEOUT_MS).toBe(60_000);
+  });
+});
 
 describe("reserveAttemptBudgetForLayerSwitch", () => {
   it("does not change attemptCount when budget remains (early fallback paths)", () => {
@@ -100,6 +127,102 @@ describe("gateway executor retry logic", () => {
     const triedKeys = new Set<string>();
     const result = await processErrorRetryLogic({
       responseData: { isStream: false, status: 500, data: { error: "internal" } },
+      activeKeyId: "key-1",
+      availableKeys: [{ id: "key-1" }, { id: "key-2" }],
+      triedKeys,
+      attemptCount: 1,
+      maxAttempts: 4,
+    });
+
+    expect(result).toEqual({
+      shouldRetrySameProvider: true,
+      preserveAttemptCount: true,
+      isAuthenticationError: false,
+      reason: "provider_key_rotation",
+    });
+    expect(triedKeys.has("key-1")).toBe(true);
+  });
+
+  it("does not same-key retry or rotate keys on 504 so funnel can hop immediately", async () => {
+    const triedKeys = new Set<string>();
+    const result = await processErrorRetryLogic({
+      responseData: { isStream: false, status: 504, data: { error: "headers timeout" } },
+      activeKeyId: "key-1",
+      availableKeys: [{ id: "key-1" }, { id: "key-2" }],
+      triedKeys,
+      attemptCount: 1,
+      maxAttempts: 6,
+    });
+
+    expect(result).toEqual({
+      shouldRetrySameProvider: false,
+      preserveAttemptCount: false,
+      isAuthenticationError: false,
+      reason: undefined,
+    });
+    expect(triedKeys.size).toBe(0);
+  });
+
+  it("does not same-key retry on 529 overloaded so funnel can hop immediately", async () => {
+    const result = await processErrorRetryLogic({
+      responseData: {
+        isStream: false,
+        status: 529,
+        data: { message: "Service temporarily overloaded", type: "Overloaded", code: 529 },
+      },
+      activeKeyId: "key-1",
+      availableKeys: [{ id: "key-1" }],
+      triedKeys: new Set<string>(),
+      attemptCount: 1,
+      maxAttempts: 4,
+    });
+
+    expect(result.shouldRetrySameProvider).toBe(false);
+  });
+
+  it("does not same-key retry or rotate keys on 502/503 availability failures", async () => {
+    for (const status of [502, 503]) {
+      const triedKeys = new Set<string>();
+      const result = await processErrorRetryLogic({
+        responseData: { isStream: false, status, data: { error: "bad gateway" } },
+        activeKeyId: "key-1",
+        availableKeys: [{ id: "key-1" }, { id: "key-2" }],
+        triedKeys,
+        attemptCount: 1,
+        maxAttempts: 6,
+      });
+      expect({ status, shouldRetrySameProvider: result.shouldRetrySameProvider }).toEqual({
+        status,
+        shouldRetrySameProvider: false,
+      });
+      expect({ status, tried: triedKeys.size }).toEqual({ status, tried: 0 });
+    }
+  });
+
+  it("still rotates keys on 503 credential-unavailable rather than treating it as a blind availability hop", async () => {
+    const triedKeys = new Set<string>();
+    const result = await processErrorRetryLogic({
+      responseData: { isStream: false, status: 503, data: "no available credentials" },
+      activeKeyId: "key-1",
+      availableKeys: [{ id: "key-1" }, { id: "key-2" }],
+      triedKeys,
+      attemptCount: 1,
+      maxAttempts: 5,
+    });
+
+    expect(result).toEqual({
+      shouldRetrySameProvider: true,
+      preserveAttemptCount: true,
+      isAuthenticationError: false,
+      reason: "provider_key_rotation",
+    });
+    expect(triedKeys.has("key-1")).toBe(true);
+  });
+
+  it("still rotates keys on 429 before any funnel hop", async () => {
+    const triedKeys = new Set<string>();
+    const result = await processErrorRetryLogic({
+      responseData: { isStream: false, status: 429, data: { error: "rate limit" } },
       activeKeyId: "key-1",
       availableKeys: [{ id: "key-1" }, { id: "key-2" }],
       triedKeys,

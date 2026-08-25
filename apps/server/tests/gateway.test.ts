@@ -1679,5 +1679,538 @@ describe("Gateway Models Endpoint", () => {
     await db.delete(providerModels).where(sql`providerId LIKE 'funnel500-p%'`);
     await db.delete(providers).where(sql`id LIKE 'funnel500-p%'`);
   });
+
+  it("hops to L1 on the first 504 instead of burning same-key 5xx retries", async () => {
+    const now = new Date();
+    const endpointId = "funnel-504-endpoint";
+    const routeId = "funnel-504-route";
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel504-p%'`);
+    await db.delete(providerModels).where(sql`providerId LIKE 'funnel504-p%'`);
+    await db.delete(providers).where(sql`id LIKE 'funnel504-p%'`);
+    await db.delete(systemSettings).where(eq(systemSettings.key, "allowUnknownHostFallback"));
+    await db.insert(systemSettings).values({
+      key: "allowUnknownHostFallback",
+      value: "true",
+      description: "funnel 504 availability hop",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(providers).values([
+      {
+        id: "funnel504-p1",
+        name: "Funnel504 Provider L0",
+        openaiBaseUrl: "https://p1-504.test/v1",
+        anthropicBaseUrl: null,
+        enabled: true,
+        concurrencyLimit: 10,
+        timeoutMs: 30000,
+        maxOutputTokens: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "funnel504-p2",
+        name: "Funnel504 Provider L1",
+        openaiBaseUrl: "https://p2-504.test/v1",
+        anthropicBaseUrl: null,
+        enabled: true,
+        concurrencyLimit: 10,
+        timeoutMs: 30000,
+        maxOutputTokens: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await db.insert(providerModels).values([
+      {
+        id: crypto.randomUUID(),
+        providerId: "funnel504-p1",
+        modelId: "nvidia-flash",
+        displayName: "NVIDIA Flash",
+        enabled: true,
+        active: true,
+        createdAt: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        providerId: "funnel504-p2",
+        modelId: "gemini-flash",
+        displayName: "Gemini Flash",
+        enabled: true,
+        active: true,
+        createdAt: now,
+      },
+    ]);
+
+    await db.insert(providerApiKeys).values([
+      {
+        id: "funnel504-k1",
+        providerId: "funnel504-p1",
+        keyEncrypted: encryptText("sk-l0"),
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "funnel504-k2",
+        providerId: "funnel504-p2",
+        keyEncrypted: encryptText("sk-l1"),
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await db.insert(endpoints).values({
+      id: endpointId,
+      userId,
+      name: "Funnel 504 Endpoint",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const targets = [
+      {
+        providerId: "funnel504-p1",
+        modelId: "nvidia-flash",
+        providerProtocol: "openai",
+        bestEffort: false,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      },
+      {
+        providerId: "funnel504-p2",
+        modelId: "gemini-flash",
+        providerProtocol: "openai",
+        bestEffort: false,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      },
+    ];
+
+    await db.insert(endpointRoutes).values({
+      id: routeId,
+      name: "Funnel 504 Route",
+      endpointId,
+      providerId: "funnel504-p1",
+      providerProtocol: "openai",
+      modelId: "nvidia-flash",
+      retryCount: 3,
+      targets: JSON.stringify(targets),
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId,
+      userId,
+      createdAt: now,
+    });
+
+    const receivedCalls: Array<{ url: string; model: string }> = [];
+
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || "{}"));
+      receivedCalls.push({ url: String(url), model: body.model });
+
+      if (String(url).includes("p1-504.test")) {
+        return new Response(
+          JSON.stringify({ error: { message: "headers timeout after 300000", type: "timeout" } }),
+          { status: 504, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      if (String(url).includes("p2-504.test")) {
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-funnel504-success",
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: body.model,
+            choices: [
+              { index: 0, message: { role: "assistant", content: "l1 hop success" }, finish_reason: "stop" },
+            ],
+            usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+      },
+      payload: {
+        model: "nvidia-flash",
+        messages: [{ role: "user", content: "test 504 availability hop" }],
+        stream: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const resBody = JSON.parse(response.body);
+    expect(resBody.choices[0].message.content).toBe("l1 hop success");
+
+    const l0Calls = receivedCalls.filter((c) => c.url.includes("p1-504.test"));
+    const l1Calls = receivedCalls.filter((c) => c.url.includes("p2-504.test"));
+    expect(l0Calls.length).toBe(1);
+    expect(l1Calls.length).toBe(1);
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel504-p%'`);
+    await db.delete(providerModels).where(sql`providerId LIKE 'funnel504-p%'`);
+    await db.delete(providers).where(sql`id LIKE 'funnel504-p%'`);
+  });
+
+  it("retries the same last-layer provider on 504 when there is nowhere to hop", async () => {
+    const now = new Date();
+    const endpointId = "last504-endpoint";
+    const routeId = "last504-route";
+    const providerId = "last504-p1";
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(eq(providerApiKeys.providerId, providerId));
+    await db.delete(providerModels).where(eq(providerModels.providerId, providerId));
+    await db.delete(providers).where(eq(providers.id, providerId));
+    await db.delete(systemSettings).where(eq(systemSettings.key, "allowUnknownHostFallback"));
+    await db.insert(systemSettings).values({
+      key: "allowUnknownHostFallback",
+      value: "true",
+      description: "last-layer 504 retry",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(providers).values({
+      id: providerId,
+      name: "Last504 Provider",
+      openaiBaseUrl: "https://p1-last504.test/v1",
+      anthropicBaseUrl: null,
+      enabled: true,
+      concurrencyLimit: 10,
+      timeoutMs: 30000,
+      maxOutputTokens: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(providerModels).values({
+      id: crypto.randomUUID(),
+      providerId,
+      modelId: "only-model",
+      displayName: "Only Model",
+      enabled: true,
+      active: true,
+      createdAt: now,
+    });
+
+    await db.insert(providerApiKeys).values({
+      id: "last504-k1",
+      providerId,
+      keyEncrypted: encryptText("sk-only"),
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(endpoints).values({
+      id: endpointId,
+      userId,
+      name: "Last 504 Endpoint",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(endpointRoutes).values({
+      id: routeId,
+      name: "Last 504 Route",
+      endpointId,
+      providerId,
+      providerProtocol: "openai",
+      modelId: "only-model",
+      retryCount: 2,
+      targets: JSON.stringify([
+        {
+          providerId,
+          modelId: "only-model",
+          providerProtocol: "openai",
+          bestEffort: false,
+          strategyRoutingEnabled: false,
+          strategyRoutingRules: [],
+        },
+      ]),
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId,
+      userId,
+      createdAt: now,
+    });
+
+    const receivedCalls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      receivedCalls.push(String(url));
+      const body = JSON.parse(String(init?.body || "{}"));
+      if (receivedCalls.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: "headers timeout", type: "timeout" } }),
+          { status: 504, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          id: "chatcmpl-last504-success",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: body.model,
+          choices: [
+            { index: 0, message: { role: "assistant", content: "last-layer retry success" }, finish_reason: "stop" },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 3, total_tokens: 6 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}` },
+      payload: {
+        model: "only-model",
+        messages: [{ role: "user", content: "test last-layer 504 retry" }],
+        stream: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).choices[0].message.content).toBe("last-layer retry success");
+    expect(receivedCalls.filter((u) => u.includes("p1-last504.test")).length).toBe(2);
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(eq(providerApiKeys.providerId, providerId));
+    await db.delete(providerModels).where(eq(providerModels.providerId, providerId));
+    await db.delete(providers).where(eq(providers.id, providerId));
+  });
+
+  it("hops to L1 on the first 529 instead of burning same-key retries", async () => {
+    const now = new Date();
+    const endpointId = "funnel-529-endpoint";
+    const routeId = "funnel-529-route";
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel529-p%'`);
+    await db.delete(providerModels).where(sql`providerId LIKE 'funnel529-p%'`);
+    await db.delete(providers).where(sql`id LIKE 'funnel529-p%'`);
+    await db.delete(systemSettings).where(eq(systemSettings.key, "allowUnknownHostFallback"));
+    await db.insert(systemSettings).values({
+      key: "allowUnknownHostFallback",
+      value: "true",
+      description: "funnel 529 availability hop",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(providers).values([
+      {
+        id: "funnel529-p1",
+        name: "Funnel529 Provider L0",
+        openaiBaseUrl: "https://p1-529.test/v1",
+        anthropicBaseUrl: null,
+        enabled: true,
+        concurrencyLimit: 10,
+        timeoutMs: 30000,
+        maxOutputTokens: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "funnel529-p2",
+        name: "Funnel529 Provider L1",
+        openaiBaseUrl: "https://p2-529.test/v1",
+        anthropicBaseUrl: null,
+        enabled: true,
+        concurrencyLimit: 10,
+        timeoutMs: 30000,
+        maxOutputTokens: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await db.insert(providerModels).values([
+      {
+        id: crypto.randomUUID(),
+        providerId: "funnel529-p1",
+        modelId: "nvidia-flash",
+        displayName: "NVIDIA Flash",
+        enabled: true,
+        active: true,
+        createdAt: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        providerId: "funnel529-p2",
+        modelId: "gemini-flash",
+        displayName: "Gemini Flash",
+        enabled: true,
+        active: true,
+        createdAt: now,
+      },
+    ]);
+
+    await db.insert(providerApiKeys).values([
+      {
+        id: "funnel529-k1",
+        providerId: "funnel529-p1",
+        keyEncrypted: encryptText("sk-l0"),
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "funnel529-k2",
+        providerId: "funnel529-p2",
+        keyEncrypted: encryptText("sk-l1"),
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await db.insert(endpoints).values({
+      id: endpointId,
+      userId,
+      name: "Funnel 529 Endpoint",
+      path: "/v1/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(endpointRoutes).values({
+      id: routeId,
+      name: "Funnel 529 Route",
+      endpointId,
+      providerId: "funnel529-p1",
+      providerProtocol: "openai",
+      modelId: "nvidia-flash",
+      retryCount: 3,
+      targets: JSON.stringify([
+        {
+          providerId: "funnel529-p1",
+          modelId: "nvidia-flash",
+          providerProtocol: "openai",
+          bestEffort: false,
+          strategyRoutingEnabled: false,
+          strategyRoutingRules: [],
+        },
+        {
+          providerId: "funnel529-p2",
+          modelId: "gemini-flash",
+          providerProtocol: "openai",
+          bestEffort: false,
+          strategyRoutingEnabled: false,
+          strategyRoutingRules: [],
+        },
+      ]),
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId,
+      userId,
+      createdAt: now,
+    });
+
+    const receivedCalls: Array<{ url: string }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || "{}"));
+      receivedCalls.push({ url: String(url) });
+      if (String(url).includes("p1-529.test")) {
+        return new Response(
+          JSON.stringify({ message: "Service temporarily overloaded", type: "Overloaded", code: 529 }),
+          { status: 529, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          id: "chatcmpl-funnel529-success",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: body.model,
+          choices: [
+            { index: 0, message: { role: "assistant", content: "l1 529 hop success" }, finish_reason: "stop" },
+          ],
+          usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}` },
+      payload: {
+        model: "nvidia-flash",
+        messages: [{ role: "user", content: "test 529 availability hop" }],
+        stream: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).choices[0].message.content).toBe("l1 529 hop success");
+    expect(receivedCalls.filter((c) => c.url.includes("p1-529.test")).length).toBe(1);
+    expect(receivedCalls.filter((c) => c.url.includes("p2-529.test")).length).toBe(1);
+
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, routeId));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, routeId));
+    await db.delete(endpoints).where(eq(endpoints.id, endpointId));
+    await db.delete(providerApiKeys).where(sql`providerId LIKE 'funnel529-p%'`);
+    await db.delete(providerModels).where(sql`providerId LIKE 'funnel529-p%'`);
+    await db.delete(providers).where(sql`id LIKE 'funnel529-p%'`);
+  });
 });
 
