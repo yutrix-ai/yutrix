@@ -87,19 +87,82 @@ function relaxStrictToolChoice(body: any): void {
   body.tool_choice = "auto";
 }
 
+function hasTools(body: any): boolean {
+  return Array.isArray(body?.tools) && body.tools.length > 0;
+}
+
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Thinking-off wire shapes. Append a mutator here when a new OpenAI-compat
+ * stack documents another disable knob — do not branch on vendor/model.
+ */
+const THINKING_OFF_SHAPES: readonly ConstraintMutator[] = [
+  (body) => {
+    body.enable_thinking = false;
+  },
+  (body) => {
+    if (isPlainObject(body.thinking)) {
+      body.thinking = { ...body.thinking, type: "disabled" };
+    } else {
+      body.thinking = { type: "disabled" };
+    }
+  },
+  (body) => {
+    if (isPlainObject(body.reasoning)) {
+      body.reasoning = { ...body.reasoning, effort: "none", exclude: true };
+    }
+  },
+];
+
 function disableThinking(body: any): void {
-  // OpenAI-compat / DashScope / many Qwen gateways
-  body.enable_thinking = false;
-  // Some stacks use nested thinking config
-  if (body.thinking && typeof body.thinking === "object") {
-    body.thinking = { ...body.thinking, type: "disabled" };
-  } else if (body.thinking === true || body.thinking === "enabled") {
-    body.thinking = false;
+  if (!isPlainObject(body)) return;
+  for (const apply of THINKING_OFF_SHAPES) {
+    apply(body);
   }
-  // OpenRouter-style reasoning effort
-  if (body.reasoning && typeof body.reasoning === "object") {
-    body.reasoning = { ...body.reasoning, effort: "none", exclude: true };
+}
+
+function thinkingOffShapesApplied(body: any): boolean {
+  if (!isPlainObject(body)) return false;
+  if (body.enable_thinking !== false) return false;
+  return isPlainObject(body.thinking) && body.thinking.type === "disabled";
+}
+
+/** Present string (including empty). Non-empty values are never overwritten. */
+function hasReasoningContentField(message: any): boolean {
+  return typeof message?.reasoning_content === "string";
+}
+
+function fillMissingAssistantReasoningContent(body: any): void {
+  if (!isPlainObject(body) || !hasTools(body) || !Array.isArray(body.messages)) return;
+  for (const message of body.messages) {
+    if (!isPlainObject(message) || message.role !== "assistant") continue;
+    if (hasReasoningContentField(message)) continue;
+    message.reasoning_content = "";
   }
+}
+
+function assistantReasoningPassbackPresent(body: any): boolean {
+  if (!hasTools(body)) return true;
+  if (!Array.isArray(body?.messages)) return true;
+  return body.messages.every((message: any) => {
+    if (!isPlainObject(message) || message.role !== "assistant") return true;
+    return hasReasoningContentField(message);
+  });
+}
+
+function requiresReasoningContentPassback(msg: string): boolean {
+  if (!/reasoning[_\s-]?content/.test(msg)) return false;
+  return /pass(?:ed)?\s*back/.test(msg) || mentionsThinking(msg);
+}
+
+function rejectsThinkingMode(msg: string): boolean {
+  return (
+    mentionsThinking(msg) &&
+    /enable_thinking|thinking mode|not support.*thinking|thinking.*not support/.test(msg)
+  );
 }
 
 /**
@@ -131,7 +194,7 @@ export function planConstraintRecovery(
   ) {
     return {
       code: "disable_thinking_for_strict_tool_choice",
-      summary: "enable_thinking=false (strict tool_choice + thinking conflict)",
+      summary: "thinking off (all shapes; strict tool_choice + thinking conflict)",
       mutate: disableThinking,
     };
   }
@@ -149,18 +212,29 @@ export function planConstraintRecovery(
     };
   }
 
-  // 3) Standalone thinking parameter rejection (no tool_choice involved).
+  // 3) Thinking-mode rejection or reasoning_content passback requirement.
+  // Driven by error text + body shape. Disable every known thinking-off
+  // shape; fill missing assistant reasoning_content only on passback errors
+  // when tools are present (cross-model history has nothing to echo).
+  const passbackRequired = requiresReasoningContentPassback(msg);
   if (
     !applied.has("disable_thinking") &&
-    mentionsThinking(msg) &&
-    (/enable_thinking|thinking mode|not support.*thinking|thinking.*not support/.test(msg)) &&
-    body.enable_thinking !== false
+    (passbackRequired || rejectsThinkingMode(msg))
   ) {
-    return {
-      code: "disable_thinking",
-      summary: "enable_thinking=false (thinking rejected by upstream)",
-      mutate: disableThinking,
-    };
+    const needsDisable = !thinkingOffShapesApplied(body);
+    const needsPassbackFill = passbackRequired && !assistantReasoningPassbackPresent(body);
+    if (needsDisable || needsPassbackFill) {
+      return {
+        code: "disable_thinking",
+        summary: needsPassbackFill
+          ? "thinking off (all shapes) + fill missing assistant reasoning_content"
+          : "thinking off (all shapes; thinking rejected by upstream)",
+        mutate: (nextBody) => {
+          disableThinking(nextBody);
+          if (passbackRequired) fillMissingAssistantReasoningContent(nextBody);
+        },
+      };
+    }
   }
 
   return null;

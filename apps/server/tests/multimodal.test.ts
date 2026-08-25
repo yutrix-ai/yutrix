@@ -315,7 +315,7 @@ describe("protocol adapter image logging", () => {
     expect(logEvents[0].code).toBe("request.image_normalized");
   });
 
-  it("strips response-only reasoning metadata from OpenAI message history", () => {
+  it("keeps assistant passback fields and strips leak-only metadata from OpenAI message history", () => {
     const logEvents: any[] = [];
     const body = {
       messages: [
@@ -325,6 +325,7 @@ describe("protocol adapter image logging", () => {
           reasoning_content: "private reasoning",
           reasoning: "provider reasoning",
           extra_content: { google: { thought: true } },
+          provider_specific_fields: { leak: true },
           tool_calls: [
             {
               id: "call_1",
@@ -340,6 +341,13 @@ describe("protocol adapter image logging", () => {
             { type: "text", text: "visible block" },
           ],
         },
+        {
+          role: "user",
+          content: "follow up",
+          reasoning_content: "user should not pass this",
+          reasoning: "user reasoning",
+          extra_content: { leak: true },
+        },
       ],
     };
 
@@ -348,8 +356,8 @@ describe("protocol adapter image logging", () => {
       "openai",
       false,
       true,
-      "gemini-2.5-pro",
-      { requestId: "req-1", providerName: "Google" },
+      "any-model",
+      { requestId: "req-1", providerName: "any-provider" },
       (event: any) => logEvents.push(event),
     );
 
@@ -358,11 +366,15 @@ describe("protocol adapter image logging", () => {
       content: "visible answer",
       tool_calls: body.messages[0].tool_calls,
     });
-    expect(finalBody.messages[0].reasoning_content).toBeUndefined();
-    expect(finalBody.messages[0].reasoning).toBeUndefined();
+    expect(finalBody.messages[0].reasoning_content).toBe("private reasoning");
+    expect(finalBody.messages[0].reasoning).toBe("provider reasoning");
     expect(finalBody.messages[0].extra_content).toBeUndefined();
+    expect(finalBody.messages[0].provider_specific_fields).toBeUndefined();
     expect(finalBody.messages[1].content).toBe("visible block");
-    expect(finalBody.model).toBe("gemini-2.5-pro");
+    expect(finalBody.messages[2].reasoning_content).toBeUndefined();
+    expect(finalBody.messages[2].reasoning).toBeUndefined();
+    expect(finalBody.messages[2].extra_content).toBeUndefined();
+    expect(finalBody.model).toBe("any-model");
   });
 
   it("uses null assistant content when adapting Anthropic tool_use to OpenAI tool_calls", () => {

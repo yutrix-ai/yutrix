@@ -9,16 +9,21 @@ import {
   type AnthropicOutboundSurface,
 } from "./anthropicOutboundProfile";
 
-const RESPONSE_ONLY_MESSAGE_FIELDS = [
+/** Client-echoed assistant fields required by thinking-mode + tools continuations. */
+const ASSISTANT_PASSBACK_MESSAGE_FIELDS = [
   "reasoning_content",
   "reasoning",
+] as const;
+
+/** Response-only metadata that must not be forwarded on the default OpenAI path. */
+const NEVER_FORWARD_LEAK_MESSAGE_FIELDS = [
   "reasoning_details",
   "thinking",
   "thinking_content",
   "redacted_reasoning",
   "extra_content",
   "provider_specific_fields",
-];
+] as const;
 
 const RESPONSE_ONLY_CONTENT_BLOCK_TYPES = new Set([
   "reasoning",
@@ -54,12 +59,16 @@ function sanitizeOpenAIMessageForUpstream(message: any, requestPolicy?: any): vo
     return;
   }
 
-  const exemptFields = (message.role === "assistant" && requestPolicy?.exemptAssistantHistoryFields) || [];
+  const isAssistant = message.role === "assistant";
+  const exemptFields = (isAssistant && requestPolicy?.exemptAssistantHistoryFields) || [];
 
-  for (const field of RESPONSE_ONLY_MESSAGE_FIELDS) {
-    if (exemptFields.includes(field)) {
-      continue;
-    }
+  for (const field of ASSISTANT_PASSBACK_MESSAGE_FIELDS) {
+    if (isAssistant) continue;
+    delete message[field];
+  }
+
+  for (const field of NEVER_FORWARD_LEAK_MESSAGE_FIELDS) {
+    if (exemptFields.includes(field)) continue;
     delete message[field];
   }
 

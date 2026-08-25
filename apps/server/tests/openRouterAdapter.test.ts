@@ -165,7 +165,7 @@ describe("openRouterAdapter core capabilities", () => {
       expect(finalBody.messages[1].reasoning_details).toBeUndefined();
     });
 
-    it("ensures normal OpenAI providers still delete these fields under normal policy", () => {
+    it("keeps assistant passback reasoning by default and still strips leak-only details", () => {
       const body = {
         messages: [
           {
@@ -182,13 +182,13 @@ describe("openRouterAdapter core capabilities", () => {
         "openai",
         false,
         false,
-        "gpt-4o",
+        "any-model",
         {},
         () => {}
         // No policy passed
       );
 
-      expect(finalBody.messages[0].reasoning).toBeUndefined();
+      expect(finalBody.messages[0].reasoning).toBe("assistant thinking");
       expect(finalBody.messages[0].reasoning_details).toBeUndefined();
     });
   });

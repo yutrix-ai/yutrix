@@ -32,6 +32,7 @@ describe("providerConstraintRecovery", () => {
     expect(plan?.code).toBe("disable_thinking_for_strict_tool_choice");
     plan!.mutate(body);
     expect(body.enable_thinking).toBe(false);
+    expect(body.thinking).toEqual({ type: "disabled" });
     expect(body.tool_choice).toBe("required");
   });
 
@@ -137,5 +138,188 @@ describe("providerConstraintRecovery", () => {
     const fresh = { model: "m", tool_choice: "required" as any, tools: [] };
     applyConstraintMutators(fresh, [plan!.mutate]);
     expect(fresh.tool_choice).toBe("auto");
+  });
+});
+
+const REASONING_PASSBACK_MSG =
+  "The `reasoning_content` in the thinking mode must be passed back to the API.";
+
+function passbackBody(overrides: Record<string, unknown> = {}) {
+  return {
+    model: "any-model",
+    tools: [{ type: "function", function: { name: "glob" } }],
+    tool_choice: "auto",
+    messages: [
+      { role: "system", content: "sys" },
+      { role: "user", content: "list files" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_649011",
+            type: "function",
+            function: { name: "glob", arguments: "{\"pattern\":\"*\"}" },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_649011", content: "ok" },
+    ],
+    ...overrides,
+  };
+}
+
+describe("thinking-mode passback recovery (vendor-neutral)", () => {
+  it("disables all thinking-off shapes and fills missing assistant reasoning_content when tools are present", () => {
+    const body = passbackBody();
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+    plan!.mutate(body);
+    expect(body.enable_thinking).toBe(false);
+    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(typeof body.messages[2].reasoning_content).toBe("string");
+    expect(body.messages[0].reasoning_content).toBeUndefined();
+    expect(body.messages[1].reasoning_content).toBeUndefined();
+    expect(body.messages[3].reasoning_content).toBeUndefined();
+  });
+
+  it("also recovers on 422", () => {
+    const body = passbackBody();
+    const plan = planConstraintRecovery({
+      statusCode: 422,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+  });
+
+  it("does not produce a second plan after the rewrite code is recorded", () => {
+    const body = passbackBody();
+    const first = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(first).not.toBeNull();
+    const second = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set([first!.code]),
+    });
+    expect(second).toBeNull();
+  });
+
+  it("writes thinking.type=disabled even when thinking was undefined", () => {
+    const body = {
+      model: "any-model",
+      enable_thinking: true,
+    };
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: "thinking mode is not supported",
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+    plan!.mutate(body);
+    expect(body.enable_thinking).toBe(false);
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("does not overwrite an existing non-empty reasoning_content", () => {
+    const body = passbackBody({
+      messages: [
+        { role: "user", content: "q" },
+        {
+          role: "assistant",
+          content: "answer",
+          reasoning_content: "keep this chain",
+        },
+      ],
+    });
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+    plan!.mutate(body);
+    expect(body.messages[1].reasoning_content).toBe("keep this chain");
+  });
+
+  it("leaves null bodies, non-object messages, and non-assistant roles alone", () => {
+    expect(
+      planConstraintRecovery({
+        statusCode: 400,
+        errorMessage: REASONING_PASSBACK_MSG,
+        body: null,
+        alreadyApplied: new Set(),
+      }),
+    ).toBeNull();
+
+    const body = passbackBody({
+      messages: [
+        null,
+        "skip-me",
+        { role: "user", content: "q" },
+        { role: "assistant", content: null, tool_calls: [] },
+      ],
+    });
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+    expect(() => plan!.mutate(body)).not.toThrow();
+    expect(body.messages[0]).toBeNull();
+    expect(body.messages[1]).toBe("skip-me");
+    expect(body.messages[2].reasoning_content).toBeUndefined();
+    expect(typeof body.messages[3].reasoning_content).toBe("string");
+  });
+
+  it("does not fill reasoning_content when tools are absent", () => {
+    const body = {
+      model: "any-model",
+      messages: [{ role: "assistant", content: "hi" }],
+    };
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+    plan!.mutate(body);
+    expect(body.enable_thinking).toBe(false);
+    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.messages[0].reasoning_content).toBeUndefined();
+  });
+
+  it("re-applies disable+passback onto a freshly built outbound body", () => {
+    const first = passbackBody();
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: REASONING_PASSBACK_MSG,
+      body: first,
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+
+    const fresh = passbackBody({ model: "m" });
+    applyConstraintMutators(fresh, [plan!.mutate]);
+    expect(fresh.enable_thinking).toBe(false);
+    expect(fresh.thinking).toEqual({ type: "disabled" });
+    expect(typeof fresh.messages[2].reasoning_content).toBe("string");
   });
 });
