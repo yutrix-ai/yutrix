@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { fetchApi } from "@/lib/api";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,12 @@ import {
   firstModelForProvider,
   providerProtocolForRule,
 } from "./strategyRoutingConfig";
+import {
+  buildCopiedRouteDraft,
+  collectRouteIdentityIssues,
+  matchingKeySubmitBlocked,
+  trimRouteName,
+} from "@promptgate/shared";
 
 interface GroupOption {
   id: string;
@@ -24,6 +30,51 @@ interface UserOption {
   status: string;
 }
 
+function parseRouteTargets(route: RouteItem): any[] {
+  if (route.targets) {
+    return typeof route.targets === "string" ? JSON.parse(route.targets) : route.targets;
+  }
+  const parsedTargets: any[] = [{
+    providerId: route.providerId,
+    providerProtocol: route.providerProtocol || "openai",
+    modelId: route.modelId,
+    promptPolicyId: route.promptPolicyId || "none",
+    strategyRoutingEnabled: route.strategyRoutingEnabled || false,
+    strategyRoutingRules: route.strategyRoutingRules || []
+  }];
+  if (route.fallbackEnabled && route.fallbackProviderId && route.fallbackProviderId !== "none") {
+    parsedTargets.push({
+      providerId: route.fallbackProviderId,
+      providerProtocol: route.fallbackProviderProtocol || "openai",
+      modelId: route.fallbackModelId || "",
+      promptPolicyId: route.fallbackPromptPolicyId || "none",
+      bestEffort: route.fallbackMatchTarget,
+      strategyRoutingEnabled: route.fallbackStrategyRoutingEnabled || false,
+      strategyRoutingRules: route.fallbackStrategyRoutingRules || []
+    });
+  }
+  return parsedTargets;
+}
+
+const emptyFormData = {
+  name: "",
+  hostInput: "*",
+  path: "/v1/chat/completions",
+  incomingProtocol: "openai",
+  targets: [] as any[],
+  timeoutMs: 0,
+  retryCount: 3,
+  queueTimeoutMs: 0,
+  maxBodyMb: 0,
+  enabled: true,
+  allowClientModel: false,
+  ipWhitelist: "",
+  authorizedUserIds: [] as string[],
+  authorizedGroupIds: [] as string[],
+  fallbackMatchTarget: false,
+  schedules: undefined as unknown,
+};
+
 export function useRoutesState() {
   const { t } = useTranslation();
   const [routes, setRoutes] = useState<RouteItem[]>([]);
@@ -35,6 +86,8 @@ export function useRoutesState() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [mainDomain, setMainDomain] = useState("");
   
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [modelsProviderId, setModelsProviderId] = useState("");
@@ -43,23 +96,7 @@ export function useRoutesState() {
 
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null as string | null, name: "" });
 
-  const [formData, setFormData] = useState({
-    name: "",
-    hostInput: "",
-    path: "",
-    incomingProtocol: "openai",
-    targets: [] as any[],
-    timeoutMs: 0,
-    retryCount: 3,
-    queueTimeoutMs: 0,
-    maxBodyMb: 0,
-    enabled: true,
-    allowClientModel: false,
-    ipWhitelist: "",
-    authorizedUserIds: [] as string[],
-    authorizedGroupIds: [] as string[],
-    fallbackMatchTarget: false,
-  });
+  const [formData, setFormData] = useState({ ...emptyFormData });
 
   const [fallbackModels, setFallbackModels] = useState<ProviderModel[]>([]);
   const [fallbackModelsProviderId, setFallbackModelsProviderId] = useState("");
@@ -90,13 +127,14 @@ export function useRoutesState() {
   const loadData = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const [rData, pData, polData, gData, uData, mData] = await Promise.all([
+      const [rData, pData, polData, gData, uData, mData, settingsData] = await Promise.all([
         fetchApi("/admin/routes"),
         fetchApi("/admin/providers"),
         fetchApi("/admin/policies"),
         fetchApi("/admin/groups"),
         fetchApi("/admin/groups/users-for-select"),
         fetchApi("/admin/models"),
+        fetchApi("/admin/settings").catch(() => []),
       ]);
       setRoutes(rData);
       setProviders(pData);
@@ -104,6 +142,10 @@ export function useRoutesState() {
       setGroups(gData);
       setAllModels(Array.isArray(mData) ? mData : []);
       setUsersForSelect(uData.filter((u: UserOption) => u.role === "user" && u.status !== "deleted"));
+      if (Array.isArray(settingsData)) {
+        const main = settingsData.find((s: { key: string; value: string }) => s.key === "mainDomain");
+        setMainDomain(main?.value || "");
+      }
     } catch (e: any) {
       toast.error(t("routes.toasts.loadFailed", "加载失败") + ": " + e.message);
     } finally {
@@ -284,15 +326,50 @@ export function useRoutesState() {
     }));
   };
 
+  const identityRecords = useMemo(
+    () =>
+      routes.map((route) => ({
+        id: route.id,
+        name: route.name,
+        host: route.host,
+        path: route.path,
+        incomingProtocol: route.incomingProtocol,
+      })),
+    [routes],
+  );
+
+  const identityIssues = useMemo(
+    () =>
+      collectRouteIdentityIssues({
+        name: formData.name,
+        hostInput: formData.hostInput,
+        path: formData.path,
+        protocol: formData.incomingProtocol,
+        records: identityRecords,
+        mainDomain,
+        excludeRouteId: editingId,
+        requireName: true,
+      }),
+    [formData.name, formData.hostInput, formData.path, formData.incomingProtocol, identityRecords, mainDomain, editingId],
+  );
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (matchingKeySubmitBlocked(identityIssues)) {
+      toast.error(t("routes.errors.matchingKeyConflict", "该 Host、Path 与 Protocol 组合已有路由"));
+      return;
+    }
+    if (!trimRouteName(formData.name)) {
+      toast.error(t("routes.errors.nameRequired", "规则名称不能为空"));
+      return;
+    }
     if (!formData.hostInput || !formData.path || formData.targets.length === 0) {
       toast.error(t("routes.toasts.fillRequired", "请填写所有必填项（包含至少一个目标）"));
       return;
     }
     try {
       const dataToSave = {
-        name: formData.name,
+        name: trimRouteName(formData.name),
         hostInput: formData.hostInput,
         path: formData.path,
         incomingProtocol: formData.incomingProtocol,
@@ -310,6 +387,7 @@ export function useRoutesState() {
         authorizedUserIds: formData.authorizedUserIds,
         authorizedGroupIds: formData.authorizedGroupIds,
         fallbackMatchTarget: formData.fallbackMatchTarget,
+        ...(formData.schedules !== undefined ? { schedules: formData.schedules } : {}),
       };
 
       if (editingId) {
@@ -329,49 +407,56 @@ export function useRoutesState() {
   const closeDialog = () => {
     setDialogOpen(false);
     setEditingId(null);
+    setCopying(false);
   };
 
   const openCreate = () => {
     setEditingId(null);
+    setCopying(false);
+    setFormData({ ...emptyFormData, targets: [] });
+    setDialogOpen(true);
+  };
+
+  const openCopy = (route: RouteItem) => {
+    setEditingId(null);
+    setCopying(true);
+    const draft = buildCopiedRouteDraft(
+      {
+        name: route.name,
+        host: route.host,
+        path: route.path,
+        incomingProtocol: route.incomingProtocol,
+        targets: parseRouteTargets(route),
+        timeoutMs: route.timeoutMs,
+        retryCount: route.retryCount,
+        queueTimeoutMs: route.queueTimeoutMs,
+        maxBodyMb: route.maxBodyMb,
+        enabled: route.enabled,
+        allowClientModel: route.allowClientModel,
+        ipWhitelist: route.ipWhitelist,
+        authorizedUserIds: route.authorizedUserIds,
+        authorizedGroupIds: route.authorizedGroupIds,
+        fallbackMatchTarget: route.fallbackMatchTarget,
+        schedules: route.schedules ?? null,
+      },
+      routes.map((item) => item.name),
+      t("routes.copyName.label", "副本"),
+    );
     setFormData({
-      name: "", hostInput: "*", path: "/v1/chat/completions", incomingProtocol: "openai", 
-      targets: [], timeoutMs: 0, retryCount: 3, queueTimeoutMs: 0, maxBodyMb: 0,
-      enabled: true, allowClientModel: false, ipWhitelist: "", authorizedUserIds: [], authorizedGroupIds: [],
-      fallbackMatchTarget: false,
+      ...emptyFormData,
+      ...draft,
+      targets: draft.targets,
     });
     setDialogOpen(true);
   };
 
   const openEdit = async (route: RouteItem) => {
     setEditingId(route.id);
+    setCopying(false);
     let hostInput = route.host;
     if (hostInput === "all" || hostInput === "*") hostInput = "*";
     const epProto = route.incomingProtocol || "openai";
-
-    let parsedTargets: any[] = [];
-    if (route.targets) {
-      parsedTargets = typeof route.targets === 'string' ? JSON.parse(route.targets) : route.targets;
-    } else {
-      parsedTargets = [{
-        providerId: route.providerId,
-        providerProtocol: route.providerProtocol || "openai",
-        modelId: route.modelId,
-        promptPolicyId: route.promptPolicyId || "none",
-        strategyRoutingEnabled: route.strategyRoutingEnabled || false,
-        strategyRoutingRules: route.strategyRoutingRules || []
-      }];
-      if (route.fallbackEnabled && route.fallbackProviderId && route.fallbackProviderId !== "none") {
-        parsedTargets.push({
-          providerId: route.fallbackProviderId,
-          providerProtocol: route.fallbackProviderProtocol || "openai",
-          modelId: route.fallbackModelId || "",
-          promptPolicyId: route.fallbackPromptPolicyId || "none",
-          bestEffort: route.fallbackMatchTarget,
-          strategyRoutingEnabled: route.fallbackStrategyRoutingEnabled || false,
-          strategyRoutingRules: route.fallbackStrategyRoutingRules || []
-        });
-      }
-    }
+    const parsedTargets = parseRouteTargets(route);
 
     setFormData({
       name: route.name, hostInput, path: route.path, incomingProtocol: epProto,
@@ -382,6 +467,7 @@ export function useRoutesState() {
       ipWhitelist: route.ipWhitelist || "",
       authorizedUserIds: route.authorizedUserIds || [], authorizedGroupIds: route.authorizedGroupIds || [],
       fallbackMatchTarget: route.fallbackMatchTarget || false,
+      schedules: undefined,
     });
     setDialogOpen(true);
   };
@@ -421,7 +507,7 @@ export function useRoutesState() {
   };
 
   return {
-    t, routes, providers, allModels, policies, groups, usersForSelect, loading, dialogOpen, setDialogOpen, editingId,
+    t, routes, providers, allModels, policies, groups, usersForSelect, loading, dialogOpen, setDialogOpen, editingId, copying, identityIssues,
     models, modelsProviderId, loadingModels, primaryModelMessage, setPrimaryModelMessage,
     deleteConfirm, setDeleteConfirm, formData, setFormData, fallbackModels, fallbackModelsProviderId,
     loadingFallbackModels, fallbackModelMessage, setFallbackModelMessage, scheduleDialogOpen, setScheduleDialogOpen,
@@ -429,6 +515,6 @@ export function useRoutesState() {
     openScheduleDialog, loadData, getProviderById, getAvailableModels, hasAnthropicEndpoint,
     hasOpenaiEndpoint, getProviderProtocolForSelection, getSelectableModels, getUnavailableMessage, resolveModelSelection,
     fetchProviderModels, loadModels, loadFallbackModels, getDefaultStrategyRules, handleProviderChange, handleFallbackProviderChange, handlePathChange,
-    handleProtocolChange, handleSave, closeDialog, openCreate, openEdit, handleDelete, toggleEnable, getReadinessBadge
+    handleProtocolChange, handleSave, closeDialog, openCreate, openCopy, openEdit, handleDelete, toggleEnable, getReadinessBadge
   };
 }

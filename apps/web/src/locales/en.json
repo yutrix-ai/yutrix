@@ -751,6 +751,7 @@
     "title": "Routes",
     "actions": {
       "create": "New Route",
+      "copy": "Copy",
       "save": "Save",
       "configureStrategy": "Configure Strategy",
       "addTarget": "Add Target Layer"
@@ -758,7 +759,17 @@
     "dialog": {
       "addTitle": "New Routing Rule",
       "editTitle": "Edit Routing Rule",
-      "description": "Configure request routing rules for the gateway"
+      "copyTitle": "Copy Routing Rule",
+      "description": "Configure request routing rules for the gateway",
+      "copyDescription": "Forwarding settings are copied from the original route. Confirm the rule name, then change Host, path, or protocol before saving."
+    },
+    "errors": {
+      "nameRequired": "Rule name is required",
+      "nameConflict": "A route with this name already exists",
+      "matchingKeyConflict": "A route with this Host, Path, and Protocol already exists"
+    },
+    "copyName": {
+      "label": "Copy"
     },
     "badges": {
       "bestEffort": "Best Effort"
@@ -771,7 +782,7 @@
       "routingTarget": "Request Routing Targets (Funnel Model)"
     },
     "fields": {
-      "name": "Rule Name",
+      "name": "Rule Name *",
       "host": "Host / Subdomain *",
       "path": "Request Path *",
       "protocol": "Routing Protocol *",

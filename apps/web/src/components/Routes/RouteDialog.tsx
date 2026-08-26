@@ -11,53 +11,115 @@ import { useTranslation } from "react-i18next";
 import { useRouteForm } from "./RouteFormContext";
 import { RouteTargetsTable } from "./RouteTargetsTable";
 import { StrategyRoutingEditor, StrategyRoutingSummary } from "./StrategyRoutingEditor";
+import { matchingKeySubmitBlocked, ROUTE_IDENTITY_ERROR } from "@promptgate/shared";
+import { cn } from "@/lib/utils";
 
 export function RouteDialog() {
   const { t } = useTranslation();
   const [showStrategyPanel, setShowStrategyPanel] = useState(false);
   const {
-    dialogOpen, setDialogOpen, editingId, handleSave, formData, setFormData,
+    dialogOpen, setDialogOpen, editingId, copying, identityIssues = [], handleSave, formData, setFormData,
     providers, handlePathChange, handleProtocolChange,
     policies,
     groups, usersForSelect, closeDialog, getProviderProtocolForSelection,
     allModels, getDefaultStrategyRules
   } = useRouteForm();
 
-  
+  const nameIssue = identityIssues.find((issue: { code: string }) =>
+    issue.code === ROUTE_IDENTITY_ERROR.NAME_REQUIRED || issue.code === ROUTE_IDENTITY_ERROR.NAME_CONFLICT
+  );
+  const matchingKeyIssue = identityIssues.find((issue: { code: string }) =>
+    issue.code === ROUTE_IDENTITY_ERROR.MATCHING_KEY_CONFLICT
+  );
+  const matchingBlocked = matchingKeySubmitBlocked(identityIssues);
+  const dialogTitle = copying
+    ? t("routes.dialog.copyTitle", "复制路由规则")
+    : editingId
+      ? t("routes.dialog.editTitle", "编辑路由规则")
+      : t("routes.dialog.addTitle", "新建路由规则");
+  const dialogDescription = copying
+    ? t("routes.dialog.copyDescription", "已带入原路由的转发配置。请确认规则名称，并修改 Host、路径或协议后再保存。")
+    : t("routes.dialog.description", "配置网关的请求转发规则");
 
   return (
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
         <DialogContent className="max-w-[95vw] lg:max-w-[90vw] xl:max-w-7xl h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>{editingId ? t("routes.dialog.editTitle", "编辑路由规则") : t("routes.dialog.addTitle", "新建路由规则")}</DialogTitle>
-            <DialogDescription>{t("routes.dialog.description", "配置网关的请求转发规则")}</DialogDescription>
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSave} className="flex-1 flex flex-col min-h-0">
             <DialogBody className="space-y-6 py-4 overflow-y-auto max-h-[calc(90vh-130px)]">
               {/* 基础信息配置 */}
+              {copying && matchingBlocked && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    {matchingKeyIssue?.conflictName
+                      ? t("routes.errors.matchingKeyConflict", "该 Host、Path 与 Protocol 组合已有路由") + `（${matchingKeyIssue.conflictName}）`
+                      : t("routes.errors.matchingKeyConflict", "该 Host、Path 与 Protocol 组合已有路由")}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                 <div className="space-y-2">
                   <Label>{t("routes.fields.name", "规则名称")}</Label>
-                  <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder={t("routes.placeholders.name", "例如：默认 OpenAI 路由")} />
+                  <Input
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    placeholder={t("routes.placeholders.name", "例如：默认 OpenAI 路由")}
+                    required
+                    aria-invalid={!!nameIssue}
+                    className={cn(nameIssue && "border-destructive focus-visible:ring-destructive")}
+                  />
+                  {nameIssue && (
+                    <p className="text-xs text-destructive">
+                      {nameIssue.code === ROUTE_IDENTITY_ERROR.NAME_REQUIRED
+                        ? t("routes.errors.nameRequired", "规则名称不能为空")
+                        : t("routes.errors.nameConflict", "规则名称已存在")}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>{t("routes.fields.host", "Host / 二级域名 *")}</Label>
-                  <Input value={formData.hostInput} onChange={e => setFormData({ ...formData, hostInput: e.target.value })} placeholder={t("routes.placeholders.host", "例如：api.yourdomain.com 或 sub")} required />
+                  <Input
+                    value={formData.hostInput}
+                    onChange={e => setFormData({ ...formData, hostInput: e.target.value })}
+                    placeholder={t("routes.placeholders.host", "例如：api.yourdomain.com 或 sub")}
+                    required
+                    autoFocus={!!copying}
+                    aria-invalid={!!matchingKeyIssue}
+                    className={cn(matchingKeyIssue && "border-destructive focus-visible:ring-destructive")}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>{t("routes.fields.path", "请求路径 *")}</Label>
-                  <Input value={formData.path} onChange={e => handlePathChange(e.target.value)} placeholder={t("routes.placeholders.path", "例如：/v1/chat/completions")} required />
+                  <Input
+                    value={formData.path}
+                    onChange={e => handlePathChange(e.target.value)}
+                    placeholder={t("routes.placeholders.path", "例如：/v1/chat/completions")}
+                    required
+                    aria-invalid={!!matchingKeyIssue}
+                    className={cn(matchingKeyIssue && "border-destructive focus-visible:ring-destructive")}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>{t("routes.fields.protocol", "路由协议 *")}</Label>
                   <Select value={formData.incomingProtocol} onValueChange={handleProtocolChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className={cn(matchingKeyIssue && "border-destructive focus:ring-destructive")} aria-invalid={!!matchingKeyIssue}>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="openai">{t("routes.hints.openaiProtocol", "OpenAI 格式")}</SelectItem>
                       <SelectItem value="anthropic">{t("routes.hints.anthropicProtocol", "Anthropic 格式")}</SelectItem>
                     </SelectContent>
                   </Select>
+                  {matchingKeyIssue && !copying && (
+                    <p className="text-xs text-destructive col-span-2">
+                      {t("routes.errors.matchingKeyConflict", "该 Host、Path 与 Protocol 组合已有路由")}
+                    </p>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-8 pt-5 col-span-2">
@@ -184,7 +246,7 @@ export function RouteDialog() {
 
             <DialogFooter className="pt-4 border-t">
               <Button type="button" variant="ghost" onClick={closeDialog}>{t("common.cancel", "取消")}</Button>
-              <Button type="submit">{t("routes.actions.save", "保存")}</Button>
+              <Button type="submit" disabled={matchingBlocked}>{t("routes.actions.save", "保存")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

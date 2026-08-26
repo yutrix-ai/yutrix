@@ -16,7 +16,7 @@ export default function RoutesPage() {
 
 
   const contextValue = {
-    dialogOpen: state.dialogOpen, setDialogOpen: state.setDialogOpen, editingId: state.editingId, handleSave: state.handleSave, formData: state.formData, setFormData: state.setFormData,
+    dialogOpen: state.dialogOpen, setDialogOpen: state.setDialogOpen, editingId: state.editingId, copying: state.copying, identityIssues: state.identityIssues, handleSave: state.handleSave, formData: state.formData, setFormData: state.setFormData,
     providers: state.providers, handlePathChange: state.handlePathChange, handleProtocolChange: state.handleProtocolChange,
     policies: state.policies,
     groups: state.groups, usersForSelect: state.usersForSelect, closeDialog: state.closeDialog, getProviderProtocolForSelection: state.getProviderProtocolForSelection,
@@ -47,7 +47,8 @@ export default function RoutesPage() {
         allModels={state.allModels}
         getReadinessBadge={state.getReadinessBadge} 
         toggleEnable={state.toggleEnable} 
-        openEdit={state.openEdit} 
+        openEdit={state.openEdit}
+        openCopy={state.openCopy}
         openScheduleDialog={state.openScheduleDialog} 
         setDeleteConfirm={state.setDeleteConfirm} 
         openCreate={state.openCreate}

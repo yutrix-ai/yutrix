@@ -748,6 +748,7 @@
     "title": "路由配置",
     "actions": {
       "create": "新建路由",
+      "copy": "复制",
       "save": "保存",
       "configureStrategy": "配置策略",
       "addTarget": "添加目标层"
@@ -755,7 +756,17 @@
     "dialog": {
       "addTitle": "新建路由规则",
       "editTitle": "编辑路由规则",
-      "description": "配置网关的请求转发规则"
+      "copyTitle": "复制路由规则",
+      "description": "配置网关的请求转发规则",
+      "copyDescription": "已带入原路由的转发配置。请确认规则名称，并修改 Host、路径或协议后再保存。"
+    },
+    "errors": {
+      "nameRequired": "规则名称不能为空",
+      "nameConflict": "规则名称已存在",
+      "matchingKeyConflict": "该 Host、Path 与 Protocol 组合已有路由"
+    },
+    "copyName": {
+      "label": "副本"
     },
     "badges": {
       "bestEffort": "尽力而为"
@@ -768,7 +779,7 @@
       "routingTarget": "请求路由转发目标 (漏斗模型)"
     },
     "fields": {
-      "name": "规则名称",
+      "name": "规则名称 *",
       "host": "Host / 二级域名 *",
       "path": "请求路径 *",
       "protocol": "路由协议 *",

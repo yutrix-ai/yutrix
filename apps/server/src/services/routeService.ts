@@ -9,6 +9,7 @@ import {
 } from "../db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
+import { normalizeRouteHostKey } from "@promptgate/shared";
 
 export async function getUserAuthorizedRouteIds(userId: string): Promise<Set<string>> {
   const userGroupsList = await db
@@ -86,7 +87,8 @@ export async function getRouteAuthorizations(routeId: string) {
 }
 
 export async function resolveRouteHost(hostInput: string) {
-  if (hostInput === "*") {
+  const trimmed = String(hostInput ?? "").trim();
+  if (trimmed === "*" || trimmed.toLowerCase() === "all") {
     return { subdomainId: null, hostname: "*", shortName: "*" };
   }
 
@@ -96,19 +98,14 @@ export async function resolveRouteHost(hostInput: string) {
     .where(eq(systemSettings.key, "mainDomain"));
   const mainDomain = settings.length > 0 ? settings[0].value : "";
 
-  let hostname = hostInput;
-  let shortName = hostInput;
-  if (!hostInput.includes(".")) {
-    if (mainDomain) {
-      hostname = `${hostInput}.${mainDomain}`;
-    } else if (process.env.NODE_ENV !== "production") {
-      hostname = `${hostInput}.localhost`;
-    } else {
-      throw new Error("请先在系统设置中配置主域名，或填写完整 Host。");
-    }
-  } else {
-    shortName = hostInput.split(".")[0];
+  if (!trimmed.includes(".") && !mainDomain && process.env.NODE_ENV === "production") {
+    throw new Error("请先在系统设置中配置主域名，或填写完整 Host。");
   }
+
+  const hostname = normalizeRouteHostKey(trimmed, mainDomain || "", {
+    fallbackLocalhost: process.env.NODE_ENV !== "production",
+  });
+  const shortName = hostname.split(".")[0];
 
   return { subdomainId: undefined, hostname, shortName };
 }

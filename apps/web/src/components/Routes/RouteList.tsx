@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Edit2, Trash2, CalendarRange, Route as RouteIcon, Clock, SlidersHorizontal, Zap } from "lucide-react";
+import { Edit2, Trash2, CalendarRange, Route as RouteIcon, Clock, SlidersHorizontal, Zap, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -71,7 +71,7 @@ function renderStrategyBadges(rules: any, allModels: any[], t: any) {
 
 export function RouteList({ 
   routes, providers, allModels = [], getReadinessBadge, toggleEnable, 
-  openEdit, openScheduleDialog, setDeleteConfirm, openCreate, loading = false
+  openEdit, openCopy, openScheduleDialog, setDeleteConfirm, openCreate, loading = false
 }: any) {
   const { t } = useTranslation();
 
@@ -279,6 +279,16 @@ export function RouteList({
                             {r.schedules.length}
                           </span>
                         )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground"
+                        onClick={() => openCopy(r)}
+                        title={t("routes.actions.copy", "复制")}
+                        aria-label={t("routes.actions.copy", "复制")}
+                      >
+                        <Copy className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(r)}>
                         <Edit2 className="h-4 w-4" />

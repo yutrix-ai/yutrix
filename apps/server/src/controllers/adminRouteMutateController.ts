@@ -19,6 +19,8 @@ import {
 } from "../services/routeService";
 import { stringifyStrategyRoutingRules } from "../services/strategyRouting";
 import { normalizeIpAclForStorage } from "../utils/ipAcl";
+import { assertRouteIdentityAvailable } from "../services/routeIdentityGuard";
+import { trimRouteName } from "@promptgate/shared";
 
 export async function createAdminRoute(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -47,6 +49,18 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
 
   if (!hostInput || !path || !incomingProtocol || !targets || targets.length === 0) {
     return reply.code(400).send({ error: "缺少必填字段或路由目标为空" });
+  }
+
+  const routeName = trimRouteName(name);
+  const identity = await assertRouteIdentityAvailable({
+    name: routeName,
+    hostInput,
+    path,
+    incomingProtocol,
+    requireName: true,
+  });
+  if (!identity.ok) {
+    return reply.code(400).send({ error: identity.error, code: identity.code });
   }
 
   let ipWhitelist: string | null = null;
@@ -107,7 +121,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     await db.insert(endpoints).values({
       id: endpointId,
       userId: user.id,
-      name: name,
+      name: routeName,
       path: path,
       incomingProtocol: incomingProtocol,
       enabled: true,
@@ -123,7 +137,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
   const routeId = crypto.randomUUID();
   await db.insert(endpointRoutes).values({
     id: routeId,
-    name: name || "",
+    name: routeName,
     endpointId,
     subdomainId,
     providerId: firstTarget.providerId,
@@ -152,7 +166,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     action: "路由创建",
     username: user.username,
     routeId,
-    routeName: name,
+    routeName,
     host: routeHost,
     path,
     incomingProtocol,
@@ -240,6 +254,25 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
   let finalSubdomainId = route.subdomainId;
   const currentHostname = subdomain ? subdomain.hostname : "*";
   const requestedHostInput = body.hostInput ?? body.host;
+  const nextHostInput =
+    requestedHostInput !== undefined && requestedHostInput !== ""
+      ? requestedHostInput
+      : currentHostname;
+  const nextPath = body.path !== undefined ? body.path : endpoint.path;
+  const nameProvided = body.name !== undefined;
+  const nextName = nameProvided ? trimRouteName(body.name) : route.name || "";
+  const identity = await assertRouteIdentityAvailable({
+    name: nextName,
+    hostInput: nextHostInput,
+    path: nextPath,
+    incomingProtocol: patchIncomingProtocol,
+    excludeRouteId: id,
+    requireName: nameProvided,
+  });
+  if (!identity.ok) {
+    return reply.code(400).send({ error: identity.error, code: identity.code });
+  }
+
   if (requestedHostInput && requestedHostInput !== currentHostname) {
     if (requestedHostInput === "*") {
       finalSubdomainId = null;
@@ -308,7 +341,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
   }
 
   await db.update(endpointRoutes).set({
-    name: body.name !== undefined ? body.name : route.name,
+    name: nameProvided ? nextName : route.name,
     endpointId: finalEndpointId,
     subdomainId: finalSubdomainId,
     providerId: firstTarget.providerId,
@@ -345,7 +378,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     action: "路由更新",
     username: user.username,
     routeId: id,
-    routeName: body.name !== undefined ? body.name : (route.name || endpoint.name),
+    routeName: nameProvided ? nextName : (route.name || endpoint.name),
     host: updatedSubdomain[0]?.hostname || "*",
     path: updatedEndpoint[0]?.path || endpoint.path,
     incomingProtocol: updatedEndpoint[0]?.incomingProtocol || endpoint.incomingProtocol,
