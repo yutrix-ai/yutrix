@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { googleAdapter } from "../src/routes/gateway/providerAdapters/googleAdapter";
 import {
+  CLIENT_CLOSED_CODE,
+  CLIENT_CLOSED_ERROR_TYPE,
+  CLIENT_CLOSED_RETRY_CLASS,
+  CLIENT_CLOSED_STATUS,
+  DOWNSTREAM_CONNECTION_CLOSED_MESSAGE,
+} from "../src/routes/gateway/clientClosed";
+import {
   forwardSSEStreamAdapted,
   forwardSSEStreamTransparent,
 } from "../src/routes/gateway/streamForwarder";
@@ -33,10 +40,18 @@ function createControlledStream() {
   return {
     stream,
     enqueueSse(data: any) {
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      try {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      } catch (err: any) {
+        if (err?.code !== "ERR_INVALID_STATE") throw err;
+      }
     },
     close() {
-      controller.close();
+      try {
+        controller.close();
+      } catch (err: any) {
+        if (err?.code !== "ERR_INVALID_STATE") throw err;
+      }
     },
   };
 }
@@ -304,3 +319,147 @@ describe("stripNullOpenAIDeltaContent (OpenCode + GLM-5)", () => {
     expect(output).toContain("reasoning_content");
   });
 });
+
+function createMutableReply(initial?: { destroyed?: boolean; writableEnded?: boolean }) {
+  const writes: string[] = [];
+  const raw = {
+    destroyed: initial?.destroyed ?? false,
+    writableEnded: initial?.writableEnded ?? false,
+    write: vi.fn((chunk: string) => {
+      if (raw.destroyed || raw.writableEnded) {
+        throw new Error("write after end");
+      }
+      writes.push(String(chunk));
+      return true;
+    }),
+  };
+  return { reply: { raw } as any, writes, raw };
+}
+
+function contentChunk(text: string) {
+  return {
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+  };
+}
+
+function expectClientClosedTerminal(terminal: any) {
+  expect(terminal).toBeDefined();
+  expect(terminal.statusCode).toBe(CLIENT_CLOSED_STATUS);
+  expect(terminal.code).toBe(CLIENT_CLOSED_CODE);
+  expect(terminal.errorType).toBe(CLIENT_CLOSED_ERROR_TYPE);
+  expect(terminal.retryClass).toBe(CLIENT_CLOSED_RETRY_CLASS);
+  expect(terminal.retryable).toBe(false);
+  expect(terminal.statusCode).not.toBe(502);
+  expect(terminal.errorType).not.toBe("upstream_error");
+  expect(String(terminal.message || "")).toBeTruthy();
+  expect(String(terminal.message)).not.toBe("undefined");
+}
+
+describe("stream forwarder client disconnect", () => {
+  it("classifies a destroyed reply before the first transparent chunk as client-closed and does not write", async () => {
+    const { reply, writes, raw } = createMutableReply({ destroyed: true });
+    const upstream = createControlledStream();
+    upstream.enqueueSse(contentChunk("hello"));
+    upstream.close();
+
+    const result = await forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+    );
+
+    expectClientClosedTerminal(result.terminalError);
+    expect(result.terminalEventSent).toBeFalsy();
+    expect(writes).toEqual([]);
+    expect(raw.write).not.toHaveBeenCalled();
+  });
+
+  it("classifies a writableEnded reply before the first adapted chunk as client-closed and does not write", async () => {
+    const { reply, writes, raw } = createMutableReply({ writableEnded: true });
+    const upstream = createControlledStream();
+    upstream.enqueueSse(contentChunk("hello"));
+    upstream.close();
+
+    const result = await forwardSSEStreamAdapted(
+      reply,
+      upstream.stream,
+      {
+        targetProtocol: "anthropic",
+        messageId: "msg_closed",
+        modelId: "gemini-3.7-flash-high",
+        promptTokens: 8,
+      },
+    );
+
+    expectClientClosedTerminal(result.terminalError);
+    expect(result.terminalEventSent).toBeFalsy();
+    expect(writes).toEqual([]);
+    expect(raw.write).not.toHaveBeenCalled();
+  });
+
+  it("stops writing after the transparent socket is destroyed mid-stream", async () => {
+    const { reply, writes, raw } = createMutableReply();
+    const upstream = createControlledStream();
+
+    const resultPromise = forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+    );
+
+    upstream.enqueueSse(contentChunk("first"));
+    await flushMicrotasks();
+    expect(writes.join("")).toContain("first");
+    const writesAfterFirst = writes.length;
+
+    raw.destroyed = true;
+    upstream.enqueueSse(contentChunk("second"));
+    await flushMicrotasks();
+    const result = await resultPromise;
+
+    expectClientClosedTerminal(result.terminalError);
+    expect(writes.length).toBe(writesAfterFirst);
+    expect(writes.join("")).not.toContain("second");
+    expect(writes.join("")).not.toContain("Downstream connection closed");
+    expect(result.terminalError.message).toBe(DOWNSTREAM_CONNECTION_CLOSED_MESSAGE);
+  });
+
+  it("stops writing after the adapted socket is destroyed mid-stream", async () => {
+    const { reply, writes, raw } = createMutableReply();
+    const upstream = createControlledStream();
+
+    const resultPromise = forwardSSEStreamAdapted(
+      reply,
+      upstream.stream,
+      {
+        targetProtocol: "anthropic",
+        messageId: "msg_mid",
+        modelId: "gemini-3.7-flash-high",
+        promptTokens: 8,
+      },
+    );
+
+    upstream.enqueueSse(contentChunk("first"));
+    await flushMicrotasks();
+    expect(writes.join("")).toContain("first");
+    const writesAfterFirst = writes.length;
+
+    raw.destroyed = true;
+    upstream.enqueueSse(contentChunk("second"));
+    await flushMicrotasks();
+    const result = await resultPromise;
+
+    expectClientClosedTerminal(result.terminalError);
+    expect(writes.length).toBe(writesAfterFirst);
+    expect(writes.join("")).not.toContain("second");
+  });
+});
+

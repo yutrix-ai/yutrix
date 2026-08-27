@@ -51,12 +51,30 @@ const EARLY_IDLE_KEEP_ALIVE_MS = 2500;
 const HIDDEN_PROGRESS_KEEP_ALIVE_MS = 2500;
 
 import { mapErrorTypeToAnthropic } from "../../utils/gatewayError";
+import {
+  buildClientClosedTerminalError,
+  classifyStreamTransportError,
+  isClientClosedClassifierInput,
+} from "./clientClosed";
 
 export function classifyUpstreamErrorWithAdapter(
   adapter: any,
   input: { rawError: any; statusCode?: number; phase: "http" | "nonstream" | "fake_stream" | "stream" },
   context: any
 ): any {
+  if (isClientClosedClassifierInput(input)) {
+    const raw = input.rawError;
+    const nestedMessage =
+      raw?.error?.message
+      || raw?.message
+      || (raw instanceof Error ? raw.message : undefined);
+    return buildClientClosedTerminalError({
+      adapterId: adapter?.id,
+      phase: input.phase,
+      message: nestedMessage,
+    });
+  }
+
   if (adapter && typeof adapter.classifyUpstreamError === "function") {
     try {
       const res = adapter.classifyUpstreamError(input, context);
@@ -305,6 +323,7 @@ function createDownstreamWriter(
   return {
     write,
     pingIfIdle,
+    isWritable,
     stop: () => {
       if (pingInterval) clearInterval(pingInterval);
     },
@@ -312,6 +331,84 @@ function createDownstreamWriter(
       if (writeError) throw writeError;
     },
   };
+}
+
+function classifyStreamCatchError(
+  err: unknown,
+  reply: FastifyReply,
+  adapter: any,
+  adapterContext: any,
+): { transport: ReturnType<typeof classifyStreamTransportError>; classified: any } {
+  const transport = classifyStreamTransportError(err, {
+    replyDestroyed: !!reply.raw.destroyed,
+    replyWritableEnded: !!reply.raw.writableEnded,
+  });
+  const classified = classifyUpstreamErrorWithAdapter(
+    adapter,
+    {
+      rawError: err,
+      statusCode: transport.statusCode,
+      phase: "stream",
+    },
+    adapterContext,
+  );
+  const terminal = transport.kind === "client_closed"
+    ? buildClientClosedTerminalError({
+        adapterId: adapter?.id || classified?.adapterId,
+        phase: "stream",
+        message: classified?.message,
+      })
+    : classified;
+  return { transport, classified: terminal };
+}
+
+function logStreamCatchError(
+  logAction: any,
+  baseActionLog: any,
+  adapter: any,
+  classified: any,
+  transportKind: ReturnType<typeof classifyStreamTransportError>["kind"],
+) {
+  if (!logAction || !baseActionLog) return;
+  if (transportKind === "client_closed") {
+    logAction({
+      ...baseActionLog,
+      level: "INFO",
+      code: "request.client_closed",
+      adapterId: adapter?.id || "transparent",
+      errorCode: classified.code,
+      errorType: classified.errorType,
+      message: classified.message,
+    });
+    return;
+  }
+  logAction({
+    ...baseActionLog,
+    level: "ERROR",
+    code: "request.provider_adapter.stream_error",
+    adapterId: adapter?.id || "transparent",
+    errorCode: classified.code,
+    errorType: classified.errorType,
+    message: `Stream exception: ${classified.message}`,
+  });
+}
+
+function emitStreamCatchErrorIfNeeded(
+  downstream: ReturnType<typeof createDownstreamWriter>,
+  incomingProtocol: string | undefined,
+  classified: any,
+  transportKind: ReturnType<typeof classifyStreamTransportError>["kind"],
+  meaningfulClientOutputSent: boolean,
+): boolean {
+  if (transportKind === "client_closed") return false;
+  if (!meaningfulClientOutputSent) return false;
+  if (!downstream.isWritable()) return false;
+  try {
+    downstream.write(formatStreamErrorEvent(incomingProtocol, classified.statusCode, classified.message));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -913,17 +1010,7 @@ export async function forwardSSEStreamTransparent(
   } catch (err: any) {
     if (streamTimeoutId) clearTimeout(streamTimeoutId);
 
-    const isTimeout = err.message === "Stream chunk timeout";
-    const statusCode = isTimeout ? 504 : 502;
-    const classified = classifyUpstreamErrorWithAdapter(
-      adapter,
-      {
-        rawError: err,
-        statusCode,
-        phase: "stream",
-      },
-      adapterContext
-    );
+    const { transport, classified } = classifyStreamCatchError(err, reply, adapter, adapterContext);
 
     if (adapterState) {
       adapterState.terminalError = classified;
@@ -931,25 +1018,15 @@ export async function forwardSSEStreamTransparent(
 
     await reader.cancel().catch(() => {});
 
-    if (logAction && baseActionLog) {
-      logAction({
-        ...baseActionLog,
-        level: "ERROR",
-        code: "request.provider_adapter.stream_error",
-        adapterId: adapter?.id || "transparent",
-        errorCode: classified.code,
-        errorType: classified.errorType,
-        message: `Stream exception: ${classified.message}`,
-      });
-    }
+    logStreamCatchError(logAction, baseActionLog, adapter, classified, transport.kind);
 
-    let sentEvent = false;
-    if (meaningfulClientOutputSent) {
-      downstream.write(formatStreamErrorEvent(incomingProtocol, statusCode, classified.message));
-      sentEvent = true;
-    } else {
-      // transient/early stream error - don't emit downstream so orchestrator can retry
-    }
+    const sentEvent = emitStreamCatchErrorIfNeeded(
+      downstream,
+      incomingProtocol,
+      classified,
+      transport.kind,
+      meaningfulClientOutputSent,
+    );
 
     observer?.onStreamEnd?.();
     return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: classified, meaningfulClientOutputSent, visibleClientOutputSent };
@@ -1044,6 +1121,7 @@ export async function forwardSSEStreamAdapted(
   let closingSentinelEmitted = false;
   const hasPreludeMessageStart = (reply.raw as any).__promptgateAnthropicMessageStarted === true;
 
+  try {
   // Emit Anthropic message_start envelope only if not stitching and the early
   // stream prelude did not already open the Anthropic message.
   if (!stitchState?.isStitching && !hasPreludeMessageStart) {
@@ -1072,7 +1150,6 @@ export async function forwardSSEStreamAdapted(
     // Let's set anthropicBlockIndex to a non-zero value or just assume it's text continuation.
   }
 
-  try {
   while (true) {
     let racePromise: any = reader.read();
     if (streamTimeoutMs && streamTimeoutMs > 0) {
@@ -1312,17 +1389,7 @@ export async function forwardSSEStreamAdapted(
   } catch (err: any) {
     if (streamTimeoutId) clearTimeout(streamTimeoutId);
 
-    const isTimeout = err.message === "Stream chunk timeout";
-    const statusCode = isTimeout ? 504 : 502;
-    const classified = classifyUpstreamErrorWithAdapter(
-      adapter,
-      {
-        rawError: err,
-        statusCode,
-        phase: "stream",
-      },
-      adapterContext
-    );
+    const { transport, classified } = classifyStreamCatchError(err, reply, adapter, adapterContext);
 
     if (adapterState) {
       adapterState.terminalError = classified;
@@ -1330,25 +1397,15 @@ export async function forwardSSEStreamAdapted(
 
     await reader.cancel().catch(() => {});
 
-    if (logAction && baseActionLog) {
-      logAction({
-        ...baseActionLog,
-        level: "ERROR",
-        code: "request.provider_adapter.stream_error",
-        adapterId: adapter?.id || "transparent",
-        errorCode: classified.code,
-        errorType: classified.errorType,
-        message: `Stream exception: ${classified.message}`,
-      });
-    }
+    logStreamCatchError(logAction, baseActionLog, adapter, classified, transport.kind);
 
-    let sentEvent = false;
-    if (meaningfulClientOutputSent) {
-      downstream.write(formatStreamErrorEvent("anthropic", statusCode, classified.message));
-      sentEvent = true;
-    } else {
-      // transient/early stream error - don't emit downstream so orchestrator can retry
-    }
+    const sentEvent = emitStreamCatchErrorIfNeeded(
+      downstream,
+      "anthropic",
+      classified,
+      transport.kind,
+      meaningfulClientOutputSent,
+    );
 
     observer?.onStreamEnd?.();
     return { gotFirstChunk, isLengthTruncated: false, terminalEventSent: sentEvent, terminalError: classified, meaningfulClientOutputSent };

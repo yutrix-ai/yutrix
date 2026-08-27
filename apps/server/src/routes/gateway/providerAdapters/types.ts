@@ -41,7 +41,7 @@ export interface StreamTerminalError {
   errorType: string;
   message: string;
   retryable?: boolean;
-  retryClass?: "rate_limit" | "provider_capacity" | "provider_unavailable" | "network" | "timeout" | "authentication" | "invalid_request" | "protocol_payload_incompatible" | "unknown";
+  retryClass?: "rate_limit" | "provider_capacity" | "provider_unavailable" | "network" | "timeout" | "authentication" | "invalid_request" | "protocol_payload_incompatible" | "client_closed" | "unknown";
   adapterId?: "openrouter" | "google" | "transparent";
   upstreamProvider?: string;
   upstreamCode?: string;

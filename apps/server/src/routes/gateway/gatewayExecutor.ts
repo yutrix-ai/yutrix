@@ -20,6 +20,13 @@ import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
 import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError, isAvailabilityHopStatus, resolveUpstreamTimeoutMs } from "./gatewayExecutorUtils";
+import {
+  CLIENT_CLOSED_CODE,
+  CLIENT_CLOSED_ERROR_TYPE,
+  clientClosedDisconnectMessage,
+  isDownstreamWriteClosedError,
+  shouldSkipUpstreamRescue,
+} from "./clientClosed";
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
@@ -221,6 +228,57 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   let anthropicState: any = null;
     let earlyAnthropicMessageId: string | undefined;
   let lastStreamResultIsTruncated = false;
+  let clientClosedFinalized = false;
+
+  const rescueSkipSignals = () => ({
+    clientDisconnected: ctx.clientDisconnected,
+    abortSignaled: controller.signal.aborted,
+    replyDestroyed: !!reply.raw.destroyed,
+    replyWritableEnded: !!reply.raw.writableEnded,
+  });
+
+  const finalizeClientClosedRequest = async (opts?: {
+    gotFirstChunk?: boolean;
+    responseData?: any;
+  }) => {
+    keepContinuity = false;
+    clientClosedFinalized = true;
+    stopStreamPrelude();
+    const rd = opts?.responseData ?? responseData;
+    const gotFirstChunk = !!(opts?.gotFirstChunk ?? ctx.stream.gotFirstChunk);
+    const statusCode = gotFirstChunk ? (rd?.status || 200) : 499;
+    const disconnectMessage = clientClosedDisconnectMessage(gotFirstChunk);
+    ctx.clientDisconnected = true;
+
+    const finalLogSummary = await finalizeStreamLog(ctx, statusCode, {
+      usageStatus: gotFirstChunk ? undefined : "failed",
+      errorCode: CLIENT_CLOSED_CODE,
+      errorMessage: disconnectMessage,
+    });
+
+    logAction({
+      ...baseActionLog,
+      level: "INFO",
+      code: "request.completed",
+      providerName: rd?.provider?.name,
+      modelId: currentAttempt.modelId,
+      statusCode,
+      promptTokens: finalLogSummary.promptTokens,
+      completionTokens: finalLogSummary.completionTokens,
+      totalTokens: finalLogSummary.totalTokens,
+      latencyMs: Date.now() - startTime,
+      queueMs: rd?.queueMs || 0,
+      fallback: currentAttempt.isFallback,
+      fallbackText: currentAttempt.fallbackReason,
+      errorCode: CLIENT_CLOSED_CODE,
+      errorType: CLIENT_CLOSED_ERROR_TYPE,
+      message: disconnectMessage,
+    });
+
+    if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+      try { reply.raw.end(); } catch {}
+    }
+  };
 
   const ensureEarlyStreamPrelude = (isAnthropicAdaptationPrelude = false) => {
     if (!isStreaming || stopEarlyStreamPrelude || reply.raw.destroyed || reply.raw.writableEnded) return;
@@ -553,6 +611,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       await processQueue.add(async (holdGlobal) => {
         await userQueue.add(async (holdUser) => {
           while (attemptCount < maxAttempts) {
+            if (shouldSkipUpstreamRescue(rescueSkipSignals())) {
+              await finalizeClientClosedRequest();
+              return;
+            }
             attemptCount++;
             currentRoundId = "round-" + Math.random().toString(36).slice(2) + "-" + Date.now();
 
@@ -1671,6 +1733,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             }
             (ctx as any)._responseData = responseData;
 
+            if (shouldSkipUpstreamRescue({
+              ...rescueSkipSignals(),
+              fetchStatus: responseData?.status,
+              terminalError: responseData?.terminalError,
+            })) {
+              await finalizeClientClosedRequest();
+              return;
+            }
+
             const isCapacityError = isOpenRouterCapacityError(responseData?.terminalError);
 
             if (isCapacityError) {
@@ -2022,6 +2093,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         });
       });
 
+      if (clientClosedFinalized) return;
       if (cacheServed) return;
       if (loopStopServed) return;
 
@@ -2056,6 +2128,17 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         const canRetry = !respResult.terminalEventSent && !respResult.meaningfulClientOutputSent;
         const isCapacityError = isOpenRouterCapacityError(streamTermErr);
 
+        if (shouldSkipUpstreamRescue({
+          ...rescueSkipSignals(),
+          terminalError: streamTermErr,
+        })) {
+          await finalizeClientClosedRequest({
+            gotFirstChunk: ctx.stream.gotFirstChunk || respResult.meaningfulClientOutputSent,
+            responseData,
+          });
+          return;
+        }
+
         // --- Stream Terminal Error Decision Matrix ---
         // Priority 1: If meaningful client output was already sent, we cannot retry.
         if (!canRetry) {
@@ -2074,6 +2157,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             meaningfulClientOutputSent: respResult.meaningfulClientOutputSent,
             fingerprint: streamTermErr.fingerprint,
             safeMetadata: streamTermErr.safeMetadata,
+            message: streamTermErr.message,
           });
           await finalizeGatewayTerminalFailure(ctx, responseData, respResult);
           return;
@@ -2268,6 +2352,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
           meaningfulClientOutputSent: false,
           fingerprint: streamTermErr.fingerprint,
           safeMetadata: streamTermErr.safeMetadata,
+          message: streamTermErr.message,
         });
         await finalizeGatewayTerminalFailure(ctx, responseData, respResult);
         return;
@@ -2386,37 +2471,17 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
       stopStreamPrelude();
       keepContinuity = false;
-      const gotFirstChunk = ctx.stream.gotFirstChunk;
-      const isClientDisconnect = ctx.clientDisconnected || request.raw.destroyed || request.raw.closed || err.code === "ECONNRESET" || err.message?.includes("closed") || err.message?.includes("destroyed");
+      const isClientDisconnect =
+        shouldSkipUpstreamRescue(rescueSkipSignals())
+        || isDownstreamWriteClosedError(err)
+        || err.code === "EPIPE"
+        || err.code === "ECONNRESET";
 
       if (isClientDisconnect) {
-        const statusCode = gotFirstChunk ? (responseData?.status || 200) : 499;
-        const disconnectMessage = gotFirstChunk ? null : "客户端在收到响应前断开了连接";
-        const finalLogSummary = await finalizeStreamLog(ctx, statusCode, {
-          usageStatus: gotFirstChunk ? undefined : "failed",
-          errorMessage: disconnectMessage,
+        await finalizeClientClosedRequest({
+          gotFirstChunk: ctx.stream.gotFirstChunk,
+          responseData,
         });
-
-        logAction({
-          ...baseActionLog,
-          level: "INFO",
-          code: "request.completed",
-          providerName: responseData?.provider?.name,
-          modelId: currentAttempt.modelId,
-          statusCode,
-          promptTokens: finalLogSummary.promptTokens,
-          completionTokens: finalLogSummary.completionTokens,
-          totalTokens: finalLogSummary.totalTokens,
-          latencyMs: Date.now() - startTime,
-          queueMs: responseData?.queueMs || 0,
-          fallback: currentAttempt.isFallback,
-          fallbackText: currentAttempt.fallbackReason,
-          message: gotFirstChunk ? "客户端提前关闭连接" : "客户端在收到响应前断开了连接",
-        });
-
-        if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-          try { reply.raw.end(); } catch {}
-        }
         return;
       }
 
