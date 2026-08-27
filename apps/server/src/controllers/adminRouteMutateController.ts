@@ -378,7 +378,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     action: "路由更新",
     username: user.username,
     routeId: id,
-    routeName: nameProvided ? nextName : (route.name || endpoint.name),
+    routeName: nameProvided ? nextName : (route.name || endpoint.name || ""),
     host: updatedSubdomain[0]?.hostname || "*",
     path: updatedEndpoint[0]?.path || endpoint.path,
     incomingProtocol: updatedEndpoint[0]?.incomingProtocol || endpoint.incomingProtocol,
