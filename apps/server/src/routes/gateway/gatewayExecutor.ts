@@ -19,7 +19,7 @@ import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
 import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
-import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError, isAvailabilityHopStatus, resolveUpstreamTimeoutMs } from "./gatewayExecutorUtils";
+import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError, isAvailabilityHopStatus, resolveAttemptTimeoutMs } from "./gatewayExecutorUtils";
 import {
   CLIENT_CLOSED_CODE,
   CLIENT_CLOSED_ERROR_TYPE,
@@ -1571,9 +1571,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               const abortListener = () => fetchController.abort();
               controller.signal.addEventListener("abort", abortListener);
 
+              const attemptTimeoutMs = resolveAttemptTimeoutMs(provider.timeoutMs, ctx.routing.endpoint?.timeoutMs);
               timeoutId = setTimeout(
                 () => fetchController.abort(),
-                resolveUpstreamTimeoutMs(provider.timeoutMs),
+                attemptTimeoutMs,
               );
 
               let upstreamHeaders = googleNativeRequest
@@ -1630,6 +1631,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   adapterContext: adapterCtx,
                   adapterState: ctx.activeProviderAdapterState,
                   roundId: currentRoundId,
+                  attemptTimeoutMs,
                  });
                 if (!result.isStream && result.status >= 400) {
                   const omitPayload = [429, 500, 502, 503, 504, 529].includes(result.status);

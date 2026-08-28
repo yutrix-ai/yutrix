@@ -8,7 +8,7 @@ import { resolveUsageForLog, UsageLogValues } from "../../utils/gatewayContent";
 import { resolveRoundUsage, commitRoundUsage } from "./continuityHelper";
 import { updateRequestLog } from "../../services/requestLogService";
 import type { GatewayRequestContext } from "./types";
-import { remainingFirstChunkTimeoutMs } from "./gatewayExecutorUtils";
+import { pickFirstAnswerTimeoutMs, remainingFirstChunkTimeoutMs } from "./gatewayExecutorUtils";
 import { forwardStream } from "./streaming";
 import { finalizeStreamLog, isAuditExemptUser, appendRoutingTraceToOutput } from "./logging";
 import { writeStreamErrorResponse, writeStreamHeaders } from "./streamProtocol";
@@ -284,7 +284,7 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
         }
 
         const firstChunkTimeoutMs = remainingFirstChunkTimeoutMs(
-          responseData.provider?.timeoutMs,
+          pickFirstAnswerTimeoutMs(responseData.provider?.timeoutMs, ctx.routing.endpoint?.timeoutMs),
           responseData.latencyMs,
         );
         const streamResult = await forwardStream(

@@ -77,6 +77,21 @@ export function remainingFirstChunkTimeoutMs(timeoutMs: unknown, elapsedMs: unkn
   return Math.max(1, Math.floor(n) - elapsed);
 }
 
+function positiveTimeoutMs(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return Math.floor(n);
+}
+
+/** Route timeout wins when set; otherwise the provider first-answer SLA. 0/unset on both → inherit none. */
+export function pickFirstAnswerTimeoutMs(providerTimeoutMs: unknown, routeTimeoutMs?: unknown): number | undefined {
+  return positiveTimeoutMs(routeTimeoutMs) ?? positiveTimeoutMs(providerTimeoutMs);
+}
+
+export function resolveAttemptTimeoutMs(providerTimeoutMs: unknown, routeTimeoutMs?: unknown): number {
+  return resolveUpstreamTimeoutMs(pickFirstAnswerTimeoutMs(providerTimeoutMs, routeTimeoutMs) ?? 0);
+}
+
 /** Provider is unavailable (not a bad key). Hop before same-key retries. */
 export function isAvailabilityHopStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504 || status === 529;

@@ -140,6 +140,8 @@ export interface UpstreamFetchConfig {
   baseLog: any;
   /** Timeout id to clear on response / error. */
   timeoutId: NodeJS.Timeout | undefined;
+  /** Combined route/provider no-answer budget for this attempt. */
+  attemptTimeoutMs?: number;
   /** Current attempt state (needed for error enrichment). */
   currentAttempt: {
     providerProtocol: string;
@@ -213,7 +215,7 @@ export async function executeUpstreamFetch(
           baseUrl: googleNativeBaseUrlOrigin(baseUrl),
           // Streaming first-answer SLA is abortSignal (TTFB) + first-chunk
           // timeout. The SDK timeout must not cut a healthy generation.
-          timeout: isStreaming ? 600_000 : resolveUpstreamTimeoutMs(provider.timeoutMs),
+          timeout: isStreaming ? 600_000 : (config.attemptTimeoutMs ?? resolveUpstreamTimeoutMs(provider.timeoutMs)),
         },
       });
 

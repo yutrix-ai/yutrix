@@ -12,6 +12,7 @@ import {
 import {
   buildCopiedRouteDraft,
   collectRouteIdentityIssues,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
   matchingKeySubmitBlocked,
   trimRouteName,
 } from "@promptgate/shared";
@@ -62,7 +63,7 @@ const emptyFormData = {
   path: "/v1/chat/completions",
   incomingProtocol: "openai",
   targets: [] as any[],
-  timeoutMs: 0,
+  timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
   retryCount: 3,
   queueTimeoutMs: 0,
   maxBodyMb: 0,

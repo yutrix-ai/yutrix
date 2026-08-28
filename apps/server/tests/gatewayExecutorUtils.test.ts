@@ -4,8 +4,10 @@ import {
   isAvailabilityHopStatus,
   isUpstreamCredentialUnavailableError,
   processErrorRetryLogic,
+  pickFirstAnswerTimeoutMs,
   remainingFirstChunkTimeoutMs,
   reserveAttemptBudgetForLayerSwitch,
+  resolveAttemptTimeoutMs,
   resolveUpstreamTimeoutMs,
 } from "../src/routes/gateway/gatewayExecutorUtils";
 
@@ -45,6 +47,24 @@ describe("remainingFirstChunkTimeoutMs", () => {
     expect(remainingFirstChunkTimeoutMs(10000, 0)).toBe(10000);
     expect(remainingFirstChunkTimeoutMs(10000, 10000)).toBe(1);
     expect(remainingFirstChunkTimeoutMs(10000, 15000)).toBe(1);
+  });
+});
+
+describe("pickFirstAnswerTimeoutMs / resolveAttemptTimeoutMs", () => {
+  it("lets a positive route timeout override the provider SLA", () => {
+    expect(pickFirstAnswerTimeoutMs(60000, 30000)).toBe(30000);
+    expect(resolveAttemptTimeoutMs(60000, 30000)).toBe(30000);
+  });
+
+  it("inherits the provider SLA when the route timeout is 0/unset", () => {
+    expect(pickFirstAnswerTimeoutMs(30000, 0)).toBe(30000);
+    expect(pickFirstAnswerTimeoutMs(30000, undefined)).toBe(30000);
+    expect(resolveAttemptTimeoutMs(30000, 0)).toBe(30000);
+  });
+
+  it("keeps first-answer SLA off when both are 0, but TTFB still has the 60s floor", () => {
+    expect(pickFirstAnswerTimeoutMs(0, 0)).toBeUndefined();
+    expect(resolveAttemptTimeoutMs(0, 0)).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
   });
 });
 

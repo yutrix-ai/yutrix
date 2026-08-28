@@ -796,7 +796,7 @@
       "fallbackMatchTarget": "尽力而为 (优先使用降级供应商提供的同名请求模型)",
       "fallbackMatchTargetDesc": "开启此项后，降级时系统会尝试匹配目标供应商中同名的模型。即便该模型在该供应商的开启列表中未勾选，只要同步的模型列表中存在（即使为禁用状态），网关也会通过此模型尽力发送请求。",
       "fallbackPolicy": "降级提示词策略 (可选)",
-      "timeout": "请求超时 (ms)",
+      "timeout": "无响应时限 (ms)",
       "retryCount": "重试次数",
       "queueTimeout": "排队超时 (ms)",
       "maxBody": "最大请求体 (MB)",
@@ -828,6 +828,7 @@
       "ipWhitelist": "0.0.0.0/0"
     },
     "hints": {
+      "timeout": "默认 30000（30 秒）。本路由无响应时限，超时则按 504 降级。填 0 则沿用供应商配置。",
       "openaiProtocol": "OpenAI 格式",
       "anthropicProtocol": "Anthropic 格式",
       "noPolicyOption": "无策略",

@@ -20,7 +20,7 @@ import {
 import { stringifyStrategyRoutingRules } from "../services/strategyRouting";
 import { normalizeIpAclForStorage } from "../utils/ipAcl";
 import { assertRouteIdentityAvailable } from "../services/routeIdentityGuard";
-import { trimRouteName } from "@promptgate/shared";
+import { DEFAULT_PROVIDER_TIMEOUT_MS, trimRouteName } from "@promptgate/shared";
 
 export async function createAdminRoute(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -125,7 +125,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
       path: path,
       incomingProtocol: incomingProtocol,
       enabled: true,
-      timeoutMs: timeoutMs !== undefined ? timeoutMs : 0,
+      timeoutMs: timeoutMs !== undefined ? timeoutMs : DEFAULT_PROVIDER_TIMEOUT_MS,
       queueTimeoutMs: queueTimeoutMs !== undefined ? queueTimeoutMs : 0,
       maxBodyMb: maxBodyMb !== undefined ? maxBodyMb : 0,
       createdAt: new Date(),

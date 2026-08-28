@@ -150,8 +150,11 @@ export function RouteDialog() {
               {/* 运行时配置 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label>{t("routes.fields.timeout", "请求超时 (ms)")}</Label>
-                <Input type="number" value={formData.timeoutMs} onChange={e => setFormData({ ...formData, timeoutMs: parseInt(e.target.value) || 0 })} />
+                <Label>{t("routes.fields.timeout", "无响应时限 (ms)")}</Label>
+                <Input type="number" min="0" value={formData.timeoutMs} onChange={e => setFormData({ ...formData, timeoutMs: parseInt(e.target.value) || 0 })} />
+                <p className="text-xs text-muted-foreground leading-snug">
+                  {t("routes.hints.timeout", "默认 30000（30 秒）。填 0 则沿用供应商无响应时限。")}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>{t("routes.fields.queueTimeout", "排队超时 (ms)")}</Label>
