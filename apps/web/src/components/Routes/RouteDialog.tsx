@@ -170,6 +170,22 @@ export function RouteDialog() {
               </div>
             </div>
 
+            <div className="flex items-start gap-3">
+              <Switch
+                id="timeout-eject"
+                checked={!!formData.timeoutEjectEnabled}
+                onCheckedChange={(checked) => setFormData({ ...formData, timeoutEjectEnabled: checked })}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="timeout-eject" className="cursor-pointer font-medium text-sm">
+                  {t("routes.fields.timeoutEject", "超时摘流")}
+                </Label>
+                <p className="text-xs text-muted-foreground leading-snug">
+                  {t("routes.hints.timeoutEject", "超时后摘除当前首层，后续请求立即降级；探活成功后恢复。默认关闭。")}
+                </p>
+              </div>
+            </div>
+
             {/* 来源限制 */}
             <div className="space-y-2">
               <Label htmlFor="ip-whitelist">{t("routes.fields.ipWhitelist", "来源限制")}</Label>

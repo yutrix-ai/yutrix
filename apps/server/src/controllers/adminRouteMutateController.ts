@@ -44,6 +44,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     schedules,
     targets,
     ipWhitelist: rawIpWhitelist,
+    timeoutEjectEnabled,
   } = body;
   const hostInput = rawHostInput ?? body.host;
 
@@ -150,6 +151,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     targets: JSON.stringify(resolvedTargets),
     retryCount: retryCount !== undefined ? retryCount : 3,
     ipWhitelist,
+    timeoutEjectEnabled: !!timeoutEjectEnabled,
     weight: 1,
     priority: 0,
     createdAt: new Date(),
@@ -354,6 +356,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     retryCount: patchRetryCount,
     targets: JSON.stringify(resolvedTargets),
     ipWhitelist: patchIpWhitelist,
+    timeoutEjectEnabled: body.timeoutEjectEnabled !== undefined ? !!body.timeoutEjectEnabled : route.timeoutEjectEnabled,
     status: body.status !== undefined ? body.status : (body.enabled ? "active" : route.status),
     updatedAt: new Date()
   }).where(eq(endpointRoutes.id, id));

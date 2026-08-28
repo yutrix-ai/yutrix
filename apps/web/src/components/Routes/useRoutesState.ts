@@ -64,6 +64,7 @@ const emptyFormData = {
   incomingProtocol: "openai",
   targets: [] as any[],
   timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
+  timeoutEjectEnabled: false,
   retryCount: 3,
   queueTimeoutMs: 0,
   maxBodyMb: 0,
@@ -379,6 +380,7 @@ export function useRoutesState() {
           promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId
         })),
         timeoutMs: formData.timeoutMs,
+        timeoutEjectEnabled: !!formData.timeoutEjectEnabled,
         retryCount: formData.retryCount,
         queueTimeoutMs: formData.queueTimeoutMs,
         maxBodyMb: formData.maxBodyMb,
@@ -447,6 +449,7 @@ export function useRoutesState() {
       ...emptyFormData,
       ...draft,
       targets: draft.targets,
+      timeoutEjectEnabled: !!route.timeoutEjectEnabled,
     });
     setDialogOpen(true);
   };
@@ -462,7 +465,9 @@ export function useRoutesState() {
     setFormData({
       name: route.name, hostInput, path: route.path, incomingProtocol: epProto,
       targets: parsedTargets,
-      timeoutMs: route.timeoutMs, retryCount: route.retryCount ?? 3, queueTimeoutMs: route.queueTimeoutMs, maxBodyMb: route.maxBodyMb,
+      timeoutMs: route.timeoutMs,
+      timeoutEjectEnabled: !!route.timeoutEjectEnabled,
+      retryCount: route.retryCount ?? 3, queueTimeoutMs: route.queueTimeoutMs, maxBodyMb: route.maxBodyMb,
       enabled: route.enabled,
       allowClientModel: route.allowClientModel || false,
       ipWhitelist: route.ipWhitelist || "",

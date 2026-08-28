@@ -36,6 +36,8 @@ export interface RouteItem {
   promptPolicyId: string | null;
   promptPolicyName: string;
   timeoutMs: number;
+  timeoutEjectEnabled?: boolean;
+  timeoutEjectObserving?: boolean;
   retryCount: number;
   queueTimeoutMs: number;
   maxBodyMb: number;

@@ -253,6 +253,13 @@
       "when": 1787892000000,
       "tag": "0035_drop_subdomains_name_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1787893200000,
+      "tag": "0036_timeout_eject",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ import {
   cleanupUnusedRouteSubdomain,
 } from "../services/routeService";
 import { parseStrategyRoutingRules } from "../services/strategyRouting";
+import { timeoutEjectAdminFields } from "../routes/gateway/timeoutEject";
 
 export async function getAdminRoutes(request: FastifyRequest, reply: FastifyReply) {
   // Only admin can access
@@ -134,6 +135,7 @@ export async function getAdminRoutes(request: FastifyRequest, reply: FastifyRepl
       isScheduleActive: !!activeSchedule,
       activeSchedule,
       ipWhitelist: route.ipWhitelist || "",
+      ...timeoutEjectAdminFields(route),
       readiness,
       errorMessage,
       createdAt: route.createdAt,
@@ -239,6 +241,7 @@ export async function getAdminRouteById(request: FastifyRequest, reply: FastifyR
     targets: route.targets ? (() => { try { return JSON.parse(route.targets); } catch { return null; } })() : null,
     schedules: parsedSchedules,
     ipWhitelist: route.ipWhitelist || "",
+    ...timeoutEjectAdminFields(route),
     authorizedUserIds: auth.userIds,
     authorizedGroupIds: auth.groupIds,
   };

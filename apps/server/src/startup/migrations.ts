@@ -87,6 +87,11 @@ export async function ensureFunnelRoutingColumns() {
     "useClientModel",
     "ALTER TABLE user_route_overrides ADD COLUMN useClientModel integer DEFAULT 0 NOT NULL",
   );
+  await addColumnIfMissing(
+    "endpoint_routes",
+    "timeoutEjectEnabled",
+    "ALTER TABLE endpoint_routes ADD COLUMN timeoutEjectEnabled integer DEFAULT 0 NOT NULL",
+  );
 
   // Data migration: convert old route target logic to the targets JSON array
   if (await tableExists("endpoint_routes")) {

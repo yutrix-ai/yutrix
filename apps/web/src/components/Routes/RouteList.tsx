@@ -117,7 +117,23 @@ export function RouteList({
                       );
                     })()}
                   </TableCell>
-                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span>{r.name}</span>
+                      {r.timeoutEjectObserving ? (
+                        <Badge
+                          variant="secondary"
+                          className="bg-amber-50 text-amber-800 border border-amber-200/70 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40 text-[10px] font-medium h-5 px-1.5"
+                        >
+                          {t("routes.table.timeoutEjectObserving", "摘流中")}
+                        </Badge>
+                      ) : r.timeoutEjectEnabled ? (
+                        <Badge variant="outline" className="text-[10px] font-medium h-5 px-1.5 text-muted-foreground">
+                          {t("routes.table.timeoutEject", "超时摘流")}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-zinc-500">{r.incomingProtocol === 'openai' ? 'OpenAI' : 'Anthropic'}</Badge>
                   </TableCell>

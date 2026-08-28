@@ -23,10 +23,22 @@ import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, r
 import {
   CLIENT_CLOSED_CODE,
   CLIENT_CLOSED_ERROR_TYPE,
+  FIRST_TOKEN_TIMEOUT_MESSAGE,
   clientClosedDisconnectMessage,
   isDownstreamWriteClosedError,
   shouldSkipUpstreamRescue,
 } from "./clientClosed";
+import {
+  buildTimeoutEjectProbeSpec,
+  isFunnelL0Attempt,
+  maybeNoteTimeoutEject,
+  noAnswerTimeoutMessageFrom,
+  noteNoAnswerTimeoutEject,
+  shouldSkipCurrentAttempt,
+  timeoutEjectEnabled,
+  timeoutEjectKeyFromAttempt,
+  type TimeoutEjectProbeSpec,
+} from "./timeoutEject";
 import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
@@ -160,6 +172,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   let isLogInserted: boolean = ctx.isLogInserted;
   let { request, reply, body, startTime, auth, routing, baseActionLog, reqLogId, currentAttempt } = ctx;
   const { incomingProtocol, reqPath, endpoint, route, subdomainRecord } = routing;
+  let lastL0TimeoutEjectProbeSpec: TimeoutEjectProbeSpec | undefined;
   const authCtx = auth;
   const { abortUpstream, abortOnRequestClose, abortOnReplyClose } = abortHandlers;
   const processQueue = await getGlobalQueue();
@@ -1527,6 +1540,49 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             await insertInitialRequestLog(ctx, baseLog);
             isLogInserted = ctx.isLogInserted;
 
+            if (shouldSkipCurrentAttempt(timeoutEjectEnabled(route), route, currentAttempt)) {
+              const ejectKey = timeoutEjectKeyFromAttempt(route, currentAttempt);
+              if (ejectKey) {
+                noteNoAnswerTimeoutEject({ enabled: true, key: ejectKey });
+              }
+              const errorFallback = await checkErrorFallback({
+                status: 504,
+                currentAttempt,
+                route,
+                body,
+                provider,
+                responseData: {
+                  status: 504,
+                  data: { error: { message: FIRST_TOKEN_TIMEOUT_MESSAGE, type: "timeout" } },
+                  isStream: false,
+                },
+                baseActionLog,
+                logAction,
+                incomingProtocol,
+              });
+              if (errorFallback) {
+                logAction({
+                  ...baseActionLog,
+                  level: "WARN",
+                  code: "request.upstream_retry",
+                  providerName: provider.name,
+                  modelId: currentAttempt.modelId,
+                  statusCode: 504,
+                  reason: "timeout_eject_skip_l0",
+                });
+                currentAttempt = errorFallback.newAttempt;
+                ctx.currentAttempt = currentAttempt;
+                attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
+                continue;
+              }
+              responseData = {
+                status: 504,
+                data: formatError(incomingProtocol, 504, "上游请求超时", "timeout"),
+                isStream: false,
+              };
+              break;
+            }
+
             const attemptStartQueueMs = Date.now();
 
             // --- 14. Upstream Fetch (inside provider queue) ---
@@ -1604,7 +1660,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 ? "google-native"
                 : effectiveProtocol;
 
-
+              if (timeoutEjectEnabled(route) && isFunnelL0Attempt(currentAttempt)) {
+                lastL0TimeoutEjectProbeSpec = buildTimeoutEjectProbeSpec({
+                  baseUrl: String(upstreamBaseUrl || ""),
+                  upstreamPath: String(upstreamPath || ""),
+                  headers: upstreamHeaders,
+                  body: upstreamBody,
+                  timeoutMs: attemptTimeoutMs,
+                });
+              }
 
               try {
                 const result = await executeUpstreamFetch({
@@ -2052,6 +2116,14 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
             const isPayloadIncompatible = responseData.terminalError?.retryClass === "protocol_payload_incompatible";
             if (!responseData.isStream && (isPayloadIncompatible || responseData.status === 401 || responseData.status === 429 || responseData.status === 500 || responseData.status === 502 || responseData.status === 503 || responseData.status === 504 || responseData.status === 529)) {
+              maybeNoteTimeoutEject({
+                enabled: timeoutEjectEnabled(route),
+                route,
+                attempt: currentAttempt,
+                status: responseData.status,
+                message: noAnswerTimeoutMessageFrom(responseData),
+                probeSpec: lastL0TimeoutEjectProbeSpec,
+              });
               const errorFallback = await checkErrorFallback({ status: responseData.status, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
               if (errorFallback) {
                 currentAttempt = errorFallback.newAttempt;
@@ -2210,6 +2282,14 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         // (or undici's 300s headersTimeout) is what makes funnel degrade feel stuck.
         const streamAvailabilityStatus = streamTermErr.statusCode || responseData?.status || 0;
         if (currentAttempt && isAvailabilityHopStatus(streamAvailabilityStatus)) {
+          maybeNoteTimeoutEject({
+            enabled: timeoutEjectEnabled(route),
+            route,
+            attempt: currentAttempt,
+            status: streamAvailabilityStatus,
+            message: streamTermErr.message,
+            probeSpec: lastL0TimeoutEjectProbeSpec,
+          });
           const errorFallback = await checkErrorFallback({
             status: streamAvailabilityStatus,
             currentAttempt,
