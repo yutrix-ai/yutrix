@@ -293,7 +293,8 @@ export async function forwardStream(
   baseLog: any,
   stitchState?: StitchState,
   streamTimeoutMs?: number,
-  anthropicState?: any
+  anthropicState?: any,
+  firstChunkTimeoutMs?: number,
 ): Promise<StreamForwardResult> {
   const {
     currentAttempt,
@@ -372,7 +373,8 @@ export async function forwardStream(
       ctx.activeProviderAdapterContext,
       ctx.logAction,
       { ...ctx.baseActionLog, providerName: ctx.activeProvider?.name },
-      anthropicState
+      anthropicState,
+      firstChunkTimeoutMs,
     );
     gotFirstChunk = result.gotFirstChunk;
     isLengthTruncated = result.isLengthTruncated || false;
@@ -401,6 +403,7 @@ export async function forwardStream(
       ctx.logAction,
       { ...ctx.baseActionLog, providerName: ctx.activeProvider?.name },
       responseData.sourceProtocol,
+      firstChunkTimeoutMs,
     );
     gotFirstChunk = result.gotFirstChunk;
     isLengthTruncated = result.isLengthTruncated || false;

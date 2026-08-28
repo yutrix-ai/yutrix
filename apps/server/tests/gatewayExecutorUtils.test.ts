@@ -4,6 +4,7 @@ import {
   isAvailabilityHopStatus,
   isUpstreamCredentialUnavailableError,
   processErrorRetryLogic,
+  remainingFirstChunkTimeoutMs,
   reserveAttemptBudgetForLayerSwitch,
   resolveUpstreamTimeoutMs,
 } from "../src/routes/gateway/gatewayExecutorUtils";
@@ -29,6 +30,21 @@ describe("resolveUpstreamTimeoutMs", () => {
     expect(resolveUpstreamTimeoutMs(undefined)).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
     expect(resolveUpstreamTimeoutMs(null)).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
     expect(DEFAULT_UPSTREAM_TIMEOUT_MS).toBe(60_000);
+  });
+});
+
+describe("remainingFirstChunkTimeoutMs", () => {
+  it("is unset when timeoutMs is 0 so existing configs do not gain a first-answer SLA", () => {
+    expect(remainingFirstChunkTimeoutMs(0, 10)).toBeUndefined();
+    expect(remainingFirstChunkTimeoutMs(undefined, 10)).toBeUndefined();
+    expect(remainingFirstChunkTimeoutMs(null, 0)).toBeUndefined();
+  });
+
+  it("returns remaining budget from the no-answer deadline and floors at 1ms", () => {
+    expect(remainingFirstChunkTimeoutMs(10000, 2500)).toBe(7500);
+    expect(remainingFirstChunkTimeoutMs(10000, 0)).toBe(10000);
+    expect(remainingFirstChunkTimeoutMs(10000, 10000)).toBe(1);
+    expect(remainingFirstChunkTimeoutMs(10000, 15000)).toBe(1);
   });
 });
 

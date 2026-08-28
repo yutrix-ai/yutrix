@@ -54,8 +54,24 @@ import { mapErrorTypeToAnthropic } from "../../utils/gatewayError";
 import {
   buildClientClosedTerminalError,
   classifyStreamTransportError,
+  FIRST_TOKEN_TIMEOUT_MESSAGE,
   isClientClosedClassifierInput,
+  STREAM_CHUNK_TIMEOUT_MESSAGE,
 } from "./clientClosed";
+
+export function resolveStreamReadTimeoutMs(
+  gotFirstChunk: boolean,
+  streamTimeoutMs?: number,
+  firstChunkTimeoutMs?: number,
+): { timeoutMs: number; message: string } | undefined {
+  if (!gotFirstChunk && firstChunkTimeoutMs && firstChunkTimeoutMs > 0) {
+    return { timeoutMs: firstChunkTimeoutMs, message: FIRST_TOKEN_TIMEOUT_MESSAGE };
+  }
+  if (streamTimeoutMs && streamTimeoutMs > 0) {
+    return { timeoutMs: streamTimeoutMs, message: STREAM_CHUNK_TIMEOUT_MESSAGE };
+  }
+  return undefined;
+}
 
 export function classifyUpstreamErrorWithAdapter(
   adapter: any,
@@ -524,6 +540,7 @@ export async function forwardSSEStreamTransparent(
   logAction?: any,
   baseActionLog?: any,
   sourceProtocol?: string,
+  firstChunkTimeoutMs?: number,
 ): Promise<TransparentForwardResult & { isLengthTruncated?: boolean, lastToolCallState?: StitchState }> {
   if (!stitchState) {
     stitchState = {
@@ -585,9 +602,10 @@ export async function forwardSSEStreamTransparent(
   try {
   while (true) {
     let racePromise: any = reader.read();
-    if (streamTimeoutMs && streamTimeoutMs > 0) {
+    const readTimeout = resolveStreamReadTimeoutMs(gotFirstChunk, streamTimeoutMs, firstChunkTimeoutMs);
+    if (readTimeout) {
       const timeoutPromise = new Promise((_, reject) => {
-        streamTimeoutId = setTimeout(() => reject(new Error("Stream chunk timeout")), streamTimeoutMs);
+        streamTimeoutId = setTimeout(() => reject(new Error(readTimeout.message)), readTimeout.timeoutMs);
       });
       racePromise = Promise.race([racePromise, timeoutPromise]);
     }
@@ -1073,7 +1091,8 @@ export async function forwardSSEStreamAdapted(
   adapterContext?: any,
   logAction?: any,
   baseActionLog?: any,
-  anthropicState?: any
+  anthropicState?: any,
+  firstChunkTimeoutMs?: number,
 ): Promise<TransparentForwardResult & { isLengthTruncated?: boolean, terminalEventSent?: boolean, anthropicState?: any }> {
   const reader = (upstream as any).getReader();
   const decoder = new TextDecoder("utf-8");
@@ -1152,9 +1171,10 @@ export async function forwardSSEStreamAdapted(
 
   while (true) {
     let racePromise: any = reader.read();
-    if (streamTimeoutMs && streamTimeoutMs > 0) {
+    const readTimeout = resolveStreamReadTimeoutMs(gotFirstChunk, streamTimeoutMs, firstChunkTimeoutMs);
+    if (readTimeout) {
       const timeoutPromise = new Promise((_, reject) => {
-        streamTimeoutId = setTimeout(() => reject(new Error("Stream chunk timeout")), streamTimeoutMs);
+        streamTimeoutId = setTimeout(() => reject(new Error(readTimeout.message)), readTimeout.timeoutMs);
       });
       racePromise = Promise.race([racePromise, timeoutPromise]);
     }

@@ -6,10 +6,13 @@ import {
   CLIENT_CLOSED_RETRY_CLASS,
   CLIENT_CLOSED_STATUS,
   DOWNSTREAM_CONNECTION_CLOSED_MESSAGE,
+  FIRST_TOKEN_TIMEOUT_MESSAGE,
+  STREAM_CHUNK_TIMEOUT_MESSAGE,
 } from "../src/routes/gateway/clientClosed";
 import {
   forwardSSEStreamAdapted,
   forwardSSEStreamTransparent,
+  resolveStreamReadTimeoutMs,
 } from "../src/routes/gateway/streamForwarder";
 
 function createReply() {
@@ -460,6 +463,96 @@ describe("stream forwarder client disconnect", () => {
     expectClientClosedTerminal(result.terminalError);
     expect(writes.length).toBe(writesAfterFirst);
     expect(writes.join("")).not.toContain("second");
+  });
+});
+
+describe("first-token / stream read timeouts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses first-chunk timeout before the first byte, then stream idle after it", () => {
+    expect(resolveStreamReadTimeoutMs(false, 180000, 10000)).toEqual({
+      timeoutMs: 10000,
+      message: FIRST_TOKEN_TIMEOUT_MESSAGE,
+    });
+    expect(resolveStreamReadTimeoutMs(true, 180000, 10000)).toEqual({
+      timeoutMs: 180000,
+      message: STREAM_CHUNK_TIMEOUT_MESSAGE,
+    });
+    expect(resolveStreamReadTimeoutMs(false, 180000, undefined)).toEqual({
+      timeoutMs: 180000,
+      message: STREAM_CHUNK_TIMEOUT_MESSAGE,
+    });
+    expect(resolveStreamReadTimeoutMs(false, 0, 0)).toBeUndefined();
+  });
+
+  it("times out with First token timeout when no upstream chunk arrives", async () => {
+    vi.useFakeTimers();
+    const { reply } = createReply();
+    const upstream = createControlledStream();
+
+    const resultPromise = forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      180000,
+      "openai",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+      40,
+    );
+
+    await vi.advanceTimersByTimeAsync(40);
+    const result = await resultPromise;
+
+    expect(result.gotFirstChunk).toBe(false);
+    expect(result.terminalError?.statusCode).toBe(504);
+    expect(result.terminalError?.message).toBe(FIRST_TOKEN_TIMEOUT_MESSAGE);
+    expect(result.meaningfulClientOutputSent).toBeFalsy();
+  });
+
+  it("keeps generating after the first byte and only idle-timeouts later chunks", async () => {
+    vi.useFakeTimers();
+    const { reply, writes } = createReply();
+    const upstream = createControlledStream();
+
+    const resultPromise = forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      80,
+      "openai",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+      40,
+    );
+
+    upstream.enqueueSse(contentChunk("hello"));
+    await flushMicrotasks();
+    expect(writes.join("")).toContain("hello");
+
+    await vi.advanceTimersByTimeAsync(40);
+    expect(resultPromise).toBeInstanceOf(Promise);
+
+    await vi.advanceTimersByTimeAsync(80);
+    const result = await resultPromise;
+
+    expect(result.gotFirstChunk).toBe(true);
+    expect(result.terminalError?.statusCode).toBe(504);
+    expect(result.terminalError?.message).toBe(STREAM_CHUNK_TIMEOUT_MESSAGE);
   });
 });
 

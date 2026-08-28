@@ -591,7 +591,7 @@
       "apiKey": "API Key",
       "openaiUrl": "OpenAI 协议 URL",
       "anthropicUrl": "Anthropic 协议 URL",
-      "timeout": "超时时间 (ms)",
+      "timeout": "无响应时限 (ms)",
       "streamTimeout": "流式空闲超时 (ms)",
       "concurrency": "并发限制",
       "maxOutputTokens": "最大输出 Token 裁剪",
@@ -603,7 +603,8 @@
       "apiKeyEdit": "留空表示不修改"
     },
     "hints": {
-      "timeout": "填 0 表示不限制",
+      "timeout": "默认 30000（30 秒）。从请求该供应商开始计时，N 毫秒内没有首包（流式）或完整响应（非流式）则按 504 降级到下一层。填 0 不启用首答降级（响应头仍有 60 秒下限）。推理模型可调大。",
+      "streamTimeout": "默认 300000（5 分钟）。首包之后相邻两个流式分片之间的空闲上限。填 0 表示不限制。不用于首答降级。",
       "maxOutputTokens": "填 0 表示完全透传不干预。大于 0 时，若请求中的 max_tokens 超过此值，会被强制改写为此值。"
     },
     "test": {

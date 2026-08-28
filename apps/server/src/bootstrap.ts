@@ -67,7 +67,7 @@ async function migrateAndDropLegacyProviderKeyColumns() {
     { name: "openaiBaseUrl", ddl: "openaiBaseUrl text", fallback: "NULL" },
     { name: "anthropicBaseUrl", ddl: "anthropicBaseUrl text", fallback: "NULL" },
     { name: "concurrencyLimit", ddl: "concurrencyLimit integer DEFAULT 10 NOT NULL", fallback: "10" },
-    { name: "timeoutMs", ddl: "timeoutMs integer DEFAULT 60000 NOT NULL", fallback: "60000" },
+    { name: "timeoutMs", ddl: "timeoutMs integer DEFAULT 30000 NOT NULL", fallback: "30000" },
     { name: "maxOutputTokens", ddl: "maxOutputTokens integer DEFAULT 0 NOT NULL", fallback: "0" },
     { name: "enabled", ddl: "enabled integer DEFAULT 1 NOT NULL", fallback: "1" },
     { name: "manualModels", ddl: "manualModels text", fallback: "NULL" },

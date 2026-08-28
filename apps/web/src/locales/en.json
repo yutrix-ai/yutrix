@@ -594,7 +594,7 @@
       "apiKey": "API Key",
       "openaiUrl": "OpenAI Protocol URL",
       "anthropicUrl": "Anthropic Protocol URL",
-      "timeout": "Timeout (ms)",
+      "timeout": "No-answer timeout (ms)",
       "streamTimeout": "Stream Idle Timeout (ms)",
       "concurrency": "Concurrency Limit",
       "maxOutputTokens": "Max Output Tokens",
@@ -606,7 +606,8 @@
       "apiKeyEdit": "Leave blank to keep unchanged"
     },
     "hints": {
-      "timeout": "Enter 0 for no limit",
+      "timeout": "Default 30000 (30s). No-answer SLA: if this provider sends no first stream chunk (or no full non-stream response) within N ms, hop to the next funnel layer as 504. 0 disables first-answer failover (headers still abort at the 60s floor). Increase for reasoning models.",
+      "streamTimeout": "Default 300000 (5 min). Idle limit between stream chunks after the first byte. 0 means unlimited. This is not the first-answer SLA.",
       "maxOutputTokens": "Enter 0 for no intervention. If greater than 0, any request with max_tokens exceeding this value will be clamped."
     },
     "test": {

@@ -16,6 +16,7 @@ export const CLIENT_CLOSED_RETRY_CLASS = "client_closed" as const;
 export const DOWNSTREAM_CONNECTION_CLOSED_MESSAGE = "Downstream connection closed";
 export const CLIENT_CLOSED_REQUEST_MESSAGE = "Client Closed Request";
 export const STREAM_CHUNK_TIMEOUT_MESSAGE = "Stream chunk timeout";
+export const FIRST_TOKEN_TIMEOUT_MESSAGE = "First token timeout";
 
 export type ClientClosedSignals = {
   replyDestroyed?: boolean;
@@ -90,7 +91,8 @@ export function isClientClosedStatus(status: number | undefined | null): boolean
 }
 
 export function isStreamChunkTimeoutError(err: unknown): boolean {
-  return errorMessageOf(err) === STREAM_CHUNK_TIMEOUT_MESSAGE;
+  const message = errorMessageOf(err);
+  return message === STREAM_CHUNK_TIMEOUT_MESSAGE || message === FIRST_TOKEN_TIMEOUT_MESSAGE;
 }
 
 /**

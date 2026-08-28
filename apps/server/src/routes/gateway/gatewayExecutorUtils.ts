@@ -65,6 +65,18 @@ export function resolveUpstreamTimeoutMs(timeoutMs: unknown): number {
   return DEFAULT_UPSTREAM_TIMEOUT_MS;
 }
 
+/**
+ * Remaining budget until the first upstream body chunk.
+ * Only armed when timeoutMs > 0 — 0 still means "no first-answer SLA"
+ * (TTFB keeps the 60s floor via resolveUpstreamTimeoutMs).
+ */
+export function remainingFirstChunkTimeoutMs(timeoutMs: unknown, elapsedMs: unknown): number | undefined {
+  const n = typeof timeoutMs === "number" ? timeoutMs : Number(timeoutMs);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const elapsed = typeof elapsedMs === "number" && Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  return Math.max(1, Math.floor(n) - elapsed);
+}
+
 /** Provider is unavailable (not a bad key). Hop before same-key retries. */
 export function isAvailabilityHopStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504 || status === 529;

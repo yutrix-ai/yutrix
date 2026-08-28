@@ -211,7 +211,9 @@ export async function executeUpstreamFetch(
         apiKey,
         httpOptions: {
           baseUrl: googleNativeBaseUrlOrigin(baseUrl),
-          timeout: resolveUpstreamTimeoutMs(provider.timeoutMs),
+          // Streaming first-answer SLA is abortSignal (TTFB) + first-chunk
+          // timeout. The SDK timeout must not cut a healthy generation.
+          timeout: isStreaming ? 600_000 : resolveUpstreamTimeoutMs(provider.timeoutMs),
         },
       });
 

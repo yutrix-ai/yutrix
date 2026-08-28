@@ -3,6 +3,10 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/api";
 import {
+  DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+} from "@promptgate/shared";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -46,8 +50,8 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
     openaiBaseUrl: "",
     anthropicBaseUrl: "",
     apiKey: "",
-    timeoutMs: 0,
-    streamTimeoutMs: 180000,
+    timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
+    streamTimeoutMs: DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
     concurrencyLimit: 4,
     maxOutputTokens: 0,
     hourlyTokenLimit: 0,
@@ -71,7 +75,7 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
           anthropicBaseUrl: provider.anthropicBaseUrl || "",
           apiKey: "",
           timeoutMs: provider.timeoutMs,
-          streamTimeoutMs: provider.streamTimeoutMs ?? 180000,
+          streamTimeoutMs: provider.streamTimeoutMs ?? DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
           concurrencyLimit: provider.concurrencyLimit,
           maxOutputTokens: provider.maxOutputTokens || 0,
           hourlyTokenLimit: provider.hourlyTokenLimit || 0,
@@ -100,8 +104,8 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
           openaiBaseUrl: "",
           anthropicBaseUrl: "",
           apiKey: "",
-          timeoutMs: 0,
-          streamTimeoutMs: 180000,
+          timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
+          streamTimeoutMs: DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
           concurrencyLimit: 4,
           maxOutputTokens: 0,
           hourlyTokenLimit: 0,
@@ -277,7 +281,7 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div className="space-y-2">
                     <Label>{t("providers.fields.timeout", "Timeout (ms)")}</Label>
                     <Input
@@ -288,6 +292,9 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
                         setFormData({ ...formData, timeoutMs: parseInt(e.target.value) || 0 })
                       }
                     />
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      {t("providers.hints.timeout", "Enter 0 for no first-answer SLA")}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>{t("providers.fields.streamTimeout", "Stream Timeout (ms)")}</Label>
@@ -299,7 +306,12 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
                         setFormData({ ...formData, streamTimeoutMs: parseInt(e.target.value) || 0 })
                       }
                     />
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      {t("providers.hints.streamTimeout", "Idle limit between chunks after the first byte")}
+                    </p>
                   </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
                   <div className="space-y-2">
                     <Label>{t("providers.fields.concurrency", "Concurrency Limit")}</Label>
                     <Input

@@ -8,6 +8,7 @@ import { resolveUsageForLog, UsageLogValues } from "../../utils/gatewayContent";
 import { resolveRoundUsage, commitRoundUsage } from "./continuityHelper";
 import { updateRequestLog } from "../../services/requestLogService";
 import type { GatewayRequestContext } from "./types";
+import { remainingFirstChunkTimeoutMs } from "./gatewayExecutorUtils";
 import { forwardStream } from "./streaming";
 import { finalizeStreamLog, isAuditExemptUser, appendRoutingTraceToOutput } from "./logging";
 import { writeStreamErrorResponse, writeStreamHeaders } from "./streamProtocol";
@@ -282,7 +283,20 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
           toolState.isLastCycle = ctx.continuity.isLastCycle;
         }
 
-        const streamResult = await forwardStream(reply, responseData, ctx, baseLog, toolState, responseData.provider?.streamTimeoutMs, anthropicState);
+        const firstChunkTimeoutMs = remainingFirstChunkTimeoutMs(
+          responseData.provider?.timeoutMs,
+          responseData.latencyMs,
+        );
+        const streamResult = await forwardStream(
+          reply,
+          responseData,
+          ctx,
+          baseLog,
+          toolState,
+          responseData.provider?.streamTimeoutMs,
+          anthropicState,
+          firstChunkTimeoutMs,
+        );
         (ctx as any)._lastToolCallState = streamResult.lastToolCallState;
         responseData.roundStreamUsage = ctx.stream.streamedUsagePayload;
 

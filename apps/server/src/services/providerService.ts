@@ -1,3 +1,7 @@
+import {
+  DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+} from "@promptgate/shared";
 import { db } from "../db";
 import { providers, providerModels, providerTestSessions, providerApiKeys } from "../db/schema";
 import { eq, and } from "drizzle-orm";
@@ -44,8 +48,8 @@ export const createProviderSchema = z.object({
   anthropicBaseUrl: z.string().url().optional().or(z.literal("")),
   apiKey: z.string().optional(),
   testSessionId: z.string().optional(),
-  timeoutMs: z.number().int().nonnegative().default(60000),
-  streamTimeoutMs: z.number().int().nonnegative().default(180000),
+  timeoutMs: z.number().int().nonnegative().default(DEFAULT_PROVIDER_TIMEOUT_MS),
+  streamTimeoutMs: z.number().int().nonnegative().default(DEFAULT_PROVIDER_STREAM_TIMEOUT_MS),
   concurrencyLimit: z.number().int().positive().default(10),
   maxOutputTokens: z.number().int().nonnegative().default(0),
   hourlyTokenLimit: z.number().int().nonnegative().default(0),

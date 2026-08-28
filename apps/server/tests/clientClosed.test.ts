@@ -6,6 +6,7 @@ import {
   CLIENT_CLOSED_RETRY_CLASS,
   CLIENT_CLOSED_STATUS,
   DOWNSTREAM_CONNECTION_CLOSED_MESSAGE,
+  FIRST_TOKEN_TIMEOUT_MESSAGE,
   STREAM_CHUNK_TIMEOUT_MESSAGE,
   shouldSkipUpstreamRescue,
 } from "../src/routes/gateway/clientClosed";
@@ -66,6 +67,16 @@ describe("default stream-error classifier: client-closed vs availability", () =>
 
     expect(terminal.statusCode).toBe(504);
     expect(terminal.message).toBe(STREAM_CHUNK_TIMEOUT_MESSAGE);
+    expect(terminal.retryClass).not.toBe(CLIENT_CLOSED_RETRY_CLASS);
+    expect(isAvailabilityHopStatus(terminal.statusCode)).toBe(true);
+    expect(shouldSkipUpstreamRescue({ terminalError: terminal })).toBe(false);
+  });
+
+  it("keeps First token timeout as 504 availability hop", () => {
+    const terminal = classify(new Error(FIRST_TOKEN_TIMEOUT_MESSAGE), 504);
+
+    expect(terminal.statusCode).toBe(504);
+    expect(terminal.message).toBe(FIRST_TOKEN_TIMEOUT_MESSAGE);
     expect(terminal.retryClass).not.toBe(CLIENT_CLOSED_RETRY_CLASS);
     expect(isAvailabilityHopStatus(terminal.statusCode)).toBe(true);
     expect(shouldSkipUpstreamRescue({ terminalError: terminal })).toBe(false);
