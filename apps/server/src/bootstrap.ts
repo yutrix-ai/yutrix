@@ -4,7 +4,7 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import path from "path";
 import crypto from "crypto";
 
-import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn } from "./startup/migrations";
+import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn, ensureSubdomainHostnameIdentity } from "./startup/migrations";
 import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings, seedLoopGuardSettings } from "./startup/seed";
 import { refreshLoopGuardConfigCache } from "./services/loopGuard";
 
@@ -168,6 +168,7 @@ export async function bootstrap() {
   await ensureTokenLimitColumns();
   await ensureProviderModelContextWindowColumn();
   await ensureAnalyticsIndexes();
+  await ensureSubdomainHostnameIdentity();
 
   try { await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS chat_logs_requestId_unique ON chat_logs (requestId)`); } catch { /* index already exists */ }
   try {

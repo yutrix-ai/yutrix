@@ -110,6 +110,26 @@ export async function resolveRouteHost(hostInput: string) {
   return { subdomainId: undefined, hostname, shortName };
 }
 
+function isUniqueConstraintError(err: unknown): boolean {
+  const rec = err as { code?: string; message?: string; cause?: { message?: string } } | null;
+  const message = `${rec?.message || ""} ${rec?.cause?.message || ""}`;
+  return (
+    rec?.code === "SQLITE_CONSTRAINT" ||
+    rec?.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+    message.includes("UNIQUE")
+  );
+}
+
+async function subdomainByHostname(hostname: string) {
+  const rows = await db.select().from(subdomains).where(eq(subdomains.hostname, hostname));
+  return rows[0] ?? null;
+}
+
+/**
+ * Bind a route to a Host. Hostname is the identity key.
+ * Reuses an existing subdomain row when that hostname already exists;
+ * otherwise inserts a new row. Never rewrites hostname on a shared row.
+ */
 export async function findOrCreateRouteSubdomain(input: {
   hostInput: string;
   userId: string;
@@ -120,12 +140,8 @@ export async function findOrCreateRouteSubdomain(input: {
     return { subdomainId: null, hostname: "*" };
   }
 
-  const byHostname = await db
-    .select()
-    .from(subdomains)
-    .where(eq(subdomains.hostname, resolved.hostname));
-  if (byHostname.length > 0) {
-    const existing = byHostname[0];
+  const existing = await subdomainByHostname(resolved.hostname);
+  if (existing) {
     if (input.description !== undefined) {
       await db
         .update(subdomains)
@@ -135,46 +151,27 @@ export async function findOrCreateRouteSubdomain(input: {
     return { subdomainId: existing.id, hostname: existing.hostname };
   }
 
-  const byName = await db
-    .select()
-    .from(subdomains)
-    .where(eq(subdomains.name, resolved.shortName));
-  if (byName.length > 0) {
-    const existing = byName[0];
-    const hostnameOwner = await db
-      .select()
-      .from(subdomains)
-      .where(eq(subdomains.hostname, resolved.hostname));
-    if (hostnameOwner.length > 0 && hostnameOwner[0].id !== existing.id) {
-      throw new Error(`Host ${resolved.hostname} 已被其他二级域名使用。`);
-    }
-
-    await db
-      .update(subdomains)
-      .set({
-        hostname: resolved.hostname,
-        description:
-          input.description !== undefined ? input.description : existing.description,
-        updatedAt: new Date(),
-      })
-      .where(eq(subdomains.id, existing.id));
-
-    return { subdomainId: existing.id, hostname: resolved.hostname };
-  }
-
   const subdomainId = crypto.randomUUID();
-  await db.insert(subdomains).values({
-    id: subdomainId,
-    userId: input.userId,
-    name: resolved.shortName,
-    hostname: resolved.hostname,
-    enabled: true,
-    description: input.description || "",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-
-  return { subdomainId, hostname: resolved.hostname };
+  try {
+    await db.insert(subdomains).values({
+      id: subdomainId,
+      userId: input.userId,
+      name: resolved.shortName,
+      hostname: resolved.hostname,
+      enabled: true,
+      description: input.description || "",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return { subdomainId, hostname: resolved.hostname };
+  } catch (err) {
+    if (!isUniqueConstraintError(err)) throw err;
+    const raced = await subdomainByHostname(resolved.hostname);
+    if (raced) {
+      return { subdomainId: raced.id, hostname: raced.hostname };
+    }
+    throw new Error(`Host ${resolved.hostname} 已被其他二级域名使用。`);
+  }
 }
 
 export async function cleanupUnusedRouteSubdomain(subdomainId: string | null) {

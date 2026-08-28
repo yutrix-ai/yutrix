@@ -43,6 +43,12 @@ export async function ensureAnalyticsColumns() {
   await addColumnIfMissing("chat_logs", "is_aborted", "ALTER TABLE chat_logs ADD COLUMN is_aborted integer DEFAULT 0");
 }
 
+/** Hostname is subdomain identity. First-label `name` may be shared across FQDNs. */
+export async function ensureSubdomainHostnameIdentity() {
+  if (!(await tableExists("subdomains"))) return;
+  await db.run(sql.raw("DROP INDEX IF EXISTS subdomains_name_unique"));
+}
+
 export async function ensureAnalyticsIndexes() {
   if (!(await tableExists("request_logs"))) return;
   const indexes = [

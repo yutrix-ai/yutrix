@@ -104,7 +104,7 @@ export const providerTestSessions = sqliteTable("provider_test_sessions", {
 export const subdomains = sqliteTable("subdomains", {
   id: text("id").primaryKey(),
   userId: text("userId").notNull(),
-  name: text("name").notNull().unique(), // e.g. "code-frontend"
+  name: text("name").notNull(), // first label; identity is hostname, not name
   hostname: text("hostname").notNull().unique(), // e.g. "code-frontend.localhost"
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   description: text("description"),
