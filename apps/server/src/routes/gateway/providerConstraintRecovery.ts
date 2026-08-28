@@ -87,10 +87,6 @@ function relaxStrictToolChoice(body: any): void {
   body.tool_choice = "auto";
 }
 
-function hasTools(body: any): boolean {
-  return Array.isArray(body?.tools) && body.tools.length > 0;
-}
-
 function isPlainObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -115,6 +111,9 @@ const THINKING_OFF_SHAPES: readonly ConstraintMutator[] = [
       body.reasoning = { ...body.reasoning, effort: "none", exclude: true };
     }
   },
+  (body) => {
+    body.reasoning_effort = "none";
+  },
 ];
 
 function disableThinking(body: any): void {
@@ -130,27 +129,18 @@ function thinkingOffShapesApplied(body: any): boolean {
   return isPlainObject(body.thinking) && body.thinking.type === "disabled";
 }
 
-/** Present string (including empty). Non-empty values are never overwritten. */
-function hasReasoningContentField(message: any): boolean {
-  return typeof message?.reasoning_content === "string";
-}
-
-function fillMissingAssistantReasoningContent(body: any): void {
-  if (!isPlainObject(body) || !hasTools(body) || !Array.isArray(body.messages)) return;
+/**
+ * Foreign CoT left on messages while thinking is disabled is an inconsistent
+ * DeepSeek/Kimi state: 400 "reasoning_content must be passed back".
+ * Cross-model funnel hops must strip, not echo another model's chain.
+ */
+function stripReasoningPassbackFields(body: any): void {
+  if (!isPlainObject(body) || !Array.isArray(body.messages)) return;
   for (const message of body.messages) {
-    if (!isPlainObject(message) || message.role !== "assistant") continue;
-    if (hasReasoningContentField(message)) continue;
-    message.reasoning_content = "";
+    if (!isPlainObject(message)) continue;
+    delete message.reasoning_content;
+    delete message.reasoning;
   }
-}
-
-function assistantReasoningPassbackPresent(body: any): boolean {
-  if (!hasTools(body)) return true;
-  if (!Array.isArray(body?.messages)) return true;
-  return body.messages.every((message: any) => {
-    if (!isPlainObject(message) || message.role !== "assistant") return true;
-    return hasReasoningContentField(message);
-  });
 }
 
 function requiresReasoningContentPassback(msg: string): boolean {
@@ -213,25 +203,26 @@ export function planConstraintRecovery(
   }
 
   // 3) Thinking-mode rejection or reasoning_content passback requirement.
-  // Driven by error text + body shape. Disable every known thinking-off
-  // shape; fill missing assistant reasoning_content only on passback errors
-  // when tools are present (cross-model history has nothing to echo).
+  // Disable thinking and strip foreign CoT. Filling empty reasoning_content
+  // while thinking is off is the inconsistent state DeepSeek rejects after
+  // a funnel hop from a thinking model (GROK/Gemini) onto a default-on
+  // thinking upstream (deepseek-v4-flash).
   const passbackRequired = requiresReasoningContentPassback(msg);
   if (
     !applied.has("disable_thinking") &&
     (passbackRequired || rejectsThinkingMode(msg))
   ) {
     const needsDisable = !thinkingOffShapesApplied(body);
-    const needsPassbackFill = passbackRequired && !assistantReasoningPassbackPresent(body);
-    if (needsDisable || needsPassbackFill) {
+    const needsStrip = passbackRequired && Array.isArray(body.messages);
+    if (needsDisable || needsStrip) {
       return {
         code: "disable_thinking",
-        summary: needsPassbackFill
-          ? "thinking off (all shapes) + fill missing assistant reasoning_content"
+        summary: passbackRequired
+          ? "thinking off (all shapes) + strip assistant reasoning_content"
           : "thinking off (all shapes; thinking rejected by upstream)",
         mutate: (nextBody) => {
           disableThinking(nextBody);
-          if (passbackRequired) fillMissingAssistantReasoningContent(nextBody);
+          if (passbackRequired) stripReasoningPassbackFields(nextBody);
         },
       };
     }

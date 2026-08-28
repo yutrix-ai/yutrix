@@ -170,8 +170,22 @@ function passbackBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe("thinking-mode passback recovery (vendor-neutral)", () => {
-  it("disables all thinking-off shapes and fills missing assistant reasoning_content when tools are present", () => {
-    const body = passbackBody();
+  it("disables thinking and strips foreign reasoning_content instead of filling empties", () => {
+    const body = passbackBody({
+      messages: [
+        { role: "user", content: "q" },
+        {
+          role: "assistant",
+          content: "answer",
+          reasoning_content: "other-model chain",
+        },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "read" } }],
+        },
+      ],
+    });
     const plan = planConstraintRecovery({
       statusCode: 400,
       errorMessage: REASONING_PASSBACK_MSG,
@@ -179,13 +193,13 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
       alreadyApplied: new Set(),
     });
     expect(plan).not.toBeNull();
+    expect(plan?.summary).toContain("strip");
     plan!.mutate(body);
     expect(body.enable_thinking).toBe(false);
     expect(body.thinking).toEqual({ type: "disabled" });
-    expect(typeof body.messages[2].reasoning_content).toBe("string");
-    expect(body.messages[0].reasoning_content).toBeUndefined();
+    expect(body.reasoning_effort).toBe("none");
     expect(body.messages[1].reasoning_content).toBeUndefined();
-    expect(body.messages[3].reasoning_content).toBeUndefined();
+    expect(body.messages[2].reasoning_content).toBeUndefined();
   });
 
   it("also recovers on 422", () => {
@@ -234,7 +248,7 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
     expect(body.thinking).toEqual({ type: "disabled" });
   });
 
-  it("does not overwrite an existing non-empty reasoning_content", () => {
+  it("strips an existing reasoning_content so thinking-off is consistent", () => {
     const body = passbackBody({
       messages: [
         { role: "user", content: "q" },
@@ -253,7 +267,7 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
     });
     expect(plan).not.toBeNull();
     plan!.mutate(body);
-    expect(body.messages[1].reasoning_content).toBe("keep this chain");
+    expect(body.messages[1].reasoning_content).toBeUndefined();
   });
 
   it("leaves null bodies, non-object messages, and non-assistant roles alone", () => {
@@ -285,13 +299,13 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
     expect(body.messages[0]).toBeNull();
     expect(body.messages[1]).toBe("skip-me");
     expect(body.messages[2].reasoning_content).toBeUndefined();
-    expect(typeof body.messages[3].reasoning_content).toBe("string");
+    expect(body.messages[3].reasoning_content).toBeUndefined();
   });
 
-  it("does not fill reasoning_content when tools are absent", () => {
+  it("strips reasoning_content even when tools are absent", () => {
     const body = {
       model: "any-model",
-      messages: [{ role: "assistant", content: "hi" }],
+      messages: [{ role: "assistant", content: "hi", reasoning_content: "chain" }],
     };
     const plan = planConstraintRecovery({
       statusCode: 400,
@@ -306,7 +320,7 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
     expect(body.messages[0].reasoning_content).toBeUndefined();
   });
 
-  it("re-applies disable+passback onto a freshly built outbound body", () => {
+  it("re-applies disable+strip onto a freshly built outbound body", () => {
     const first = passbackBody();
     const plan = planConstraintRecovery({
       statusCode: 400,
@@ -316,10 +330,16 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
     });
     expect(plan).not.toBeNull();
 
-    const fresh = passbackBody({ model: "m" });
+    const fresh = passbackBody({
+      model: "m",
+      messages: [
+        { role: "user", content: "q" },
+        { role: "assistant", content: "a", reasoning_content: "foreign" },
+      ],
+    });
     applyConstraintMutators(fresh, [plan!.mutate]);
     expect(fresh.enable_thinking).toBe(false);
     expect(fresh.thinking).toEqual({ type: "disabled" });
-    expect(typeof fresh.messages[2].reasoning_content).toBe("string");
+    expect(fresh.messages[1].reasoning_content).toBeUndefined();
   });
 });
