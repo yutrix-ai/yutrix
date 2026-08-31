@@ -685,7 +685,7 @@ describe("EmptyOutputStrategy Unit Tests", () => {
 });
 
 describe("Sibling continuity strategies stream guards (anti-regression)", () => {
-  it("MaxTokensTruncation still intervenes when finish_reason is length (non-stream)", async () => {
+  it("MaxTokensTruncation never intervenes on finish_reason=length (retired)", async () => {
     const strategy = new MaxTokensTruncationStrategy();
     const decision = await strategy.evaluate(
       baseContext({
@@ -704,11 +704,37 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
         accumulatedCompletionText: "partial...",
       })
     );
-    expect(decision.shouldIntervene).toBe(true);
-    expect(decision.strategyName).toBe("MaxTokensTruncation");
+    expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("MaxTokensTruncation defers when live isStream without streamResult", async () => {
+  it("MaxTokensTruncation never stitches tool-equipped agent requests", async () => {
+    const strategy = new MaxTokensTruncationStrategy();
+    const decision = await strategy.evaluate(
+      baseContext({
+        originalBody: {
+          model: "grok-4.6",
+          tools: [{ type: "function", function: { name: "shell" } }],
+          messages: [{ role: "user", content: "继续分析" }],
+        },
+        responseData: {
+          status: 200,
+          data: {
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "方案，避免" },
+                finish_reason: "length",
+              },
+            ],
+          },
+        },
+        accumulatedCompletionText: "方案，避免",
+      })
+    );
+    expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("MaxTokensTruncation stays idle for live isStream without streamResult", async () => {
     const strategy = new MaxTokensTruncationStrategy();
     const decision = await strategy.evaluate(
       baseContext({
@@ -731,7 +757,7 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
     expect(decision.shouldIntervene).toBe(false);
   });
 
-  it("MaxTokensTruncation still intervenes on completed fake streams without streamResult", async () => {
+  it("MaxTokensTruncation stays idle on completed fake streams with length", async () => {
     const strategy = new MaxTokensTruncationStrategy();
     const decision = await strategy.evaluate(
       baseContext({
@@ -753,8 +779,7 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
         accumulatedCompletionText: "partial...",
       })
     );
-    expect(decision.shouldIntervene).toBe(true);
-    expect(decision.strategyName).toBe("MaxTokensTruncation");
+    expect(decision.shouldIntervene).toBe(false);
   });
 
   it("ReasoningExhaustion still intervenes on reasoning-only non-stream payloads", async () => {

@@ -5,7 +5,6 @@ import { eq, like } from "drizzle-orm";
 import { encryptText } from "../src/utils/crypto";
 import { initTestDatabase, closeAndCleanup } from "./helpers/testDatabase";
 import * as actionLogger from "../src/utils/actionLogger";
-import { MaxTokensTruncationStrategy } from "../src/services/continuity/strategies/MaxTokensTruncationStrategy";
 import { ContinuityEngine } from "../src/services/continuity/ContinuityEngine";
 
 let db: any;
@@ -199,7 +198,7 @@ describe("Gateway Continuity Integration", () => {
     });
   }
 
-  it("1. OpenAI non-streaming JSON continuity (A + B + C)", async () => {
+  it("1. OpenAI non-streaming JSON: finish_reason=length passes through without stitching", async () => {
     await setupProvider({
       provId: "cont-prov-1",
       name: "OpenAI JSON",
@@ -218,30 +217,11 @@ describe("Gateway Continuity Integration", () => {
       fetchCount++;
       const reqBody = JSON.parse(init.body);
       expect(reqBody.model).toBe("test-model");
-
-      if (fetchCount === 1) {
-        expect(reqBody.messages.length).toBe(1);
-        return new Response(JSON.stringify({
-          choices: [{ index: 0, message: { role: "assistant", content: "part-A" }, finish_reason: "length" }],
-          usage: { prompt_tokens: 5, completion_tokens: 5 }
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      } else if (fetchCount === 2) {
-        expect(reqBody.messages.length).toBe(3);
-        expect(reqBody.messages[1].role).toBe("assistant");
-        expect(reqBody.messages[1].content).toBe("part-A");
-        return new Response(JSON.stringify({
-          choices: [{ index: 0, message: { role: "assistant", content: "part-B" }, finish_reason: "length" }],
-          usage: { prompt_tokens: 10, completion_tokens: 5 }
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      } else {
-        expect(reqBody.messages.length).toBe(3);
-        expect(reqBody.messages[1].role).toBe("assistant");
-        expect(reqBody.messages[1].content).toBe("part-Apart-B");
-        return new Response(JSON.stringify({
-          choices: [{ index: 0, message: { role: "assistant", content: "part-C" }, finish_reason: "stop" }],
-          usage: { prompt_tokens: 15, completion_tokens: 5 }
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
+      expect(reqBody.messages.length).toBe(1);
+      return new Response(JSON.stringify({
+        choices: [{ index: 0, message: { role: "assistant", content: "part-A" }, finish_reason: "length" }],
+        usage: { prompt_tokens: 5, completion_tokens: 5 }
+      }), { status: 200, headers: { "content-type": "application/json" } });
     });
 
     const response = await fastify.inject({
@@ -253,12 +233,12 @@ describe("Gateway Continuity Integration", () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    expect(body.choices[0].message.content).toBe("part-Apart-Bpart-C");
-    expect(body.choices[0].finish_reason).toBe("stop");
-    expect(fetchCount).toBe(3);
+    expect(body.choices[0].message.content).toBe("part-A");
+    expect(body.choices[0].finish_reason).toBe("length");
+    expect(fetchCount).toBe(1);
   });
 
-  it("2. stream=true, application/json fake stream continuity (A + B + C)", async () => {
+  it("2. stream=true, application/json fake stream: length passes through without stitching", async () => {
     await setupProvider({
       provId: "cont-prov-2",
       name: "Fake Stream JSON",
@@ -277,27 +257,10 @@ describe("Gateway Continuity Integration", () => {
       fetchCount++;
       const reqBody = JSON.parse(init.body);
       expect(reqBody.model).toBe("test-model");
-
-      if (fetchCount === 1) {
-        return new Response(JSON.stringify({
-          choices: [{ index: 0, message: { role: "assistant", content: "part-A" }, finish_reason: "length" }],
-          usage: { prompt_tokens: 5, completion_tokens: 5 }
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      } else if (fetchCount === 2) {
-        expect(reqBody.messages.length).toBe(3);
-        expect(reqBody.messages[1].content).toBe("part-A");
-        return new Response(JSON.stringify({
-          choices: [{ index: 0, message: { role: "assistant", content: "part-B" }, finish_reason: "length" }],
-          usage: { prompt_tokens: 10, completion_tokens: 5 }
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      } else {
-        expect(reqBody.messages.length).toBe(3);
-        expect(reqBody.messages[1].content).toBe("part-Apart-B");
-        return new Response(JSON.stringify({
-          choices: [{ index: 0, message: { role: "assistant", content: "part-C" }, finish_reason: "stop" }],
-          usage: { prompt_tokens: 15, completion_tokens: 5 }
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
+      return new Response(JSON.stringify({
+        choices: [{ index: 0, message: { role: "assistant", content: "part-A" }, finish_reason: "length" }],
+        usage: { prompt_tokens: 5, completion_tokens: 5 }
+      }), { status: 200, headers: { "content-type": "application/json" } });
     });
 
     const response = await fastify.inject({
@@ -332,13 +295,13 @@ describe("Gateway Continuity Integration", () => {
       }
     }
 
-    expect(text).toBe("part-Apart-Bpart-C");
-    expect(finishReason).toBe("stop");
+    expect(text).toBe("part-A");
+    expect(finishReason).toBe("length");
     expect(doneFound).toBe(true);
-    expect(fetchCount).toBe(3);
+    expect(fetchCount).toBe(1);
   });
 
-  it("3. OpenAI real-stream continuity (A + B + C)", async () => {
+  it("3. OpenAI real-stream: length passes through without stitching", async () => {
     await setupProvider({
       provId: "cont-prov-3",
       name: "Real Stream OpenAI",
@@ -357,21 +320,8 @@ describe("Gateway Continuity Integration", () => {
       fetchCount++;
       const reqBody = JSON.parse(init.body);
       expect(reqBody.stream).toBe(true);
-
-      if (fetchCount === 1) {
-        const streamText = `data: {"choices":[{"delta":{"content":"part-A"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n`;
-        return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
-      } else if (fetchCount === 2) {
-        expect(reqBody.messages.length).toBe(3);
-        expect(reqBody.messages[1].content).toBe("part-A");
-        const streamText = `data: {"choices":[{"delta":{"content":"part-B"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n`;
-        return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
-      } else {
-        expect(reqBody.messages.length).toBe(3);
-        expect(reqBody.messages[1].content).toBe("part-Apart-B");
-        const streamText = `data: {"choices":[{"delta":{"content":"part-C"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n`;
-        return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
-      }
+      const streamText = `data: {"choices":[{"delta":{"content":"part-A"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n`;
+      return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
     });
 
     const response = await fastify.inject({
@@ -406,12 +356,10 @@ describe("Gateway Continuity Integration", () => {
       }
     }
 
-    expect(text).toBe("part-Apart-Bpart-C");
-    expect(finishReason).toBe("stop");
-    console.log("CHUNKS", chunks, "DONE_COUNT", doneCount);
-    // As it was stitched stream, only the final [DONE] is forwarded
+    expect(text).toBe("part-A");
+    expect(finishReason).toBe("length");
     expect(doneCount).toBe(1);
-    expect(fetchCount).toBe(3);
+    expect(fetchCount).toBe(1);
   });
 
   it("4. Native Anthropic: bypassed and never auto-continued", async () => {
@@ -486,7 +434,7 @@ describe("Gateway Continuity Integration", () => {
     expect(retryLog).toBeDefined();
   });
 
-  it("5. Hard loop cycle limits (continuityCycles >= MAX_CONTINUITY_CYCLES)", async () => {
+  it("5. finish_reason=length does not open a continuity retry loop", async () => {
     ContinuityEngine.prototype.evaluateAll = async function(context) {
       for (const strat of (this as any).strategies) {
         strat.maxRetries = 10;
@@ -525,13 +473,12 @@ describe("Gateway Continuity Integration", () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    // Max continuity cycles is 5, meaning we fetch 1 (initial) + 5 (retries) = 6 fetches total
-    expect(fetchCount).toBe(6);
-    expect(body.choices[0].message.content).toBe("part-1part-2part-3part-4part-5part-6");
+    // Response-stage MaxTokensTruncation is retired: one upstream call, pass through.
+    expect(fetchCount).toBe(1);
+    expect(body.choices[0].message.content).toBe("part-1");
     expect(body.choices[0].finish_reason).toBe("length");
 
-    // Assert logAction has request.continuity.exhausted
     const exhaustedLog = loggedActions.find(act => act.code === "request.continuity.exhausted");
-    expect(exhaustedLog).toBeDefined();
+    expect(exhaustedLog).toBeUndefined();
   });
 });

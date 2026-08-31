@@ -1,52 +1,21 @@
 import { ContinuityStrategy, ContinuityContext, ContinuityDecision } from "../types";
 
+/**
+ * Retired: response-stage "length" stitching is no longer part of the gateway.
+ *
+ * finish_reason=length / stop_reason=max_tokens is an upstream signal. The
+ * gateway must not invent a synthetic "please continue" turn or re-issue the
+ * request — that corrupted agent tool loops and ballooned context. Output
+ * ceilings, if any, belong only on the request path via model-config
+ * maxOutputTokens clamping client max_tokens that exceed the configured value.
+ *
+ * Class kept so historical imports/tests resolve; evaluate is a permanent no-op.
+ */
 export class MaxTokensTruncationStrategy implements ContinuityStrategy {
   name = "MaxTokensTruncation";
-  maxRetries = 3;
+  maxRetries = 0;
 
-  async evaluate(context: ContinuityContext): Promise<ContinuityDecision> {
-    const { streamResult, responseData, originalBody, accumulatedCompletionText } = context;
-
-    // 1. Never intervene for native Anthropic responses since we don't support Anthropic SSE stitching yet.
-    if (responseData?.sourceProtocol === "anthropic") {
-      return { shouldIntervene: false };
-    }
-
-    // Defer only for live native streams mid-flight. Fake streams have a complete payload.
-    if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
-      return { shouldIntervene: false };
-    }
-
-    let isTruncated = false;
-    if (streamResult) {
-      isTruncated = streamResult.isLengthTruncated;
-    } else if (responseData?.data?.choices?.[0]?.finish_reason === "length") {
-      isTruncated = true;
-    } else if (responseData?.data?.stop_reason === "max_tokens") {
-      isTruncated = true;
-    }
-
-    if (isTruncated) {
-      const messages = [...(originalBody.messages || [])];
-
-      // Inject the accumulated text from all previous fetches
-      messages.push({ role: "assistant", content: accumulatedCompletionText });
-
-      // Inject the continuation prompt
-      messages.push({
-        role: "user",
-        content: "Your previous response was cut off. Please continue from exactly the last character. Do not include any intros or JSON formatting prefixes, just output the raw text."
-      });
-
-      const modifiedBody = { ...originalBody, messages };
-
-      return {
-        shouldIntervene: true,
-        strategyName: this.name,
-        modifiedBody
-      };
-    }
-
+  async evaluate(_context: ContinuityContext): Promise<ContinuityDecision> {
     return { shouldIntervene: false };
   }
 }

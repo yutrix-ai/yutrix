@@ -29,15 +29,16 @@
  * 
  * ```
  * transformRequestBody
- *   → maxOutputTokens not configured (= 0) → Full passthrough
+ *   → maxOutputTokens not configured (= 0 / null) → Full passthrough
  *   → maxOutputTokens configured (> 0):
- *     → Client didn't send max_tokens       → Inject as maxOutputTokens
- *     → Client sent value > maxOutputTokens  → Override to maxOutputTokens
- *     → Client sent value ≤ maxOutputTokens  → Keep as-is
+ *     → Client didn't send max_tokens          → Leave unset (no inject)
+ *     → Client sent value > maxOutputTokens    → Clamp to maxOutputTokens
+ *     → Client sent value ≤ maxOutputTokens    → Keep as-is
  * ```
  * 
  * The two pipelines are fully independent.
  * contextWindowTokens (routing) ≠ maxOutputTokens (output clamp).
+ * Response-stage finish_reason=length is never rewritten by the gateway.
  */
 
 import { describe, expect, it } from "vitest";
@@ -264,7 +265,7 @@ describe("Contract: max_tokens output pipeline (independent from input)", () => 
   const noopLogAction = () => {};
   const baseActionLog = { requestId: "test" } as any;
 
-  it("injects max_tokens when client does not send it and maxOutputTokens is configured", () => {
+  it("does NOT inject max_tokens when client omits it even if maxOutputTokens is configured", () => {
     const body = {
       model: "test-model",
       messages: [{ role: "user", content: "Hello" }],
@@ -276,7 +277,7 @@ describe("Contract: max_tokens output pipeline (independent from input)", () => 
       body, "test-model", false, 8192, noopLogAction, baseActionLog, "test-provider"
     );
 
-    expect(modifiedBody.max_tokens).toBe(8192);
+    expect(modifiedBody.max_tokens).toBeUndefined();
   });
 
   it("clamps max_tokens when client sends value exceeding maxOutputTokens", () => {

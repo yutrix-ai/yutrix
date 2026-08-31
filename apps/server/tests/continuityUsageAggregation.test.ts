@@ -301,7 +301,7 @@ describe("Gateway Continuity Usage Aggregation Integration Tests", () => {
     expect(completedLog.outputTokens).toBeGreaterThan(0);
   });
 
-  // --- TEST CASE 3: Multi-round non-stream continuity with NO usage ---
+  // --- TEST CASE 3: finish_reason=length is a single round (no response-stage stitch) ---
   it("computes non-stream multi-round usage correctly without duplicating output text", async () => {
     await setupProvider({
       provId: "agg-prov-2",
@@ -314,23 +314,12 @@ describe("Gateway Continuity Usage Aggregation Integration Tests", () => {
     // Mock tokenizer to return text.length
     vi.spyOn(tokenizer, "exactEstimateTokens").mockImplementation(async (text) => text.length);
 
-    let round = 0;
     const fetchMock = vi.fn().mockImplementation(async () => {
-      round++;
-      let content = "";
-      let finish_reason = "length";
-      if (round === 1) content = "A";
-      else if (round === 2) content = "BB";
-      else {
-        content = "CCC";
-        finish_reason = "stop";
-      }
-
       return new Response(JSON.stringify({
         choices: [
           {
-            message: { role: "assistant", content },
-            finish_reason,
+            message: { role: "assistant", content: "A" },
+            finish_reason: "length",
           },
         ],
       }), {
@@ -357,16 +346,16 @@ describe("Gateway Continuity Usage Aggregation Integration Tests", () => {
     console.log("RESPONSE PAYLOAD IS:", response.payload);
     const json = JSON.parse(response.payload);
 
-    // Verify content is merged correctly
-    expect(json.choices[0].message.content).toBe("ABBCCC");
+    expect(json.choices[0].message.content).toBe("A");
+    expect(json.choices[0].finish_reason).toBe("length");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    // Verify output tokens is strictly output(A) + output(BB) + output(CCC) = 1 + 2 + 3 = 6
-    expect(json.usage.completion_tokens).toBe(6);
+    // Local estimate for output "A" => 1 token
+    expect(json.usage.completion_tokens).toBe(1);
 
-    // Verify action log and request log matches
     const completedLog = loggedActions.find((a) => a.code === "request.completed");
     expect(completedLog).toBeDefined();
-    expect(completedLog.outputTokens).toBe(6);
+    expect(completedLog.outputTokens).toBe(1);
   });
 
   // --- TEST CASE 4: Mixed stream followed by fake-stream round isolation ---

@@ -1,5 +1,4 @@
 import { ContinuityStrategy, ContinuityContext, ContinuityDecision } from "./types";
-import { MaxTokensTruncationStrategy } from "./strategies/MaxTokensTruncationStrategy";
 import { ReasoningExhaustionStrategy } from "./strategies/ReasoningExhaustionStrategy";
 import { EmptyOutputStrategy } from "./strategies/EmptyOutputStrategy";
 export class ContinuityEngine {
@@ -9,8 +8,8 @@ export class ContinuityEngine {
   private strategyRetries: Map<string, number> = new Map();
 
   constructor() {
-    // Register strategies
-    this.strategies.push(new MaxTokensTruncationStrategy());
+    // MaxTokensTruncation (response-stage length stitching) is intentionally
+    // not registered: finish_reason=length is passed through to the client.
     this.strategies.push(new ReasoningExhaustionStrategy());
     // Zero-completion only: same-body retry before the client sees stop/[DONE].
     // Does not inject a "continue" user turn (that blanked OpenCode).

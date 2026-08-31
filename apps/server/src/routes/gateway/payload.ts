@@ -48,34 +48,32 @@ export function transformRequestBody(
     delete modifiedBody.max_tokens_to_sample;
   }
 
+  // Only intervene when the model config sets maxOutputTokens AND the client
+  // submitted a higher value. Never inject a gateway ceiling when the client
+  // omitted max_tokens / max_completion_tokens — that is the provider's job.
   if (maxOutputTokens && maxOutputTokens > 0) {
     let clipped = false;
-    let injected = false;
     let originalTokens = 0;
     let finalTokens = 0;
 
-    if (modifiedBody.max_tokens === undefined) {
-       modifiedBody.max_tokens = maxOutputTokens;
-       finalTokens = maxOutputTokens;
-       injected = true;
-    } else if (modifiedBody.max_tokens > maxOutputTokens) {
+    if (typeof modifiedBody.max_tokens === "number" && modifiedBody.max_tokens > maxOutputTokens) {
        originalTokens = modifiedBody.max_tokens;
        modifiedBody.max_tokens = maxOutputTokens;
        finalTokens = modifiedBody.max_tokens;
        clipped = true;
     }
-    if (modifiedBody.max_completion_tokens !== undefined && modifiedBody.max_completion_tokens > maxOutputTokens) {
+    if (typeof modifiedBody.max_completion_tokens === "number" && modifiedBody.max_completion_tokens > maxOutputTokens) {
        originalTokens = modifiedBody.max_completion_tokens;
        modifiedBody.max_completion_tokens = maxOutputTokens;
        finalTokens = modifiedBody.max_completion_tokens;
        clipped = true;
     }
 
-    if (clipped || injected) {
+    if (clipped) {
       logAction({
         ...baseActionLog,
         level: "WARN",
-        code: injected ? "token.max_output.injected" : "token.max_output.clamped",
+        code: "token.max_output.clamped",
         providerName,
         modelId,
         originalValue: originalTokens,
