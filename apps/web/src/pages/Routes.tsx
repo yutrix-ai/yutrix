@@ -20,7 +20,8 @@ export default function RoutesPage() {
     providers: state.providers, handlePathChange: state.handlePathChange, handleProtocolChange: state.handleProtocolChange,
     policies: state.policies,
     groups: state.groups, usersForSelect: state.usersForSelect, closeDialog: state.closeDialog, getProviderProtocolForSelection: state.getProviderProtocolForSelection,
-    allModels: state.allModels, getDefaultStrategyRules: state.getDefaultStrategyRules
+    allModels: state.allModels, getDefaultStrategyRules: state.getDefaultStrategyRules,
+    handleRoutingModeChange: state.handleRoutingModeChange
   };
 
   return (

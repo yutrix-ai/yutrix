@@ -310,6 +310,7 @@ export default function RouteScheduleDialog({
               getIncomingProtocol={getIncomingProtocol}
               getProviderProtocolForSelection={getProviderProtocolForSelection}
               allModels={allModels}
+              routingMode={route?.routingMode || "strategy"}
             />
           )}
         </DialogBody>

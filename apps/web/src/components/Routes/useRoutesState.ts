@@ -8,6 +8,7 @@ import {
   createDefaultStrategyRules,
   firstModelForProvider,
   providerProtocolForRule,
+  tasksForRoutingMode,
 } from "./strategyRoutingConfig";
 import {
   buildCopiedRouteDraft,
@@ -62,6 +63,7 @@ const emptyFormData = {
   hostInput: "*",
   path: "/v1/chat/completions",
   incomingProtocol: "openai",
+  routingMode: "strategy" as string,
   targets: [] as any[],
   timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
   timeoutEjectEnabled: false,
@@ -196,6 +198,39 @@ export function useRoutesState() {
       ...rule,
       providerProtocol: providerProtocolForRule(incomingProtocol, getProviderById(rule.providerId)),
     }));
+  };
+
+  const handleRoutingModeChange = (mode: string) => {
+    setFormData(prev => {
+      if (prev.routingMode === mode) return prev;
+      const nextTasks = tasksForRoutingMode(mode);
+      // Remap each layer's rules onto the new task set: keep task types shared by
+      // both modes (vision/general), seed the rest from the layer's general/top-level target.
+      const targets = (prev.targets || []).map((target: any) => {
+        const existingRules: any[] = Array.isArray(target.strategyRoutingRules) ? target.strategyRoutingRules : [];
+        const byType = new Map(existingRules.map((r: any) => [r.taskType, r]));
+        const seed = byType.get("general") || existingRules[0] || {
+          providerId: target.providerId || "",
+          providerProtocol: target.providerProtocol || "openai",
+          modelId: target.modelId || "",
+        };
+        const strategyRoutingRules = nextTasks.map(task => {
+          const existing = byType.get(task.type);
+          if (existing?.providerId && existing?.modelId) {
+            return { ...existing, enabled: existing.enabled !== false };
+          }
+          return {
+            taskType: task.type,
+            providerId: seed.providerId || "",
+            providerProtocol: seed.providerProtocol || "openai",
+            modelId: seed.modelId || "",
+            enabled: true,
+          };
+        });
+        return { ...target, strategyRoutingEnabled: true, strategyRoutingRules };
+      });
+      return { ...prev, routingMode: mode, targets };
+    });
   };
 
   const getSelectableModels = (sourceModels: ProviderModel[]) => getAvailableModels(sourceModels);
@@ -375,6 +410,7 @@ export function useRoutesState() {
         hostInput: formData.hostInput,
         path: formData.path,
         incomingProtocol: formData.incomingProtocol,
+        routingMode: formData.routingMode || "strategy",
         targets: formData.targets.map((t: any) => ({
           ...t,
           promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId
@@ -449,6 +485,7 @@ export function useRoutesState() {
       ...emptyFormData,
       ...draft,
       targets: draft.targets,
+      routingMode: route.routingMode || "strategy",
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
     });
     setDialogOpen(true);
@@ -464,6 +501,7 @@ export function useRoutesState() {
 
     setFormData({
       name: route.name, hostInput, path: route.path, incomingProtocol: epProto,
+      routingMode: route.routingMode || "strategy",
       targets: parsedTargets,
       timeoutMs: route.timeoutMs,
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
@@ -521,6 +559,6 @@ export function useRoutesState() {
     openScheduleDialog, loadData, getProviderById, getAvailableModels, hasAnthropicEndpoint,
     hasOpenaiEndpoint, getProviderProtocolForSelection, getSelectableModels, getUnavailableMessage, resolveModelSelection,
     fetchProviderModels, loadModels, loadFallbackModels, getDefaultStrategyRules, handleProviderChange, handleFallbackProviderChange, handlePathChange,
-    handleProtocolChange, handleSave, closeDialog, openCreate, openCopy, openEdit, handleDelete, toggleEnable, getReadinessBadge
+    handleProtocolChange, handleRoutingModeChange, handleSave, closeDialog, openCreate, openCopy, openEdit, handleDelete, toggleEnable, getReadinessBadge
   };
 }

@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Network, SlidersHorizontal } from "lucide-react";
-import { Provider, ProviderModel, StrategyRoutingRule, StrategyTaskType } from "./types";
+import { Provider, ProviderModel, RouteTaskType, StrategyRoutingRule } from "./types";
 import {
   STRATEGY_TASKS,
   completeStrategyRules,
@@ -90,7 +90,7 @@ export function StrategyRoutingEditor({
     modelId: formData.modelId,
   });
 
-  const updateRule = (taskType: StrategyTaskType, patch: Partial<StrategyRoutingRule>) => {
+  const updateRule = (taskType: RouteTaskType, patch: Partial<StrategyRoutingRule>) => {
     const currentRules = completeStrategyRules({
       rules: formData.strategyRoutingRules,
       providerId: formData.providerId,

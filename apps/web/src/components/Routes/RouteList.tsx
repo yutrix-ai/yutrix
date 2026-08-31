@@ -8,7 +8,7 @@ import { Edit2, Trash2, CalendarRange, Route as RouteIcon, Clock, SlidersHorizon
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
-import { STRATEGY_TASKS } from "./strategyRoutingConfig";
+import { tasksForRoutingMode } from "./strategyRoutingConfig";
 
 function getStrategyModelsText(route: any) {
   if (!route.strategyRoutingRules) return "";
@@ -27,7 +27,7 @@ function getStrategyModelsText(route: any) {
   return uniqueModels.join(" / ");
 }
 
-function renderStrategyBadges(rules: any, allModels: any[], t: any) {
+function renderStrategyBadges(rules: any, allModels: any[], t: any, routingMode?: string) {
   if (!rules) return null;
   let parsedRules = rules;
   if (typeof rules === "string") {
@@ -39,7 +39,7 @@ function renderStrategyBadges(rules: any, allModels: any[], t: any) {
   }
   if (!Array.isArray(parsedRules)) return null;
 
-  const visibleRules = STRATEGY_TASKS.map((task) => {
+  const visibleRules = tasksForRoutingMode(routingMode).map((task) => {
     const rule = parsedRules.find((item: any) => item.taskType === task.type);
     if (!rule || rule.enabled === false) return null;
     const model = allModels.find((item: any) => item.providerId === rule.providerId && item.modelId === rule.modelId);
@@ -196,7 +196,7 @@ export function RouteList({
                           if (isStrategy) {
                             return (
                               <div className="flex flex-wrap gap-1.5 mt-2 max-w-xl">
-                                {renderStrategyBadges(strategyRules, allModels, t)}
+                                {renderStrategyBadges(strategyRules, allModels, t, r.routingMode)}
                               </div>
                             );
                           }

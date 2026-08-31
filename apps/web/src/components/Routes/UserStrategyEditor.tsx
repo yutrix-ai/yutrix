@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { STRATEGY_TASKS } from "./strategyRoutingConfig";
-import { ProviderModel, StrategyRoutingRule, StrategyTaskType } from "./types";
+import { ProviderModel, RouteTaskType, StrategyRoutingRule } from "./types";
 
 interface UserStrategyEditorProps {
   rules: StrategyRoutingRule[];
@@ -28,7 +28,7 @@ export function UserStrategyEditor({
 }: UserStrategyEditorProps) {
   const { t } = useTranslation();
 
-  const handleModelChange = (taskType: StrategyTaskType, modelId: string) => {
+  const handleModelChange = (taskType: RouteTaskType, modelId: string) => {
     const newRules = [...rules];
     const existingIndex = newRules.findIndex(r => r.taskType === taskType);
     

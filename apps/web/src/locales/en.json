@@ -994,6 +994,30 @@
         "writing": "Use for articles, copy, email, translation, rewriting, or polishing.",
         "general": "Default model when no other task type matches."
       }
+    },
+    "routingMode": {
+      "strategy": "Strategy Routing",
+      "strategyDescription": "For IDE / coding-assistant clients: classifies by content intent (code, debugging, writing, etc.).",
+      "opcAgent": "OPC Agent Routing",
+      "opcAgentDescription": "For autonomous agents such as Rakazo: classifies by execution phase (vision, planning, action, review, memory)."
+    },
+    "opcAgent": {
+      "tasks": {
+        "vision": "Vision / Multimodal",
+        "thinking": "Deep Planning",
+        "action": "Action / Operator",
+        "auto_review": "Auto-Review Judge",
+        "memory": "Memory / Compaction",
+        "general": "General Bot"
+      },
+      "taskDescriptions": {
+        "vision": "Screenshots, image input, or UI grounding tasks that need a multimodal model.",
+        "thinking": "Task decomposition and multi-step planning when a new user goal arrives; suits deep-reasoning models.",
+        "action": "Mouse/keyboard, shell, and file operations inside tool-call loops; needs a strong tool-calling model.",
+        "auto_review": "Safety audit of dangerous agent actions; requires a low-latency lightweight model.",
+        "memory": "History compaction and memory distillation; context overflows also route here.",
+        "general": "Regular conversation turns or anything not matching other phases."
+      }
     }
   },
   "analytics": {

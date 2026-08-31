@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Trash2, Plus, ArrowUp, ArrowDown, Search, Check, ChevronDown } from "lucide-react";
-import { STRATEGY_TASKS } from "./strategyRoutingConfig";
+import { ROUTING_MODES, tasksForRoutingMode } from "./strategyRoutingConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ interface RouteTargetsTableProps {
   allModels: any[];
   policies: any[];
   incomingProtocol: string;
+  routingMode?: string;
+  onRoutingModeChange?: (mode: string) => void;
   getProviderProtocolForSelection: (protocol: string, provider: any) => string;
 }
 
@@ -23,15 +25,18 @@ export function RouteTargetsTable({
   providers,
   allModels,
   incomingProtocol,
+  routingMode,
+  onRoutingModeChange,
   getProviderProtocolForSelection
 }: RouteTargetsTableProps) {
   const { t } = useTranslation();
+  const routeTasks = tasksForRoutingMode(routingMode);
 
   const normalizeTarget = (target: any) => {
     const rules = target.strategyRoutingRules || [];
     const rulesMap = new Map(rules.map((r: any) => [r.taskType, r]));
     
-    const normalizedRules = STRATEGY_TASKS.map(task => {
+    const normalizedRules = routeTasks.map(task => {
       const existing = rulesMap.get(task.type) as any;
       if (existing) {
         return {
@@ -66,7 +71,7 @@ export function RouteTargetsTable({
       promptPolicyId: "none",
       bestEffort: false,
       strategyRoutingEnabled: true,
-      strategyRoutingRules: STRATEGY_TASKS.map(task => ({
+      strategyRoutingRules: routeTasks.map(task => ({
         taskType: task.type,
         providerId: "",
         providerProtocol: "openai",
@@ -120,27 +125,49 @@ export function RouteTargetsTable({
     onChange(newTargets);
   };
 
+  const activeModeOption = ROUTING_MODES.find(m => m.value === routingMode) || ROUTING_MODES[0];
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-start gap-4">
         <div className="space-y-0.5">
           <h3 className="text-sm font-medium text-zinc-950 dark:text-zinc-50">
             {t("routes.sections.routingTarget", "请求路由转发目标 (漏斗模型)")}
           </h3>
           <p className="text-xs text-muted-foreground/90">
-            {t("routes.targets.description", "根据漏斗顺序逐级转发请求，每一行可为各类任务配置特定的执行目标。")}
+            {t(activeModeOption.descriptionKey, activeModeOption.fallbackDescription)}
           </p>
         </div>
-        <Button 
-          type="button" 
-          variant="outline" 
-          size="sm" 
-          onClick={handleAdd}
-          className="border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900 h-8 text-xs gap-1.5 font-medium shadow-xs"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          {t("routes.actions.addTarget", "添加目标层")}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {onRoutingModeChange && (
+            <div className="flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5 bg-zinc-50/50 dark:bg-zinc-900/30 shadow-xs">
+              {ROUTING_MODES.map(mode => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => onRoutingModeChange(mode.value)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                    (routingMode || "strategy") === mode.value
+                      ? "bg-white dark:bg-zinc-800 text-violet-700 dark:text-violet-300 shadow-xs border border-zinc-200/80 dark:border-zinc-700"
+                      : "text-muted-foreground hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
+                >
+                  {t(mode.labelKey, mode.fallbackLabel)}
+                </button>
+              ))}
+            </div>
+          )}
+          <Button 
+            type="button" 
+            variant="outline" 
+            size="sm" 
+            onClick={handleAdd}
+            className="border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900 h-8 text-xs gap-1.5 font-medium shadow-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {t("routes.actions.addTarget", "添加目标层")}
+          </Button>
+        </div>
       </div>
 
       <div className="border border-zinc-200/80 dark:border-zinc-800 rounded-lg overflow-hidden bg-background shadow-xs">
@@ -148,7 +175,7 @@ export function RouteTargetsTable({
           <TableHeader className="bg-zinc-50/50 dark:bg-zinc-900/10 border-b border-zinc-200/50 dark:border-zinc-800/50">
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-20 text-center font-medium text-xs text-muted-foreground uppercase tracking-wider">{t("routes.targets.priority", "优先级")}</TableHead>
-              {STRATEGY_TASKS.map(task => (
+              {routeTasks.map(task => (
                 <TableHead key={task.type} className="min-w-[155px] py-3.5 px-2">
                   <div className="flex flex-col space-y-0.5">
                     <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
@@ -173,7 +200,7 @@ export function RouteTargetsTable({
                       L{idx + 1}
                     </span>
                   </TableCell>
-                  {STRATEGY_TASKS.map(task => {
+                  {routeTasks.map(task => {
                     const rule = normalized.strategyRoutingRules.find((r: any) => r.taskType === task.type) || {
                       providerId: "",
                       modelId: ""

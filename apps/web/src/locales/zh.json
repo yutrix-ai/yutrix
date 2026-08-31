@@ -991,6 +991,30 @@
         "writing": "文章、文案、邮件、翻译、改写或润色任务。",
         "general": "未命中其他任务类型时的默认模型。"
       }
+    },
+    "routingMode": {
+      "strategy": "策略路由",
+      "strategyDescription": "面向 IDE / 编码助手等客户端，按内容意图分类（代码、报错、写作等），逐层漏斗转发。",
+      "opcAgent": "OPC 智能体路由",
+      "opcAgentDescription": "面向 Rakazo 等自主智能体，按执行阶段分类（视觉、规划、操作、审评、记忆），逐层漏斗转发。"
+    },
+    "opcAgent": {
+      "tasks": {
+        "vision": "视觉感知",
+        "thinking": "深度规划",
+        "action": "操作执行",
+        "auto_review": "安全审评",
+        "memory": "记忆压缩",
+        "general": "通用兜底"
+      },
+      "taskDescriptions": {
+        "vision": "屏幕截图、图片输入或 UI 定位任务，需要多模态视觉模型。",
+        "thinking": "新用户目标进入时的任务拆解与多步规划，适合深度推理模型。",
+        "action": "工具调用循环中的键鼠、Shell、文件等操作，需要强工具调用模型。",
+        "auto_review": "Agent 危险动作安全审计，要求低延迟轻量模型。",
+        "memory": "会话历史压缩与记忆提炼；上下文超限时也会路由到此模型。",
+        "general": "普通对话轮次或未命中其他阶段时使用。"
+      }
     }
   },
   "analytics": {

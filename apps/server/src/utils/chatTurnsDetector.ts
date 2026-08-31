@@ -345,6 +345,16 @@ export function detectAIClient(
   if (userAgent.includes("roo-code")) {
     return "Roo Code";
   }
+  // Pi runtime clients (rakazo OS-agent et al.). pi-ai sends
+  // "pi (<platform> <release>; <arch>)" or "pi (browser)".
+  if (
+    userAgent.includes("rakazo") ||
+    userAgent.includes("pi-ai") ||
+    userAgent.startsWith("pi (") ||
+    userAgent.startsWith("pi/")
+  ) {
+    return "Rakazo / Pi Agent";
+  }
 
   // 2. Check path
   if (path.startsWith("/v0/messages")) {

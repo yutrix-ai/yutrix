@@ -48,6 +48,7 @@ export interface RouteItem {
   fallbackPromptPolicyId: string | null;
   fallbackMatchTarget: boolean;
   targets?: any;
+  routingMode?: RoutingMode;
   fallbackStrategyRoutingEnabled?: boolean;
   fallbackStrategyRoutingRules?: StrategyRoutingRule[];
   strategyRoutingEnabled?: boolean;
@@ -63,10 +64,16 @@ export interface RouteItem {
   activeSchedule?: any;
 }
 
+export type RoutingMode = "strategy" | "opc_agent";
+
 export type StrategyTaskType = "vision" | "debug" | "code" | "long_context" | "writing" | "general";
 
+export type OpcAgentTaskType = "vision" | "thinking" | "action" | "auto_review" | "memory" | "general";
+
+export type RouteTaskType = StrategyTaskType | OpcAgentTaskType;
+
 export interface StrategyRoutingRule {
-  taskType: StrategyTaskType;
+  taskType: RouteTaskType;
   providerId: string;
   providerProtocol: string;
   modelId: string;

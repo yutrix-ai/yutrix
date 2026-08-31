@@ -36,6 +36,7 @@ interface ScheduleFormProps {
   getIncomingProtocol: () => string;
   getProviderProtocolForSelection: (incoming: string, provider: Provider | undefined) => string;
   allModels: ProviderModel[];
+  routingMode?: string;
 }
 
 export function ScheduleForm({
@@ -49,6 +50,7 @@ export function ScheduleForm({
   getIncomingProtocol,
   getProviderProtocolForSelection,
   allModels,
+  routingMode,
 }: ScheduleFormProps) {
   const { t } = useTranslation();
 
@@ -196,6 +198,7 @@ ${t("routes.schedule.helpDesc1", "系统以全局“每日起始时间”（当�
           policies={policies || []}
           getProviderProtocolForSelection={getProviderProtocolForSelection}
           incomingProtocol={getIncomingProtocol()}
+          routingMode={routingMode}
         />
         
         <div className="flex items-center gap-3 pt-4 border-t mt-6">

@@ -32,6 +32,7 @@ export async function addColumnIfMissing(tableName: string, columnName: string, 
 export async function ensureStrategyRoutingColumns() {
   await addColumnIfMissing("endpoint_routes", "strategyRoutingEnabled", "ALTER TABLE endpoint_routes ADD COLUMN strategyRoutingEnabled integer DEFAULT 0 NOT NULL");
   await addColumnIfMissing("endpoint_routes", "strategyRoutingRules", "ALTER TABLE endpoint_routes ADD COLUMN strategyRoutingRules text");
+  await addColumnIfMissing("endpoint_routes", "routingMode", "ALTER TABLE endpoint_routes ADD COLUMN routingMode text DEFAULT 'strategy' NOT NULL");
   await addColumnIfMissing("request_logs", "routingTrace", "ALTER TABLE request_logs ADD COLUMN routingTrace text");
 }
 

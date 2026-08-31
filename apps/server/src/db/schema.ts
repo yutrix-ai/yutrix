@@ -154,6 +154,8 @@ export const endpointRoutes = sqliteTable("endpoint_routes", {
   fallbackStrategyRoutingRules: text("fallbackStrategyRoutingRules"),
   strategyRoutingEnabled: integer("strategyRoutingEnabled", { mode: "boolean" }).notNull().default(false),
   strategyRoutingRules: text("strategyRoutingRules"),
+  /** 'strategy' (developer funnel columns) | 'opc_agent' (OS-agent / OPC bot columns). */
+  routingMode: text("routingMode").notNull().default("strategy"),
   targets: text("targets"), // JSON array of targets for funnel routing
   weight: integer("weight").notNull().default(1),
   priority: integer("priority").notNull().default(0),

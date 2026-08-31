@@ -31,8 +31,26 @@ import {
   meetsLongContextSizeGate,
   shouldAttemptLongContextHop,
 } from "../routes/gateway/degradePolicy";
+import {
+  classifyOpcAgentTask,
+  isOpcAgentTaskType,
+  resolveRouteRoutingMode,
+  type OpcAgentTaskType,
+  type RoutingMode,
+} from "./opcAgentRouting";
 export { hasImageInput };
 export { LONG_CONTEXT_SIZE_GATE_TOKENS, meetsLongContextSizeGate, shouldAttemptLongContextHop } from "../routes/gateway/degradePolicy";
+export {
+  capacityTaskTypeForMode,
+  classifyOpcAgentTask,
+  isOpcAgentTaskType,
+  OPC_AGENT_TASK_TYPES,
+  resolveRouteRoutingMode,
+  ROUTING_MODES,
+  strategyRoutingEnabledForLayer,
+  type OpcAgentTaskType,
+  type RoutingMode,
+} from "./opcAgentRouting";
 
 export const STRATEGY_TASK_TYPES = [
   "vision",
@@ -44,6 +62,14 @@ export const STRATEGY_TASK_TYPES = [
 ] as const;
 
 export type StrategyTaskType = (typeof STRATEGY_TASK_TYPES)[number];
+
+/**
+ * Union of task types across routing modes. "vision" and "general" are shared
+ * on purpose: the vision capability override, the general fallback in
+ * findStrategyRule, and the funnel degrade machinery all key off those two
+ * names and keep working unchanged in OPC agent mode.
+ */
+export type RouteTaskType = StrategyTaskType | OpcAgentTaskType;
 
 /**
  * Floor for *classifying* a request as long_context from text (logs, documents).
@@ -99,7 +125,7 @@ export function applyLongContextStrategyTokenGate(options: {
 }
 
 export interface StrategyRoutingRule {
-  taskType: StrategyTaskType;
+  taskType: RouteTaskType;
   providerId: string;
   providerProtocol: RouteProtocol;
   modelId: string;
@@ -115,7 +141,7 @@ export interface StrategyTaskClassification {
 
 export interface StrategyRoutingDecision {
   applied: boolean;
-  taskType: StrategyTaskType;
+  taskType: RouteTaskType;
   reasons: string[];
   rule: StrategyRoutingRule | null;
   newAttempt?: AttemptState;
@@ -126,6 +152,11 @@ const TASK_TYPE_SET = new Set<string>(STRATEGY_TASK_TYPES);
 
 export function isStrategyTaskType(value: unknown): value is StrategyTaskType {
   return typeof value === "string" && TASK_TYPE_SET.has(value);
+}
+
+/** Accepts task types from either routing mode (rules are stored in one JSON shape). */
+export function isRouteTaskType(value: unknown): value is RouteTaskType {
+  return isStrategyTaskType(value) || isOpcAgentTaskType(value);
 }
 
 export function extractCurrentUserInputForRouting(body: any): string {
@@ -957,11 +988,11 @@ export function parseStrategyRoutingRules(
   if (!Array.isArray(raw)) return [];
 
   const rules: StrategyRoutingRule[] = [];
-  const seen = new Set<StrategyTaskType>();
+  const seen = new Set<RouteTaskType>();
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const candidate = item as Record<string, unknown>;
-    if (!isStrategyTaskType(candidate.taskType)) continue;
+    if (!isRouteTaskType(candidate.taskType)) continue;
     if (seen.has(candidate.taskType)) continue;
     const providerId =
       typeof candidate.providerId === "string"
@@ -998,7 +1029,7 @@ export function stringifyStrategyRoutingRules(rules: StrategyRoutingRule[]) {
 
 export function findStrategyRule(
   rules: StrategyRoutingRule[],
-  taskType: StrategyTaskType,
+  taskType: RouteTaskType,
 ): StrategyRoutingRule | null {
   const direct = rules.find(
     (rule) => rule.enabled !== false && rule.taskType === taskType,
@@ -1197,6 +1228,8 @@ export async function resolveStrategyRoutingDecision(options: {
     return null;
   }
 
+  const routingMode = resolveRouteRoutingMode(options.route);
+
   const requestClass = classifyGatewayRequestClass(options.body);
   if (requestClass.requestClass === "client_sidecar") {
     return {
@@ -1208,7 +1241,10 @@ export async function resolveStrategyRoutingDecision(options: {
     };
   }
 
+  // OPC agents send a nominal placeholder model id (whatever the operator
+  // typed when connecting the endpoint); it must never suppress routing.
   if (
+    routingMode !== "opc_agent" &&
     requestClass.requestClass === "user_intent" &&
     isClientNamedSmallFastModel(extractClientRequestedModel(options.body))
   ) {
@@ -1326,7 +1362,14 @@ export async function resolveStrategyRoutingDecision(options: {
 
   if (options.currentAttempt.reapplyLayerStrategy) {
     const inherited = options.currentAttempt.strategyTaskType;
-    if (inherited && inherited !== "long_context" && inherited !== "vision" && isStrategyTaskType(inherited)) {
+    const inheritedReapplicable =
+      routingMode === "opc_agent"
+        ? !!inherited && inherited !== "vision" && isOpcAgentTaskType(inherited)
+        : !!inherited &&
+          inherited !== "long_context" &&
+          inherited !== "vision" &&
+          isStrategyTaskType(inherited);
+    if (inherited && inheritedReapplicable && isRouteTaskType(inherited)) {
       const rules = parseRules(strategyRoutingRules);
       const rule = findStrategyRule(rules, inherited);
       if (rule) {
@@ -1370,10 +1413,17 @@ export async function resolveStrategyRoutingDecision(options: {
   }
 
   // ── Continuation requests (tool results, system-reminders, auto-drive, etc.) ──
-  // Not a real user input → unconditionally keep the current model.
+  // Strategy mode: not a real user input → unconditionally keep the current model.
   // After an availability hop, re-select this layer's strategy instead of
   // inheriting the previous layer's model.
-  if (options.isContinuation && !options.currentAttempt.reapplyLayerStrategy) {
+  // OPC agent mode intentionally skips this sticky inheritance: a tool
+  // continuation marks the agent's execution loop and must route to the
+  // action column (phase routing), not to whichever model planned the turn.
+  if (
+    routingMode !== "opc_agent" &&
+    options.isContinuation &&
+    !options.currentAttempt.reapplyLayerStrategy
+  ) {
     if (options.previousModelId) {
       // We know what model the previous turn used — inherit it
       if (options.previousModelId === options.currentAttempt.modelId) {
@@ -1480,27 +1530,42 @@ export async function resolveStrategyRoutingDecision(options: {
     };
   }
 
-  // ── Real user input (blue bubble) ──
-  // Always classify fresh — this is the user's intent signal.
-  const inputText = extractCurrentUserInputForRouting(options.body);
+  // ── Fresh classification ──
+  // Strategy mode: real user input (blue bubble) — classify the intent text.
+  // OPC agent mode: every turn (including tool continuations) is classified by
+  // agent-loop phase; the structural classifier is O(1) so per-turn cost is nil.
   const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
   const isVision = tokenEst.imageCount > 0;
-  const imageInput = isVision;
-  const classification = classifyStrategyTask(inputText, imageInput);
 
-  let selectedTaskType: StrategyTaskType = classification.taskType;
-  let reasons = [...classification.reasons];
-  if (isVision) {
-    selectedTaskType = "vision";
-    reasons = ["required_capability_vision"];
-  } else if (selectedTaskType === "long_context") {
-    const gated = applyLongContextStrategyTokenGate({
-      taskType: selectedTaskType,
-      estimatedInputTokens: tokenEst.totalTokens,
-      inputText,
+  let selectedTaskType: RouteTaskType;
+  let reasons: string[];
+
+  if (routingMode === "opc_agent") {
+    const opcClassification = classifyOpcAgentTask({
+      body: options.body,
+      requestClass: requestClass.requestClass,
+      hasImageInput: isVision,
     });
-    selectedTaskType = gated.taskType;
-    reasons = [...reasons, ...gated.reasons];
+    selectedTaskType = opcClassification.taskType;
+    reasons = [...opcClassification.reasons];
+  } else {
+    const inputText = extractCurrentUserInputForRouting(options.body);
+    const classification = classifyStrategyTask(inputText, isVision);
+
+    selectedTaskType = classification.taskType;
+    reasons = [...classification.reasons];
+    if (isVision) {
+      selectedTaskType = "vision";
+      reasons = ["required_capability_vision"];
+    } else if (selectedTaskType === "long_context") {
+      const gated = applyLongContextStrategyTokenGate({
+        taskType: "long_context",
+        estimatedInputTokens: tokenEst.totalTokens,
+        inputText,
+      });
+      selectedTaskType = gated.taskType;
+      reasons = [...reasons, ...gated.reasons];
+    }
   }
 
   const rules = parseRules(strategyRoutingRules);
@@ -1577,6 +1642,7 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
     return null;
   }
 
+  const routingMode = resolveRouteRoutingMode(options.route);
   const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
   const isVision = tokenEst.imageCount > 0;
   const inputText = extractCurrentUserInputForRouting(options.body);
@@ -1588,12 +1654,22 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
     taskType = "vision";
     reasons = ["required_capability_vision"];
   } else if (!taskType) {
-    const classification = classifyStrategyTask(inputText, isVision);
-    taskType = classification.taskType;
-    reasons = classification.reasons;
+    if (routingMode === "opc_agent") {
+      const opcClassification = classifyOpcAgentTask({
+        body: options.body,
+        requestClass: classifyGatewayRequestClass(options.body).requestClass,
+        hasImageInput: isVision,
+      });
+      taskType = opcClassification.taskType;
+      reasons = opcClassification.reasons;
+    } else {
+      const classification = classifyStrategyTask(inputText, isVision);
+      taskType = classification.taskType;
+      reasons = classification.reasons;
+    }
   }
 
-  if (taskType === "long_context") {
+  if (routingMode !== "opc_agent" && taskType === "long_context") {
     const gated = applyLongContextStrategyTokenGate({
       taskType: "long_context",
       estimatedInputTokens: tokenEst.totalTokens,
@@ -1608,11 +1684,11 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
   const rules = parseStrategyRoutingRules(
     options.route.fallbackStrategyRoutingRules,
   );
-  const rule = findStrategyRule(rules, taskType as StrategyTaskType);
+  const rule = findStrategyRule(rules, taskType as RouteTaskType);
   if (!rule) {
     return {
       applied: false,
-      taskType: taskType as StrategyTaskType,
+      taskType: taskType as RouteTaskType,
       reasons,
       rule: null,
       skipReason: "no_matching_rule",
@@ -1626,7 +1702,7 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
   if (!validation.ok) {
     return {
       applied: false,
-      taskType: taskType as StrategyTaskType,
+      taskType: taskType as RouteTaskType,
       reasons,
       rule,
       skipReason: validation.error,
@@ -1639,7 +1715,7 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
   if (sameTarget) {
     return {
       applied: false,
-      taskType: taskType as StrategyTaskType,
+      taskType: taskType as RouteTaskType,
       reasons,
       rule: normalizedRule,
       skipReason: "already_on_target",
@@ -1654,7 +1730,7 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
   ) {
     return {
       applied: false,
-      taskType: taskType as StrategyTaskType,
+      taskType: taskType as RouteTaskType,
       reasons: [
         ...reasons,
         `策略规则指向了已失败的提供商/模型 (${options.failedProviderId}/${options.failedModelId})，忽略该规则并使用降级目标默认值`,
@@ -1666,7 +1742,7 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
 
   return {
     applied: true,
-    taskType: taskType as StrategyTaskType,
+    taskType: taskType as RouteTaskType,
     reasons,
     rule: normalizedRule,
   };

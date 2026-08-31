@@ -44,7 +44,7 @@ import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
 import { overflowHopTaskOrder } from "./overflowContextHop";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities } from "./inputTokenLimit";
-import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS } from "../../services/strategyRouting";
+import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS, resolveRouteRoutingMode, capacityTaskTypeForMode, strategyRoutingEnabledForLayer } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
 import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
@@ -690,7 +690,9 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   });
                 }
                 let previousModelId: string | null = null;
-                if (isContinuation) {
+                // OPC agent mode re-classifies every turn by agent-loop phase;
+                // sticky-model inheritance (and its chat-log lookup) is strategy-mode only.
+                if (isContinuation && resolveRouteRoutingMode(route) !== "opc_agent") {
                   const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string | undefined;
                   previousModelId = await getStickyModelForContinuation(body, authCtx.userId, clientSessionIdVal);
                 }
@@ -785,10 +787,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             );
 
             const contextBudget = resolveModelContextWindow(activeModelConfig);
+            const routeRoutingMode = resolveRouteRoutingMode(route);
+            const capacityTaskType = capacityTaskTypeForMode(routeRoutingMode);
             if (
               !longContextOverrideApplied &&
-              route.strategyRoutingEnabled &&
-              currentAttempt.strategyTaskType !== "long_context"
+              strategyRoutingEnabledForLayer(route, currentAttempt.targetIndex || 0) &&
+              currentAttempt.strategyTaskType !== capacityTaskType
               && (
                 contextBudget.limit > 0
                 || meetsLongContextSizeGate(ctx.routingRequirements?.estimatedTotalTokens ?? 0)
@@ -973,7 +977,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   }
                   const rules = parseStrategyRoutingRules(currentStrategyRoutingRules);
                   const longContextRuleRaw = rules.find(
-                    (r: any) => r.taskType === "long_context" && r.enabled
+                    (r: any) => r.taskType === capacityTaskType && r.enabled
                   );
                   if (longContextRuleRaw) {
                     const validation = await validateOneStrategyRule({
@@ -1017,7 +1021,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                           providerId: longContextRule.providerId,
                           providerProtocol: longContextRule.providerProtocol,
                           modelId: longContextRule.modelId,
-                          strategyTaskType: "long_context",
+                          strategyTaskType: capacityTaskType,
                           strategyReason: isContextExhausted
                             ? "override:input_exceeds_model_limit"
                             : "override:input_exceeds_256k_gate",

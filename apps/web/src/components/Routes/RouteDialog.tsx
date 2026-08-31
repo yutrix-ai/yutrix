@@ -22,7 +22,7 @@ export function RouteDialog() {
     providers, handlePathChange, handleProtocolChange,
     policies,
     groups, usersForSelect, closeDialog, getProviderProtocolForSelection,
-    allModels, getDefaultStrategyRules
+    allModels, getDefaultStrategyRules, handleRoutingModeChange
   } = useRouteForm();
 
   const nameIssue = identityIssues.find((issue: { code: string }) =>
@@ -143,6 +143,8 @@ export function RouteDialog() {
                   allModels={allModels}
                   policies={policies || []}
                   incomingProtocol={formData.incomingProtocol}
+                  routingMode={formData.routingMode || "strategy"}
+                  onRoutingModeChange={handleRoutingModeChange}
                   getProviderProtocolForSelection={getProviderProtocolForSelection}
                 />
               </div>

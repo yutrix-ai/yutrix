@@ -43,10 +43,12 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     authorizedGroupIds,
     schedules,
     targets,
+    routingMode,
     ipWhitelist: rawIpWhitelist,
     timeoutEjectEnabled,
   } = body;
   const hostInput = rawHostInput ?? body.host;
+  const resolvedRoutingMode = routingMode === "opc_agent" ? "opc_agent" : "strategy";
 
   if (!hostInput || !path || !incomingProtocol || !targets || targets.length === 0) {
     return reply.code(400).send({ error: "缺少必填字段或路由目标为空" });
@@ -149,6 +151,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     allowClientModel: allowClientModel || false,
     schedules: schedules ? JSON.stringify(schedules) : null,
     targets: JSON.stringify(resolvedTargets),
+    routingMode: resolvedRoutingMode,
     retryCount: retryCount !== undefined ? retryCount : 3,
     ipWhitelist,
     timeoutEjectEnabled: !!timeoutEjectEnabled,
@@ -355,6 +358,9 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     schedules: body.schedules !== undefined ? (body.schedules ? JSON.stringify(body.schedules) : null) : route.schedules,
     retryCount: patchRetryCount,
     targets: JSON.stringify(resolvedTargets),
+    routingMode: body.routingMode !== undefined
+      ? (body.routingMode === "opc_agent" ? "opc_agent" : "strategy")
+      : ((route as any).routingMode || "strategy"),
     ipWhitelist: patchIpWhitelist,
     timeoutEjectEnabled: body.timeoutEjectEnabled !== undefined ? !!body.timeoutEjectEnabled : route.timeoutEjectEnabled,
     status: body.status !== undefined ? body.status : (body.enabled ? "active" : route.status),
