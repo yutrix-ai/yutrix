@@ -613,10 +613,13 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     ctx.continuity.isLastCycle = (continuityCycles >= MAX_CONTINUITY_CYCLES);
     if (continuityCycles > 0) {
       attemptCount = 0;
-      if (!ctx.emptyOutputLayerHopApplied || currentAttempt.reapplyLayerStrategy) {
-        strategyRoutingChecked = false;
-        strategyDecisionApplied = false;
-      }
+      // Do NOT reset strategyRoutingChecked here: in-place continuity retries
+      // (MaxTokensTruncation stitching, EmptyOutput same-layer retry) must stay
+      // on the model that produced the previous round. Stitched bodies carry a
+      // synthetic "please continue" user turn that would otherwise reclassify
+      // the request (e.g. OPC mode → thinking) and switch models mid-completion.
+      // EmptyOutput layer hops re-enable strategy routing themselves inside
+      // applyEmptyOutputLayerHop, with the original un-stitched body restored.
       responseData = null;
     }
 
