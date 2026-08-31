@@ -1532,8 +1532,9 @@ export async function resolveStrategyRoutingDecision(options: {
 
   // ── Fresh classification ──
   // Strategy mode: real user input (blue bubble) — classify the intent text.
-  // OPC agent mode: every turn (including tool continuations) is classified by
-  // agent-loop phase; the structural classifier is O(1) so per-turn cost is nil.
+  // OPC agent mode: every turn is classified by agent-loop phase. Tool
+  // continuations and mid-task user follow-ups (history already has tool
+  // activity) stick to the action column; only a fresh goal lands on thinking.
   const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
   const isVision = tokenEst.imageCount > 0;
 

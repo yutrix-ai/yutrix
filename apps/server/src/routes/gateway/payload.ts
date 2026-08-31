@@ -11,6 +11,16 @@ export interface TransformResult {
   isStreaming: boolean;
 }
 
+export interface TransformRequestBodyOptions {
+  /**
+   * OPC agent mode: when the model has no maxOutputTokens ceiling, strip the
+   * client's max_tokens / max_completion_tokens on OpenAI-compatible upstreams
+   * so the provider default applies (e.g. xAI defaults to 128k). Never strip
+   * for Anthropic upstreams — max_tokens is required there.
+   */
+  stripClientMaxTokensWhenUnset?: boolean;
+}
+
 /**
  * Deep-clone the incoming request body and apply model, token-limit,
  * and streaming normalizations.
@@ -25,6 +35,7 @@ export function transformRequestBody(
   logAction: Function,
   baseActionLog: any,
   providerName: string,
+  options?: TransformRequestBodyOptions,
 ): TransformResult {
   // Payload transformations
   let modifiedBody = JSON.parse(JSON.stringify(body));
@@ -48,21 +59,23 @@ export function transformRequestBody(
     delete modifiedBody.max_tokens_to_sample;
   }
 
+  const hasConfiguredCeiling = !!(maxOutputTokens && maxOutputTokens > 0);
+
   // Only intervene when the model config sets maxOutputTokens AND the client
   // submitted a higher value. Never inject a gateway ceiling when the client
   // omitted max_tokens / max_completion_tokens — that is the provider's job.
-  if (maxOutputTokens && maxOutputTokens > 0) {
+  if (hasConfiguredCeiling) {
     let clipped = false;
     let originalTokens = 0;
     let finalTokens = 0;
 
-    if (typeof modifiedBody.max_tokens === "number" && modifiedBody.max_tokens > maxOutputTokens) {
+    if (typeof modifiedBody.max_tokens === "number" && modifiedBody.max_tokens > maxOutputTokens!) {
        originalTokens = modifiedBody.max_tokens;
        modifiedBody.max_tokens = maxOutputTokens;
        finalTokens = modifiedBody.max_tokens;
        clipped = true;
     }
-    if (typeof modifiedBody.max_completion_tokens === "number" && modifiedBody.max_completion_tokens > maxOutputTokens) {
+    if (typeof modifiedBody.max_completion_tokens === "number" && modifiedBody.max_completion_tokens > maxOutputTokens!) {
        originalTokens = modifiedBody.max_completion_tokens;
        modifiedBody.max_completion_tokens = maxOutputTokens;
        finalTokens = modifiedBody.max_completion_tokens;
@@ -78,6 +91,33 @@ export function transformRequestBody(
         modelId,
         originalValue: originalTokens,
         clampedValue: finalTokens
+      });
+    }
+  } else if (
+    options?.stripClientMaxTokensWhenUnset &&
+    !isAnthropicUpstream
+  ) {
+    // OPC + unset model ceiling: do not forward a client's restrictive cap
+    // (rakazo OPC defaults to 4096). Provider defaults apply instead.
+    // Anthropic is excluded — max_tokens is required and a later outbound
+    // normalizer would otherwise invent max_tokens=1.
+    const strippedMaxTokens =
+      typeof modifiedBody.max_tokens === "number" ? modifiedBody.max_tokens : undefined;
+    const strippedMaxCompletion =
+      typeof modifiedBody.max_completion_tokens === "number"
+        ? modifiedBody.max_completion_tokens
+        : undefined;
+    if (strippedMaxTokens !== undefined || strippedMaxCompletion !== undefined) {
+      delete modifiedBody.max_tokens;
+      delete modifiedBody.max_completion_tokens;
+      logAction({
+        ...baseActionLog,
+        level: "INFO",
+        code: "token.max_output.stripped",
+        providerName,
+        modelId,
+        originalMaxTokens: strippedMaxTokens,
+        originalMaxCompletionTokens: strippedMaxCompletion,
       });
     }
   }

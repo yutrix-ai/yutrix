@@ -208,6 +208,103 @@ describe("classifyOpcAgentTask — rakazo request fingerprints", () => {
     expect(result.reasons).toContain("opc_planning_turn");
   });
 
+  it("sticks mid-task user follow-ups to action once tool history exists", () => {
+    // After the agent has already run tools, a new user nudge still carries
+    // the full tools array (user_intent, not tool_continuation). Without
+    // stickiness this would hop back to thinking every blue bubble.
+    const body = {
+      model: "yutrix-agent",
+      tools: RAKAZO_AGENT_TOOLS,
+      messages: [
+        { role: "system", content: "You are Rakazo, an autonomous desktop teammate." },
+        { role: "user", content: "装好 JDK 和 Node，最后给我一份 PDF 报告" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "shell", arguments: '{"command":"java -version"}' },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_1",
+          content: "openjdk 17.0.9",
+        },
+        {
+          role: "assistant",
+          content: "JDK 已就绪，接下来装 Node…",
+        },
+        { role: "user", content: "最终给我 PDF，别再装别的了" },
+      ],
+    };
+
+    const result = classifyOpcBody(body);
+    expect(result.taskType).toBe("action");
+    expect(result.reasons).toContain("opc_tool_loop_sticky");
+  });
+
+  it("sticks Anthropic-shaped mid-task follow-ups via tool_use / tool_result history", () => {
+    const body = {
+      model: "yutrix-agent",
+      tools: RAKAZO_AGENT_TOOLS,
+      messages: [
+        { role: "user", content: "整理发票" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "tu_1",
+              name: "shell",
+              input: { command: "ls" },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "tu_1", content: "ok" },
+          ],
+        },
+        { role: "user", content: "改成输出 CSV" },
+      ],
+    };
+
+    const result = classifyOpcBody(body);
+    expect(result.taskType).toBe("action");
+    expect(result.reasons).toContain("opc_tool_loop_sticky");
+  });
+
+  it("still routes explicit reasoning knobs to thinking even mid-task", () => {
+    const body = {
+      model: "yutrix-agent",
+      tools: RAKAZO_AGENT_TOOLS,
+      reasoning_effort: "high",
+      messages: [
+        { role: "user", content: "开始" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "shell", arguments: "{}" },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "call_1", content: "ok" },
+        { role: "user", content: "重新评估整体方案风险" },
+      ],
+    };
+
+    expect(classifyOpcBody(body).taskType).toBe("thinking");
+  });
+
   it("routes explicit reasoning knobs to thinking even without tools", () => {
     expect(
       classifyOpcBody({

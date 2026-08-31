@@ -355,6 +355,91 @@ describe("Contract: max_tokens output pipeline (independent from input)", () => 
 
     expect(modifiedBody.max_completion_tokens).toBe(8192);
   });
+
+  it("OPC strip: removes client max_tokens when model ceiling is unset (OpenAI upstream)", () => {
+    const logs: any[] = [];
+    const body = {
+      model: "grok-4.6",
+      messages: [{ role: "user", content: "Hello" }],
+      stream: false,
+      max_tokens: 4096,
+      max_completion_tokens: 4096,
+    };
+
+    const { modifiedBody } = transformRequestBody(
+      body,
+      "grok-4.6",
+      false,
+      null,
+      (entry: any) => logs.push(entry),
+      baseActionLog,
+      "xai",
+      { stripClientMaxTokensWhenUnset: true },
+    );
+
+    expect(modifiedBody.max_tokens).toBeUndefined();
+    expect(modifiedBody.max_completion_tokens).toBeUndefined();
+    expect(logs.some((l) => l.code === "token.max_output.stripped")).toBe(true);
+  });
+
+  it("OPC strip: also applies when maxOutputTokens is 0", () => {
+    const body = {
+      model: "grok-4.6",
+      messages: [{ role: "user", content: "Hello" }],
+      max_tokens: 4096,
+    };
+
+    const { modifiedBody } = transformRequestBody(
+      body, "grok-4.6", false, 0, noopLogAction, baseActionLog, "xai",
+      { stripClientMaxTokensWhenUnset: true },
+    );
+
+    expect(modifiedBody.max_tokens).toBeUndefined();
+  });
+
+  it("OPC strip: does NOT strip Anthropic upstream (max_tokens required)", () => {
+    const body = {
+      model: "claude",
+      messages: [{ role: "user", content: "Hello" }],
+      max_tokens: 4096,
+    };
+
+    const { modifiedBody } = transformRequestBody(
+      body, "claude", true, null, noopLogAction, baseActionLog, "anthropic",
+      { stripClientMaxTokensWhenUnset: true },
+    );
+
+    expect(modifiedBody.max_tokens).toBe(4096);
+  });
+
+  it("OPC strip: still clamps when model ceiling is configured", () => {
+    const body = {
+      model: "grok-4.6",
+      messages: [{ role: "user", content: "Hello" }],
+      max_tokens: 99999,
+    };
+
+    const { modifiedBody } = transformRequestBody(
+      body, "grok-4.6", false, 8192, noopLogAction, baseActionLog, "xai",
+      { stripClientMaxTokensWhenUnset: true },
+    );
+
+    expect(modifiedBody.max_tokens).toBe(8192);
+  });
+
+  it("strategy mode (default): keeps passthrough when ceiling unset", () => {
+    const body = {
+      model: "test-model",
+      messages: [{ role: "user", content: "Hello" }],
+      max_tokens: 4096,
+    };
+
+    const { modifiedBody } = transformRequestBody(
+      body, "test-model", false, null, noopLogAction, baseActionLog, "test-provider",
+    );
+
+    expect(modifiedBody.max_tokens).toBe(4096);
+  });
 });
 
 // ============================================================================

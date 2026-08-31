@@ -155,6 +155,34 @@ function hasToolDefinitions(body: any): boolean {
   return !!body && Array.isArray(body.tools) && body.tools.length > 0;
 }
 
+/**
+ * True when the conversation history already shows tool activity (OpenAI
+ * tool messages, assistant tool_calls, or Anthropic tool_result blocks).
+ * Used to keep mid-task user follow-ups on the action column instead of
+ * re-entering thinking on every blue-bubble nudge.
+ */
+export function historyHasToolActivity(body: any): boolean {
+  const messages = getMessagesFromParsedRequest(body);
+  for (const msg of messages) {
+    if (!msg || typeof msg !== "object") continue;
+    if (msg.role === "tool") return true;
+    if (msg.role === "assistant") {
+      if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) return true;
+      if (msg.function_call && typeof msg.function_call === "object") return true;
+    }
+    const content = msg.content;
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (!block || typeof block !== "object") continue;
+        if (block.type === "tool_result" || block.type === "tool_use") return true;
+      }
+    } else if (content && typeof content === "object" && !Array.isArray(content)) {
+      if (content.type === "tool_result" || content.type === "tool_use") return true;
+    }
+  }
+  return false;
+}
+
 /** Explicit client-side reasoning knobs (forward-compatible; rakazo's OPC provider sends none today). */
 function requestsExplicitReasoning(body: any): boolean {
   if (!body || typeof body !== "object") return false;
@@ -182,9 +210,10 @@ function requestsExplicitReasoning(body: any): boolean {
  * 1. vision       — outbound payload carries image parts (screenshots, uploads).
  * 2. auto_review  — safety-judge fingerprint on a fresh, toolless prompt.
  * 3. memory       — history-compaction fingerprint on a fresh, toolless prompt.
- * 4. action       — tool continuation: the agent is inside its execution loop.
- * 5. thinking     — a real user goal arriving at a tool-equipped agent (planning
- *                   turn), or explicit reasoning knobs on the request.
+ * 4. action       — tool continuation, or a mid-task user follow-up after the
+ *                   agent has already entered its tool loop (sticky executor).
+ * 5. thinking     — a fresh user goal on a tool-equipped agent (no prior tool
+ *                   activity), or explicit reasoning knobs on the request.
  * 6. general      — everything else (toolless chatter, titles, background jobs).
  */
 export function classifyOpcAgentTask(options: {
@@ -231,6 +260,12 @@ export function classifyOpcAgentTask(options: {
     return { taskType: "thinking", reasons: ["opc_explicit_reasoning_param"] };
   }
   if (!toolless) {
+    // Planner only on a fresh goal. Once the history already shows tool
+    // activity, mid-task user nudges ("最终给我 PDF") stay on the executor
+    // column — matching planner/executor phase stickiness.
+    if (historyHasToolActivity(body)) {
+      return { taskType: "action", reasons: ["opc_tool_loop_sticky"] };
+    }
     return { taskType: "thinking", reasons: ["opc_planning_turn"] };
   }
 

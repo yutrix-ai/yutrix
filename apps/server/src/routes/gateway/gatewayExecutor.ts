@@ -1339,6 +1339,13 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               logAction,
               baseActionLog,
               provider.name,
+              {
+                // OPC agent clients (rakazo) often hardcode a small max_tokens.
+                // When the model has no admin ceiling, strip it so the provider
+                // default applies. Strategy-mode traffic keeps full passthrough.
+                stripClientMaxTokensWhenUnset:
+                  resolveRouteRoutingMode(route) === "opc_agent",
+              },
             );
             isStreaming = detectedStreaming;
 
