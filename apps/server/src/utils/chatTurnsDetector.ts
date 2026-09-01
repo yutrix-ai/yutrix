@@ -3,21 +3,43 @@ import { looksLikeTitleGenerationText, tryParseJson } from "./chatTurnsUtils";
 import { getMessagesFromParsedRequest, selectCurrentInputMessages } from "./chatTurnsFormatter";
 
 /**
- * Client sidecar envelopes are application-level (Claude Code Stage 1, future
- * Cursor/Codex permission checks, etc.). They are not Anthropic/OpenAI wire
- * protocol. Strategy routing must not classify embedded user/tool text inside
- * them, and sticky model lookup must not treat them as the previous turn.
+ * Client sidecar envelopes are application-level (Claude Code Stage 1 harm
+ * classifier, Claude Code SUGGESTION MODE, future Cursor/Codex permission
+ * checks, etc.). They are not Anthropic/OpenAI wire protocol. Strategy
+ * routing must not classify embedded user/tool text inside them, and sticky
+ * model lookup must not treat them as the previous turn.
  *
- * Require both a severity-only output contract and a harm-classifier frame so
- * a real user asking to "review this transcript" is not swallowed.
+ * Stage-1 harm: require both a severity-only output contract and a
+ * harm-classifier frame so a real user asking to "review this transcript"
+ * is not swallowed.
+ *
+ * Suggestion mode: Claude Code fires a background "what would the user type
+ * next" prompt after many turns. Its few-shot examples literally contain
+ * "fix the bug", which would otherwise trip strategy:debug and hop the
+ * session onto the debug model — then sticky continuation would inherit it.
  */
 const CLIENT_SIDECAR_SEVERITY_DIRECTIVE = /respond with\s*<severity\b/i;
 const CLIENT_SIDECAR_SEVERITY_TAG = /<\s*severity\s*>\s*n\s*<\s*\/\s*severity\s*>/i;
 const CLIENT_SIDECAR_HARM_FRAME =
   /grade harm only|stage 1 does not apply user intent|do not apply user intent or allow exceptions/i;
 
+/** Claude Code background prompt: predict the user's next short utterance. */
+const CLIENT_SIDECAR_SUGGESTION_MODE =
+  /\[SUGGESTION MODE:[^\]]*\]|Suggest what the user might naturally type next into Claude Code/i;
+const CLIENT_SIDECAR_SUGGESTION_TEST =
+  /Would they think ["']I was just about to type that["']/i;
+
 export function looksLikeClientSidecarText(text: string | null | undefined): boolean {
   if (!text) return false;
+
+  if (
+    CLIENT_SIDECAR_SUGGESTION_MODE.test(text) ||
+    (CLIENT_SIDECAR_SUGGESTION_TEST.test(text) &&
+      /Reply with ONLY the suggestion/i.test(text))
+  ) {
+    return true;
+  }
+
   const hasDirective =
     CLIENT_SIDECAR_SEVERITY_DIRECTIVE.test(text) ||
     CLIENT_SIDECAR_SEVERITY_TAG.test(text);

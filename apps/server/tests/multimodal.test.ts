@@ -852,6 +852,31 @@ describe("client sidecar detection", () => {
     )).toBe(false);
   });
 
+  it("detects Claude Code SUGGESTION MODE (must not trip strategy:debug)", () => {
+    // Exact shape from Claude Code suggestion turns; few-shots mention
+    // "fix the bug", which previously hop'd classic strategy onto the debug column.
+    const suggestion =
+      "[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]\n\n" +
+      "FIRST: Look at the user's recent messages and original request.\n\n" +
+      "Your job is to predict what THEY would type - not what you think they should do.\n\n" +
+      'THE TEST: Would they think "I was just about to type that"?\n\n' +
+      "EXAMPLES:\n" +
+      'User asked "fix the bug and run tests", bug is fixed → "run the tests"\n' +
+      'After code written → "try it out"\n' +
+      "Reply with ONLY the suggestion, no quotes or explanation.";
+
+    expect(looksLikeClientSidecarText(suggestion)).toBe(true);
+    expect(looksLikeClientSidecarRequestRaw({
+      model: "gemini-3.7-flash-high",
+      messages: [{ role: "user", content: [{ type: "text", text: suggestion }] }],
+    })).toBe(true);
+
+    // Real user asking about bugs must still NOT look like a sidecar.
+    expect(looksLikeClientSidecarText(
+      'User asked "fix the bug and run tests", please help me fix it',
+    )).toBe(false);
+  });
+
   it("still finds the envelope after a long prefix (markers sit at the end)", () => {
     const huge = "AttributeError: fail\n".repeat(2000) + SIDECAR_STAGE1;
     expect(looksLikeClientSidecarText(huge)).toBe(true);

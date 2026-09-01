@@ -13,6 +13,18 @@ const SIDECAR_STAGE1 =
   "Stage 1 does NOT apply user intent or ALLOW exceptions — stage 2 will handle those.\n" +
   "Respond with <severity>N</severity> ONLY. Grade HARM ONLY — do NOT reduce for user intent. No other text.";
 
+/** Claude Code background suggestion prompt (few-shots contain "fix the bug"). */
+const SUGGESTION_MODE_PROMPT =
+  "[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]\n\n" +
+  "FIRST: Look at the user's recent messages and original request.\n\n" +
+  "Your job is to predict what THEY would type - not what you think they should do.\n\n" +
+  'THE TEST: Would they think "I was just about to type that"?\n\n' +
+  "EXAMPLES:\n" +
+  'User asked "fix the bug and run tests", bug is fixed → "run the tests"\n' +
+  'After code written → "try it out"\n' +
+  "Claude offers options → suggest the one the user would likely pick, based on conversation\n" +
+  'Reply with ONLY the suggestion, no quotes or explanation.';
+
 const LIVE_STACK =
   "AttributeError: 'NoneType' object has no attribute 'review_pass'\n" +
   "Failed to parse tool call arguments as JSON\n" +
@@ -110,6 +122,17 @@ describe("classifyGatewayRequestClass", () => {
   it("marks a real user debug paste as user_intent", () => {
     expect(classifyGatewayRequestClass(debugUserBody()).requestClass).toBe("user_intent");
   });
+
+  it("marks Claude Code SUGGESTION MODE as client_sidecar (not user_intent)", () => {
+    const body = {
+      model: "gemini-3.7-flash-high",
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: SUGGESTION_MODE_PROMPT }],
+      }],
+    };
+    expect(classifyGatewayRequestClass(body).requestClass).toBe("client_sidecar");
+  });
 });
 
 describe("strategy decision stays off debug for sidecar", () => {
@@ -120,6 +143,14 @@ describe("strategy decision stays off debug for sidecar", () => {
       expect(classified.taskType).toBe("general");
       expect(classified.reasons).toContain("client_sidecar");
     }
+  });
+
+  it("does not classify SUGGESTION MODE as debug despite 'fix the bug' few-shots", () => {
+    // Without sidecar detection this prompt matches debug_actionable_bug and
+    // hops classic strategy onto the debug column mid-session.
+    const classified = classifyStrategyTask(SUGGESTION_MODE_PROMPT, false);
+    expect(classified.taskType).toBe("general");
+    expect(classified.reasons).toContain("client_sidecar");
   });
 
   it("still classifies the same traceback without the envelope as debug", () => {
@@ -140,6 +171,26 @@ describe("strategy decision stays off debug for sidecar", () => {
       applied: false,
       skipReason: "client_sidecar",
       taskType: "general",
+    });
+    expect(decision?.newAttempt).toBeUndefined();
+  });
+
+  it("resolveStrategyRoutingDecision skips SUGGESTION MODE without a debug hop", async () => {
+    const decision = await resolveStrategyRoutingDecision({
+      route: strategyRoute,
+      body: {
+        model: "gemini-3.7-flash-high",
+        messages: [{
+          role: "user",
+          content: [{ type: "text", text: SUGGESTION_MODE_PROMPT }],
+        }],
+      },
+      currentAttempt: flashAttempt,
+      incomingProtocol: "anthropic",
+    });
+    expect(decision).toMatchObject({
+      applied: false,
+      skipReason: "client_sidecar",
     });
     expect(decision?.newAttempt).toBeUndefined();
   });
@@ -184,6 +235,25 @@ describe("sticky lookup skips sidecar rows", () => {
       { model: "gemini-3.1-pro-high", inputText: mainInput },
     ]);
     expect(model).toBe("gemini-3.1-pro-high");
+  });
+
+  it("skips SUGGESTION MODE rows so debug hops do not pollute sticky continuation", () => {
+    // Reproduces the classic-routing failure: suggestion → strategy:debug hop
+    // onto gemini-pro-agent, then the next tool_continuation inherits it.
+    const suggestionInput = JSON.stringify({
+      messages: [{ role: "user", content: [{ type: "text", text: SUGGESTION_MODE_PROMPT }] }],
+    });
+    const toolContinuationInput = JSON.stringify({
+      messages: [
+        { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "Read", arguments: "{}" } }] },
+        { role: "tool", tool_call_id: "c1", content: "ok" },
+      ],
+    });
+    const model = selectStickyModelFromLogRows([
+      { model: "gemini-pro-agent", inputText: suggestionInput },
+      { model: "gemini-3.7-flash-high", inputText: toolContinuationInput },
+    ]);
+    expect(model).toBe("gemini-3.7-flash-high");
   });
 
   it("returns null when every recent row is a sidecar", () => {
