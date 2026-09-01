@@ -237,6 +237,10 @@ export function renderActionLogServerLine(
     return `${timestamp} ${event.level} EmptyOutput layer hop requestId=${event.requestId} fromModel=${event.fromModelId || event.modelId || ""} toModel=${event.toModelId || ""} targetIndex=${event.targetIndex ?? ""}`;
   }
 
+  if (code === "request.continuity.empty_output_layer_hop_suppressed") {
+    return `${timestamp} ${event.level} EmptyOutput layer hop suppressed requestId=${event.requestId} model=${event.fromModelId || event.modelId || ""} reason=${event.reason || ""}`;
+  }
+
   if (code === "token.physical_context_limit.truncated") {
     return `${timestamp} ${event.level} Physical context limit truncated requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} source=${event.limitSource} maxInputTokens=${event.maxInputTokens} droppedTurns=${event.droppedTurns}`;
   }

@@ -1,14 +1,59 @@
 /**
  * EmptyOutput exhaust: availability hop to the next capable funnel layer.
  * Window size is ignored here — capacity (long_context) runs after landing.
+ *
+ * Mid-session agent loops must not thrash models on empty output: once the
+ * conversation already has tool activity (or the turn is a tool_continuation),
+ * same-layer EmptyOutput retries still run, but L0→L1 funnel hops are suppressed.
+ * Cold first turns keep the availability hop.
  */
 
+import { classifyGatewayRequestClass } from "../../services/requestRoutingClass";
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
+import { getMessagesFromParsedRequest } from "../../utils/chatTurnsFormatter";
 import { estimateMultimodalInputUsage } from "./inputTokenLimit";
 import {
   selectAvailabilityNextLayer,
   type FunnelLayerCandidate,
 } from "./degradePolicy";
+
+/** True when the conversation already entered an agent tool loop. */
+export function conversationHasPriorToolActivity(body: any): boolean {
+  const messages = getMessagesFromParsedRequest(body);
+  for (const msg of messages) {
+    if (!msg || typeof msg !== "object") continue;
+    if (msg.role === "tool" || msg.role === "function") return true;
+    if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) return true;
+    if (msg.function_call) return true;
+    const content = msg.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      const type = block.type;
+      if (
+        type === "tool_use" ||
+        type === "tool_result" ||
+        type === "function_call" ||
+        type === "function_response"
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Suppress EmptyOutput funnel-layer hops mid agent session.
+ * Cold user_intent with no tool history still hops for availability.
+ */
+export function shouldSuppressEmptyOutputLayerHop(body: any): boolean {
+  if (!body) return false;
+  if (classifyGatewayRequestClass(body).requestClass === "tool_continuation") {
+    return true;
+  }
+  return conversationHasPriorToolActivity(body);
+}
 
 export type EmptyOutputHopLayer = FunnelLayerCandidate & {
   visionRule?: FunnelLayerCandidate["vision"];

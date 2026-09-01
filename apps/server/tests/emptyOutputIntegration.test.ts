@@ -1381,6 +1381,45 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(content).not.toContain("请重新发送");
   });
 
+  it("does not hop L0→L1 on empty output once the session already has tool activity", async () => {
+    await setupFunnelEnvironment(2);
+    loggedActions.length = 0;
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(String(url));
+      return emptyJson(`empty-${urls.length}`);
+    });
+
+    const messages = [
+      { role: "user", content: "build the chat api" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "Read", arguments: "{\"path\":\"index.vue\"}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "<AssistantHeader />" },
+      { role: "user", content: "开始聊天 AssistantHeader 这个组件要隐藏" },
+    ];
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(urls.every((u) => u.includes("l0.empty.test"))).toBe(true);
+    expect(urls.some((u) => u.includes("l1.empty.test"))).toBe(false);
+    expect(
+      loggedActions.some((a) => a.code === "request.continuity.empty_output_layer_hop"),
+    ).toBe(false);
+    expect(
+      loggedActions.some((a) => a.code === "request.continuity.empty_output_layer_hop_suppressed"),
+    ).toBe(true);
+  });
+
   it("walks remaining funnel layers after EmptyOutput like a 500 degrade and recovers on L3", async () => {
     await setupFunnelEnvironment(4);
     const urls: string[] = [];

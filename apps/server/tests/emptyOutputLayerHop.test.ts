@@ -3,6 +3,8 @@ import {
   freezeUncutInboundBody,
   parseFunnelLayersFromRoute,
   selectEmptyOutputLayerHop,
+  shouldSuppressEmptyOutputLayerHop,
+  conversationHasPriorToolActivity,
   snapshotUncutInboundBody,
 } from "../src/routes/gateway/emptyOutputLayerHop";
 
@@ -251,5 +253,82 @@ describe("parseFunnelLayersFromRoute", () => {
       ]),
     });
     expect(layers.map((l) => l.modelId)).toEqual(["flash-high", "pro-agent"]);
+  });
+});
+
+describe("shouldSuppressEmptyOutputLayerHop", () => {
+  it("allows cold first-turn user_intent to hop", () => {
+    expect(
+      shouldSuppressEmptyOutputLayerHop({
+        model: "flash",
+        messages: [{ role: "user", content: "hide AssistantHeader" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("allows multi-turn chat without tools to hop", () => {
+    expect(
+      shouldSuppressEmptyOutputLayerHop({
+        model: "flash",
+        messages: [
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "hello" },
+          { role: "user", content: "hide AssistantHeader" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("suppresses tool_continuation turns", () => {
+    expect(
+      shouldSuppressEmptyOutputLayerHop({
+        model: "flash",
+        messages: [
+          { role: "user", content: "fix it" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "c1", type: "function", function: { name: "Read", arguments: "{}" } }],
+          },
+          { role: "tool", tool_call_id: "c1", content: "file contents" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("suppresses fresh user_intent when the session already has tool activity", () => {
+    expect(
+      conversationHasPriorToolActivity({
+        messages: [
+          { role: "user", content: "build api" },
+          {
+            role: "assistant",
+            content: [{ type: "tool_use", id: "t1", name: "Grep", input: {} }],
+          },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "t1", content: "found" }],
+          },
+          { role: "user", content: "开始聊天 AssistantHeader 这个组件要隐藏" },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressEmptyOutputLayerHop({
+        model: "flash",
+        messages: [
+          { role: "user", content: "build api" },
+          {
+            role: "assistant",
+            content: [{ type: "tool_use", id: "t1", name: "Grep", input: {} }],
+          },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "t1", content: "found" }],
+          },
+          { role: "user", content: "开始聊天 AssistantHeader 这个组件要隐藏" },
+        ],
+      }),
+    ).toBe(true);
   });
 });
