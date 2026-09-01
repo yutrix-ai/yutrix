@@ -31,6 +31,8 @@ export class ContinuityEngine {
     context: ContinuityContext,
     options?: { skipOnExhausted?: boolean },
   ): Promise<ContinuityDecision> {
+    let lastExhausted: ContinuityDecision | null = null;
+
     for (const strategy of this.strategies) {
       const currentRetries = this.strategyRetries.get(strategy.name) || 0;
 
@@ -41,16 +43,22 @@ export class ContinuityEngine {
           // Allowed to intervene
           this.strategyRetries.set(strategy.name, currentRetries + 1);
           return decision;
-        } else {
-          if (!options?.skipOnExhausted && strategy.onExhausted) {
-            context.responseData = await strategy.onExhausted(context);
-          }
-          return { shouldIntervene: false, isExhausted: true, strategyName: strategy.name };
         }
+
+        if (!options?.skipOnExhausted && strategy.onExhausted) {
+          context.responseData = await strategy.onExhausted(context);
+        }
+        // Keep scanning later strategies (e.g. EmptyOutput after ReasoningExhaustion
+        // burns its retries) so zero-completion retry/hop is not skipped.
+        lastExhausted = {
+          shouldIntervene: false,
+          isExhausted: true,
+          strategyName: strategy.name,
+        };
       }
     }
 
-    return { shouldIntervene: false };
+    return lastExhausted || { shouldIntervene: false };
   }
 
   async applyExhaustedHook(context: ContinuityContext, strategyName?: string): Promise<void> {

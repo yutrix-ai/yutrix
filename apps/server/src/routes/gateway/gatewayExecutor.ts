@@ -23,6 +23,7 @@ import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, r
 import {
   CLIENT_CLOSED_CODE,
   CLIENT_CLOSED_ERROR_TYPE,
+  CLIENT_CLOSED_STATUS,
   FIRST_TOKEN_TIMEOUT_MESSAGE,
   clientClosedDisconnectMessage,
   isDownstreamWriteClosedError,
@@ -259,7 +260,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     stopStreamPrelude();
     const rd = opts?.responseData ?? responseData;
     const gotFirstChunk = !!(opts?.gotFirstChunk ?? ctx.stream.gotFirstChunk);
-    const statusCode = gotFirstChunk ? (rd?.status || 200) : 499;
+    // Zero-answer disconnect must not look like a successful EmptyOutput miss:
+    // clients that abort while waiting for the first real token used to land as
+    // request.completed status=200 tokens=0/0/0 fallback=false.
+    const statusCode = gotFirstChunk ? (rd?.status || 200) : CLIENT_CLOSED_STATUS;
     const disconnectMessage = clientClosedDisconnectMessage(gotFirstChunk);
     ctx.clientDisconnected = true;
 
@@ -272,7 +276,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
     logAction({
       ...baseActionLog,
       level: "INFO",
-      code: "request.completed",
+      code: "request.client_closed",
       providerName: rd?.provider?.name,
       modelId: currentAttempt.modelId,
       statusCode,
@@ -286,6 +290,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       errorCode: CLIENT_CLOSED_CODE,
       errorType: CLIENT_CLOSED_ERROR_TYPE,
       message: disconnectMessage,
+      meaningfulClientOutputSent: gotFirstChunk,
     });
 
     if (!reply.raw.writableEnded && !reply.raw.destroyed) {

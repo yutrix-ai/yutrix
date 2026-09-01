@@ -190,7 +190,7 @@ export function renderActionLogServerLine(
   }
 
   if (code === "request.client_closed") {
-    return `${timestamp} ${event.level} Client closed requestId=${event.requestId} adapter=${event.adapterId} errorCode=${event.errorCode} errorType=${event.errorType} msg=${event.message}`;
+    return `${timestamp} ${event.level} Client closed requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} status=${event.statusCode} tokens=${event.promptTokens}/${event.completionTokens}/${event.totalTokens} latency=${event.latencyMs}ms errorCode=${event.errorCode} msg=${event.message}`;
   }
 
   if (code === "request.transient_terminal_error") {

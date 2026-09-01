@@ -59,13 +59,29 @@ import {
   STREAM_CHUNK_TIMEOUT_MESSAGE,
 } from "./clientClosed";
 
+/**
+ * First-answer SLA vs post-answer idle SLA.
+ *
+ * `gotFirstAnswerChunk` must mean visible/semantic answer material — not a
+ * role-only delta, usage-only frame, or SSE comment. Those early bytes used to
+ * flip gotFirstChunk and disable the first-token timer; the model could then
+ * hang on a huge tool-loop context until the client aborted, which logged as
+ * successful 0/0/0 with no EmptyOutput retry/hop.
+ */
 export function resolveStreamReadTimeoutMs(
-  gotFirstChunk: boolean,
+  gotFirstAnswerChunk: boolean,
   streamTimeoutMs?: number,
   firstChunkTimeoutMs?: number,
+  options?: { firstAnswerDeadlineMs?: number; nowMs?: number },
 ): { timeoutMs: number; message: string } | undefined {
-  if (!gotFirstChunk && firstChunkTimeoutMs && firstChunkTimeoutMs > 0) {
-    return { timeoutMs: firstChunkTimeoutMs, message: FIRST_TOKEN_TIMEOUT_MESSAGE };
+  if (!gotFirstAnswerChunk && firstChunkTimeoutMs && firstChunkTimeoutMs > 0) {
+    const now = options?.nowMs ?? Date.now();
+    const deadline = options?.firstAnswerDeadlineMs;
+    const remaining = deadline != null ? deadline - now : firstChunkTimeoutMs;
+    return {
+      timeoutMs: remaining <= 0 ? 1 : remaining,
+      message: FIRST_TOKEN_TIMEOUT_MESSAGE,
+    };
   }
   if (streamTimeoutMs && streamTimeoutMs > 0) {
     return { timeoutMs: streamTimeoutMs, message: STREAM_CHUNK_TIMEOUT_MESSAGE };
@@ -575,6 +591,16 @@ export async function forwardSSEStreamTransparent(
     created: Math.floor(Date.now() / 1000),
     model: "",
   };
+  const firstAnswerDeadlineMs =
+    firstChunkTimeoutMs && firstChunkTimeoutMs > 0
+      ? Date.now() + firstChunkTimeoutMs
+      : undefined;
+
+  const markFirstAnswerChunk = () => {
+    if (gotFirstChunk) return;
+    gotFirstChunk = true;
+    observer?.onFirstChunk?.();
+  };
 
   const isTransparentNoStitch = (!stitchState?.isStitching && incomingProtocol === (sourceProtocol || "openai") && (!adapter || adapter.id === "transparent"));
 
@@ -602,7 +628,12 @@ export async function forwardSSEStreamTransparent(
   try {
   while (true) {
     let racePromise: any = reader.read();
-    const readTimeout = resolveStreamReadTimeoutMs(gotFirstChunk, streamTimeoutMs, firstChunkTimeoutMs);
+    const readTimeout = resolveStreamReadTimeoutMs(
+      gotFirstChunk,
+      streamTimeoutMs,
+      firstChunkTimeoutMs,
+      { firstAnswerDeadlineMs },
+    );
     if (readTimeout) {
       const timeoutPromise = new Promise((_, reject) => {
         streamTimeoutId = setTimeout(() => reject(new Error(readTimeout.message)), readTimeout.timeoutMs);
@@ -614,10 +645,6 @@ export async function forwardSSEStreamTransparent(
     downstream.throwIfFailed();
 
     if (value) {
-      if (!gotFirstChunk) {
-        gotFirstChunk = true;
-        observer?.onFirstChunk?.();
-      }
       const chunkStr = decoder.decode(value, { stream: true });
       buffer += chunkStr;
       
@@ -899,6 +926,11 @@ export async function forwardSSEStreamTransparent(
         return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: adapterState?.terminalError, meaningfulClientOutputSent, visibleClientOutputSent };
       }
 
+      // Role-only / usage-only / comments must NOT satisfy first-token SLA.
+      if (eventHasSemanticContent || visibleClientOutputSent) {
+        markFirstAnswerChunk();
+      }
+
       // already determined before while loop
       // const isTransparentNoStitch = (!stitchState?.isStitching && incomingProtocol === sourceProtocol && (!adapter || adapter.id === "transparent"));
 
@@ -1103,6 +1135,15 @@ export async function forwardSSEStreamAdapted(
   let meaningfulClientOutputSent = false;
   let visibleClientOutputSent = false;
   let withheldEmptyTerminal = false;
+  const firstAnswerDeadlineMs =
+    firstChunkTimeoutMs && firstChunkTimeoutMs > 0
+      ? Date.now() + firstChunkTimeoutMs
+      : undefined;
+  const markFirstAnswerChunk = () => {
+    if (gotFirstChunk) return;
+    gotFirstChunk = true;
+    observer?.onFirstChunk?.();
+  };
   const downstream = createDownstreamWriter(
     reply,
     "anthropic",
@@ -1115,9 +1156,11 @@ export async function forwardSSEStreamAdapted(
     if (success && payload) {
       if (hasMeaningfulOutputEvent(payload, "anthropic")) {
         meaningfulClientOutputSent = true;
+        markFirstAnswerChunk();
       }
       if (hasVisibleAnswerEvent(payload, "anthropic")) {
         visibleClientOutputSent = true;
+        markFirstAnswerChunk();
       }
     }
     return success;
@@ -1171,7 +1214,12 @@ export async function forwardSSEStreamAdapted(
 
   while (true) {
     let racePromise: any = reader.read();
-    const readTimeout = resolveStreamReadTimeoutMs(gotFirstChunk, streamTimeoutMs, firstChunkTimeoutMs);
+    const readTimeout = resolveStreamReadTimeoutMs(
+      gotFirstChunk,
+      streamTimeoutMs,
+      firstChunkTimeoutMs,
+      { firstAnswerDeadlineMs },
+    );
     if (readTimeout) {
       const timeoutPromise = new Promise((_, reject) => {
         streamTimeoutId = setTimeout(() => reject(new Error(readTimeout.message)), readTimeout.timeoutMs);
@@ -1182,11 +1230,6 @@ export async function forwardSSEStreamAdapted(
     if (streamTimeoutId) { clearTimeout(streamTimeoutId); streamTimeoutId = undefined; }
     downstream.throwIfFailed();
     if (done) break;
-
-    if (!gotFirstChunk) {
-      gotFirstChunk = true;
-      observer?.onFirstChunk?.();
-    }
 
     const chunkStr = decoder.decode(value, { stream: true });
     buffer += chunkStr;

@@ -471,7 +471,7 @@ describe("first-token / stream read timeouts", () => {
     vi.useRealTimers();
   });
 
-  it("uses first-chunk timeout before the first byte, then stream idle after it", () => {
+  it("uses first-chunk timeout before the first answer, then stream idle after it", () => {
     expect(resolveStreamReadTimeoutMs(false, 180000, 10000)).toEqual({
       timeoutMs: 10000,
       message: FIRST_TOKEN_TIMEOUT_MESSAGE,
@@ -485,6 +485,21 @@ describe("first-token / stream read timeouts", () => {
       message: STREAM_CHUNK_TIMEOUT_MESSAGE,
     });
     expect(resolveStreamReadTimeoutMs(false, 0, 0)).toBeUndefined();
+    const now = 1_000_000;
+    expect(resolveStreamReadTimeoutMs(false, 180000, 10000, {
+      firstAnswerDeadlineMs: now + 2500,
+      nowMs: now,
+    })).toEqual({
+      timeoutMs: 2500,
+      message: FIRST_TOKEN_TIMEOUT_MESSAGE,
+    });
+    expect(resolveStreamReadTimeoutMs(false, 180000, 10000, {
+      firstAnswerDeadlineMs: now - 1,
+      nowMs: now,
+    })).toEqual({
+      timeoutMs: 1,
+      message: FIRST_TOKEN_TIMEOUT_MESSAGE,
+    });
   });
 
   it("times out with First token timeout when no upstream chunk arrives", async () => {
@@ -518,7 +533,47 @@ describe("first-token / stream read timeouts", () => {
     expect(result.meaningfulClientOutputSent).toBeFalsy();
   });
 
-  it("keeps generating after the first byte and only idle-timeouts later chunks", async () => {
+  it("role-only deltas do not satisfy first-token SLA; hang still times out as First token timeout", async () => {
+    vi.useFakeTimers();
+    const { reply, writes } = createReply();
+    const upstream = createControlledStream();
+
+    const resultPromise = forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      180000,
+      "openai",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+      50,
+    );
+
+    upstream.enqueueSse({
+      id: "chatcmpl-role",
+      object: "chat.completion.chunk",
+      choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+    });
+    await flushMicrotasks();
+    expect(writes.join("")).toContain('"role":"assistant"');
+
+    // Absolute first-token deadline is 50ms from start; role-only must not extend it.
+    await vi.advanceTimersByTimeAsync(50);
+    const result = await resultPromise;
+
+    expect(result.gotFirstChunk).toBe(false);
+    expect(result.visibleClientOutputSent).toBeFalsy();
+    expect(result.terminalError?.statusCode).toBe(504);
+    expect(result.terminalError?.message).toBe(FIRST_TOKEN_TIMEOUT_MESSAGE);
+  });
+
+  it("keeps generating after the first answer byte and only idle-timeouts later chunks", async () => {
     vi.useFakeTimers();
     const { reply, writes } = createReply();
     const upstream = createControlledStream();

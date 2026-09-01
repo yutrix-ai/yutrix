@@ -31,6 +31,7 @@
         "queued": "Request queued provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "dequeued": "Request dequeued queueMs={{queueMs}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "completed": "Request completed requestId={{requestId}} ip={{ip}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
+        "client_closed": "Client closed requestId={{requestId}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms error={{errorCode}} msg={{message}}",
         "empty_stream": "Empty upstream stream requestId={{requestId}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "failed": "Request failed requestId={{requestId}} ip={{ip}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
         "fallback": "Fallback triggered primary={{primaryProviderName}}/{{primaryModelId}} fallback={{fallbackProviderName}}/{{fallbackModelId}} reason={{reasonText}}",

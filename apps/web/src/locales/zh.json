@@ -31,6 +31,7 @@
         "queued": "请求入队 provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "dequeued": "请求出队 queueMs={{queueMs}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "completed": "请求完成 requestId={{requestId}} ip={{ip}} user={{username}} apiKey={{apiKeyPrefix}} host={{host}} path={{path}} route={{routeName}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms queue={{queueMs}}ms fallback={{fallback}}",
+        "client_closed": "客户端断开 requestId={{requestId}} provider={{providerName}} model={{modelId}} status={{statusCode}} tokens(in/out/total)={{promptTokens}}/{{completionTokens}}/{{totalTokens}} latency={{latencyMs}}ms error={{errorCode}} msg={{message}}",
         "empty_stream": "上游返回空数据流 requestId={{requestId}} provider={{providerName}} model={{modelId}} fallback={{fallback}}",
         "failed": "请求失败 requestId={{requestId}} ip={{ip}} statusCode={{statusCode}} error={{errorCode}} msg={{message}}",
         "fallback": "触发降级 primary={{primaryProviderName}}/{{primaryModelId}} fallback={{fallbackProviderName}}/{{fallbackModelId}} reason={{reasonText}}",
