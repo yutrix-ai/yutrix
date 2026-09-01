@@ -48,12 +48,7 @@ import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneS
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
 import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
-import {
-  freezeUncutInboundBody,
-  snapshotUncutInboundBody,
-  resolveEmptyOutputLayerHopFromRoute,
-  shouldSuppressEmptyOutputLayerHop,
-} from "./emptyOutputLayerHop";
+import { freezeUncutInboundBody, snapshotUncutInboundBody, resolveEmptyOutputLayerHopFromRoute } from "./emptyOutputLayerHop";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
 import { buildUpstreamRequestDiagnostic } from "./diagnostics";
@@ -194,25 +189,6 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   const frozenInboundBody = freezeUncutInboundBody(ctx.body);
   const originalBody = snapshotUncutInboundBody(frozenInboundBody);
   const applyEmptyOutputLayerHop = async (): Promise<boolean> => {
-    // Mid agent-loop / prior tool activity: same-layer EmptyOutput already
-    // retried. Hopping to L1 (often a free/weaker model) mid-task is a
-    // continuity regression — suppress and exhaust instead.
-    if (shouldSuppressEmptyOutputLayerHop(frozenInboundBody)) {
-      const requestClass = classifyGatewayRequestClass(frozenInboundBody).requestClass;
-      logAction({
-        ...baseActionLog,
-        level: "INFO",
-        code: "request.continuity.empty_output_layer_hop_suppressed",
-        strategy: "EmptyOutput",
-        reason:
-          requestClass === "tool_continuation"
-            ? "tool_continuation"
-            : "prior_tool_activity",
-        fromModelId: currentAttempt.modelId,
-        modelId: currentAttempt.modelId,
-      });
-      return false;
-    }
     const hop = await resolveEmptyOutputLayerHopFromRoute({
       route,
       currentIndex: currentAttempt.targetIndex || 0,
