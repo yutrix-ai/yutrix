@@ -143,7 +143,7 @@ export function RouteDialog() {
                   allModels={allModels}
                   policies={policies || []}
                   incomingProtocol={formData.incomingProtocol}
-                  routingMode={formData.routingMode || "strategy"}
+                  routingMode={formData.routingMode || "classic"}
                   onRoutingModeChange={handleRoutingModeChange}
                   getProviderProtocolForSelection={getProviderProtocolForSelection}
                 />

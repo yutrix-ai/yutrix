@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Trash2, Plus, ArrowUp, ArrowDown, Search, Check, ChevronDown } from "lucide-react";
-import { ROUTING_MODES, tasksForRoutingMode } from "./strategyRoutingConfig";
+import { ROUTING_MODES, isClassicRoutingMode, tasksForRoutingMode } from "./strategyRoutingConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -30,9 +30,19 @@ export function RouteTargetsTable({
   getProviderProtocolForSelection
 }: RouteTargetsTableProps) {
   const { t } = useTranslation();
+  const isClassic = isClassicRoutingMode(routingMode);
   const routeTasks = tasksForRoutingMode(routingMode);
+  const activeRoutingMode = routingMode || "classic";
 
   const normalizeTarget = (target: any) => {
+    if (isClassic) {
+      return {
+        ...target,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      };
+    }
+
     const rules = target.strategyRoutingRules || [];
     const rulesMap = new Map(rules.map((r: any) => [r.taskType, r]));
     
@@ -64,27 +74,53 @@ export function RouteTargetsTable({
   };
 
   const handleAdd = () => {
-    const newTarget = {
-      providerId: "",
-      modelId: "",
-      providerProtocol: "openai",
-      promptPolicyId: "none",
-      bestEffort: false,
-      strategyRoutingEnabled: true,
-      strategyRoutingRules: routeTasks.map(task => ({
-        taskType: task.type,
-        providerId: "",
-        providerProtocol: "openai",
-        modelId: "",
-        enabled: true
-      }))
-    };
+    const newTarget = isClassic
+      ? {
+          providerId: "",
+          modelId: "",
+          providerProtocol: "openai",
+          promptPolicyId: "none",
+          bestEffort: false,
+          strategyRoutingEnabled: false,
+          strategyRoutingRules: [],
+        }
+      : {
+          providerId: "",
+          modelId: "",
+          providerProtocol: "openai",
+          promptPolicyId: "none",
+          bestEffort: false,
+          strategyRoutingEnabled: true,
+          strategyRoutingRules: routeTasks.map(task => ({
+            taskType: task.type,
+            providerId: "",
+            providerProtocol: "openai",
+            modelId: "",
+            enabled: true
+          }))
+        };
     onChange([...targets, newTarget]);
   };
 
   const handleRemove = (index: number) => {
     const newTargets = [...targets];
     newTargets.splice(index, 1);
+    onChange(newTargets);
+  };
+
+  const handleClassicCellChange = (
+    rowIdx: number,
+    patch: { providerId: string; modelId: string; providerProtocol: string },
+  ) => {
+    const newTargets = targets.map((row, idx) => {
+      if (idx !== rowIdx) return row;
+      return {
+        ...row,
+        ...patch,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      };
+    });
     onChange(newTargets);
   };
 
@@ -147,7 +183,7 @@ export function RouteTargetsTable({
                   type="button"
                   onClick={() => onRoutingModeChange(mode.value)}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                    (routingMode || "strategy") === mode.value
+                    (activeRoutingMode) === mode.value
                       ? "bg-white dark:bg-zinc-800 text-violet-700 dark:text-violet-300 shadow-xs border border-zinc-200/80 dark:border-zinc-700"
                       : "text-muted-foreground hover:text-zinc-900 dark:hover:text-zinc-100"
                   }`}
@@ -175,18 +211,31 @@ export function RouteTargetsTable({
           <TableHeader className="bg-zinc-50/50 dark:bg-zinc-900/10 border-b border-zinc-200/50 dark:border-zinc-800/50">
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-20 text-center font-medium text-xs text-muted-foreground uppercase tracking-wider">{t("routes.targets.priority", "优先级")}</TableHead>
-              {routeTasks.map(task => (
-                <TableHead key={task.type} className="min-w-[155px] py-3.5 px-2">
+              {isClassic ? (
+                <TableHead className="min-w-[240px] py-3.5 px-2">
                   <div className="flex flex-col space-y-0.5">
                     <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
-                      {t(task.labelKey, task.fallbackLabel)}
+                      {t("routes.targets.classicModel", "转发模型")}
                     </span>
                     <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
-                      {t(task.descriptionKey, task.fallbackDescription)}
+                      {t("routes.targets.classicModelDescription", "本层所有请求统一转发到所选模型；失败时降级到下一层。")}
                     </span>
                   </div>
                 </TableHead>
-              ))}
+              ) : (
+                routeTasks.map(task => (
+                  <TableHead key={task.type} className="min-w-[155px] py-3.5 px-2">
+                    <div className="flex flex-col space-y-0.5">
+                      <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
+                        {t(task.labelKey, task.fallbackLabel)}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
+                        {t(task.descriptionKey, task.fallbackDescription)}
+                      </span>
+                    </div>
+                  </TableHead>
+                ))
+              )}
               <TableHead className="w-24 text-center font-medium text-xs text-muted-foreground uppercase tracking-wider">{t("routes.targets.actions", "操作")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -200,23 +249,35 @@ export function RouteTargetsTable({
                       L{idx + 1}
                     </span>
                   </TableCell>
-                  {routeTasks.map(task => {
-                    const rule = normalized.strategyRoutingRules.find((r: any) => r.taskType === task.type) || {
-                      providerId: "",
-                      modelId: ""
-                    };
-                    return (
-                      <TableCell key={task.type} className="p-1.5 align-middle">
-                        <TargetCellPopover
-                          providerId={rule.providerId}
-                          modelId={rule.modelId}
-                          providers={providers}
-                          allModels={allModels}
-                          onChange={(patch) => handleCellChange(idx, task.type, patch)}
-                        />
-                      </TableCell>
-                    );
-                  })}
+                  {isClassic ? (
+                    <TableCell className="p-1.5 align-middle">
+                      <TargetCellPopover
+                        providerId={normalized.providerId || ""}
+                        modelId={normalized.modelId || ""}
+                        providers={providers}
+                        allModels={allModels}
+                        onChange={(patch) => handleClassicCellChange(idx, patch)}
+                      />
+                    </TableCell>
+                  ) : (
+                    routeTasks.map(task => {
+                      const rule = normalized.strategyRoutingRules.find((r: any) => r.taskType === task.type) || {
+                        providerId: "",
+                        modelId: ""
+                      };
+                      return (
+                        <TableCell key={task.type} className="p-1.5 align-middle">
+                          <TargetCellPopover
+                            providerId={rule.providerId}
+                            modelId={rule.modelId}
+                            providers={providers}
+                            allModels={allModels}
+                            onChange={(patch) => handleCellChange(idx, task.type, patch)}
+                          />
+                        </TableCell>
+                      );
+                    })
+                  )}
                   <TableCell className="p-2 align-middle">
                     <div className="flex items-center justify-center gap-0.5">
                       <Button
@@ -262,7 +323,11 @@ export function RouteTargetsTable({
               <Plus className="w-5 h-5" />
             </div>
             <p className="text-sm font-medium text-zinc-950 dark:text-zinc-50 mb-1">{t("routes.targets.emptyTitle", "暂无路由目标")}</p>
-            <p className="text-xs text-muted-foreground max-w-[280px]">{t("routes.targets.emptyDescription", "点击右上角 \"添加目标层\" 开始构建多级漏斗转发目标规则。")}</p>
+            <p className="text-xs text-muted-foreground max-w-[320px]">
+              {isClassic
+                ? t("routes.targets.emptyDescriptionClassic", "点击右上角「添加目标层」配置 L1、L2… 每层一个模型，失败时自动降级。")
+                : t("routes.targets.emptyDescription", "点击右上角 \"添加目标层\" 开始构建多级漏斗转发目标规则。")}
+            </p>
           </div>
         )}
       </div>

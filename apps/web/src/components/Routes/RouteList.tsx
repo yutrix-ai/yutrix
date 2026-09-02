@@ -168,7 +168,8 @@ export function RouteList({
                     ) : (
                       <div>
                         {(() => {
-                          let isStrategy = r.strategyRoutingEnabled;
+                          const isClassic = r.routingMode === "classic";
+                          let isStrategy = isClassic ? false : r.strategyRoutingEnabled;
                           let strategyRules = r.strategyRoutingRules;
                           let providerName = r.providerName;
                           let modelName = r.modelName;
@@ -180,14 +181,20 @@ export function RouteList({
                               const parsedTargets = typeof targetsSource === 'string' ? JSON.parse(targetsSource) : targetsSource;
                               if (Array.isArray(parsedTargets) && parsedTargets.length > 0) {
                                 const firstTarget = parsedTargets[0];
-                                isStrategy = firstTarget.strategyRoutingEnabled;
-                                strategyRules = firstTarget.strategyRoutingRules;
-                                const firstRule = firstTarget.strategyRoutingRules?.find((rule: any) => rule.taskType === "general") || firstTarget.strategyRoutingRules?.[0];
-                                if (firstRule) {
-                                  const prov = providers.find((p: any) => p.id === firstRule.providerId);
-                                  providerName = prov?.name || firstRule.providerId;
-                                  const model = allModels.find((m: any) => m.providerId === firstRule.providerId && m.modelId === firstRule.modelId);
-                                  modelName = model?.alias || model?.displayName || firstRule.modelId;
+                                isStrategy = isClassic ? false : firstTarget.strategyRoutingEnabled;
+                                if (isClassic) {
+                                  providerName = providers.find((p: any) => p.id === firstTarget.providerId)?.name || firstTarget.providerId || providerName;
+                                  const model = allModels.find((m: any) => m.providerId === firstTarget.providerId && m.modelId === firstTarget.modelId);
+                                  modelName = model?.alias || model?.displayName || firstTarget.modelId || modelName;
+                                } else {
+                                  strategyRules = firstTarget.strategyRoutingRules;
+                                  const firstRule = firstTarget.strategyRoutingRules?.find((rule: any) => rule.taskType === "general") || firstTarget.strategyRoutingRules?.[0];
+                                  if (firstRule) {
+                                    const prov = providers.find((p: any) => p.id === firstRule.providerId);
+                                    providerName = prov?.name || firstRule.providerId;
+                                    const model = allModels.find((m: any) => m.providerId === firstRule.providerId && m.modelId === firstRule.modelId);
+                                    modelName = model?.alias || model?.displayName || firstRule.modelId;
+                                  }
                                 }
                               }
                             } catch (e) {}

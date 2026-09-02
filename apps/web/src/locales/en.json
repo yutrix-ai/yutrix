@@ -401,6 +401,7 @@
     "logout": "Logout",
     "openapi": "OpenAPI",
     "responseCache": "Response Cache",
+    "distillation": "Distillation Flywheel",
     "group": {
       "dashboard": "Dashboard",
       "playground": "Playground",
@@ -815,6 +816,9 @@
       "actions": "Actions",
       "emptyTitle": "No Routing Targets",
       "emptyDescription": "Click \"Add Target Layer\" to start building multi-level funnel routing rules.",
+      "emptyDescriptionClassic": "Add L1, L2… layers — one model each; failures auto-fallback to the next layer.",
+      "classicModel": "Forward Model",
+      "classicModelDescription": "All requests on this layer use the selected model; failures degrade to the next layer.",
       "configureTarget": "Configure Target",
       "searchPlaceholder": "Search provider or model...",
       "noResults": "No matching providers or models found",
@@ -931,6 +935,8 @@
       "modeClientHint": "Match the model name from the client request against this route's L0 configuration. If nothing matches, use General. Mutually exclusive with a page-specified model.",
       "modeFixed": "Fixed model (global)",
       "modeStrategy": "Custom strategy mapping",
+      "classicBadge": "Classic routing",
+      "modeClassicHint": "Classic routes use one model per layer. You may set a fixed model or client override; custom strategy matrices are not supported.",
       "clientOverride": "Client Override",
       "clientOverrideHint": "Match request model against L0",
       "customStrategy": "Personal strategy overridden",
@@ -997,6 +1003,8 @@
       }
     },
     "routingMode": {
+      "classic": "Classic Routing",
+      "classicDescription": "One model per funnel layer (L1→L2→L3 fallback). Best for simple setups.",
       "strategy": "Strategy Routing",
       "strategyDescription": "For IDE / coding-assistant clients: classifies by content intent (code, debugging, writing, etc.).",
       "opcAgent": "OPC Agent Routing",

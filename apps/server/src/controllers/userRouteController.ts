@@ -17,6 +17,7 @@ import {
 } from "../utils/scheduleEvaluator";
 import { getUserAuthorizedRouteIds } from "../services/routeService";
 import { normalizeUserRouteOverridePayload } from "../services/clientModelOverride";
+import { isClassicRoutingMode, resolveRouteRoutingMode } from "../services/opcAgentRouting";
 
 export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -105,6 +106,7 @@ export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply
         host: subdomain ? subdomain.hostname : "*",
         path: endpoint?.path || "",
         incomingProtocol: endpoint?.incomingProtocol || "openai",
+        routingMode: resolveRouteRoutingMode(route),
         allowClientModel: activeAllowClientModel,
         providerId: activeProviderId,
         providerName: activeProviderName,
@@ -114,7 +116,9 @@ export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply
         overrideModelId: useClientModel ? null : finalOverrideModelId,
         useClientModel,
         overrideStrategyRules: useClientModel ? null : (override?.strategyRoutingRules || null),
-        strategyRoutingEnabled: activeSchedule ? false : (route.strategyRoutingEnabled || false),
+        strategyRoutingEnabled: activeSchedule
+          ? false
+          : (isClassicRoutingMode(route) ? false : (route.strategyRoutingEnabled || false)),
         strategyRoutingRules: route.strategyRoutingRules,
       };
     });
@@ -161,6 +165,10 @@ export async function overrideUserRoute(request: FastifyRequest, reply: FastifyR
 
   if (!activeAllowClientModel) {
     return reply.code(403).send({ error: "This route does not allow client model override" });
+  }
+
+  if (isClassicRoutingMode(route) && body.strategyRoutingRules) {
+    return reply.code(400).send({ error: "经典路由不支持自定义策略映射" });
   }
 
   // Enforce mutual exclusion: client mode vs fixed modelId vs custom strategy

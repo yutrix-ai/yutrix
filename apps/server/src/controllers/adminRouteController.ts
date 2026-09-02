@@ -26,7 +26,24 @@ import {
   cleanupUnusedRouteSubdomain,
 } from "../services/routeService";
 import { parseStrategyRoutingRules } from "../services/strategyRouting";
+import { coerceLegacyRouteForDisplay, resolveRouteRoutingMode } from "../services/opcAgentRouting";
 import { timeoutEjectAdminFields } from "../routes/gateway/timeoutEject";
+
+function routeDisplayShape(route: Record<string, unknown>) {
+  const coerced = coerceLegacyRouteForDisplay(route);
+  let targets: unknown = coerced.targets ?? null;
+  if (typeof targets === "string") {
+    try {
+      targets = JSON.parse(targets);
+    } catch {
+      targets = null;
+    }
+  }
+  return {
+    routingMode: resolveRouteRoutingMode(coerced),
+    targets,
+  };
+}
 
 export async function getAdminRoutes(request: FastifyRequest, reply: FastifyReply) {
   // Only admin can access
@@ -97,6 +114,7 @@ export async function getAdminRoutes(request: FastifyRequest, reply: FastifyRepl
 
     const parsedSchedules = safeParseSchedules(route.schedules);
     const activeSchedule = findActiveSchedule(parsedSchedules, now, dailyStartStr);
+    const display = routeDisplayShape(route as Record<string, unknown>);
 
     return {
       id: route.id,
@@ -130,8 +148,8 @@ export async function getAdminRoutes(request: FastifyRequest, reply: FastifyRepl
       fallbackStrategyRoutingRules: parseStrategyRoutingRules(route.fallbackStrategyRoutingRules),
       strategyRoutingEnabled: route.strategyRoutingEnabled,
       strategyRoutingRules: parseStrategyRoutingRules(route.strategyRoutingRules),
-      routingMode: (route as any).routingMode || "strategy",
-      targets: route.targets ? (() => { try { return JSON.parse(route.targets); } catch { return null; } })() : null,
+      routingMode: display.routingMode,
+      targets: display.targets,
       schedules: parsedSchedules,
       isScheduleActive: !!activeSchedule,
       activeSchedule,
@@ -197,6 +215,7 @@ export async function getAdminRouteById(request: FastifyRequest, reply: FastifyR
     routeModelRows[0]?.displayName || (model as any)?.displayName || route.modelId;
 
   const auth = await getRouteAuthorizations(route.id);
+  const display = routeDisplayShape(route as Record<string, unknown>);
 
   let parsedSchedules = [];
   if (route.schedules) {
@@ -239,8 +258,8 @@ export async function getAdminRouteById(request: FastifyRequest, reply: FastifyR
     fallbackStrategyRoutingRules: parseStrategyRoutingRules(route.fallbackStrategyRoutingRules),
     strategyRoutingEnabled: route.strategyRoutingEnabled,
     strategyRoutingRules: parseStrategyRoutingRules(route.strategyRoutingRules),
-    routingMode: (route as any).routingMode || "strategy",
-    targets: route.targets ? (() => { try { return JSON.parse(route.targets); } catch { return null; } })() : null,
+    routingMode: display.routingMode,
+    targets: display.targets,
     schedules: parsedSchedules,
     ipWhitelist: route.ipWhitelist || "",
     ...timeoutEjectAdminFields(route),

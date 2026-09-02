@@ -18,6 +18,10 @@ import type {
   BaseActionLog,
   AttemptState,
 } from "./types";
+import {
+  coerceClassicTargetFromLegacy,
+  isClassicRoutingMode,
+} from "../../services/opcAgentRouting";
 
 /**
  * Look up the user record and check whether they are authorized to access the
@@ -150,7 +154,9 @@ export function createInitialAttemptState(route: any): AttemptState {
     try {
       const parsedTargets = typeof route.targets === 'string' ? JSON.parse(route.targets) : route.targets;
       if (Array.isArray(parsedTargets) && parsedTargets.length > 0) {
-        firstTarget = parsedTargets[0];
+        firstTarget = isClassicRoutingMode(route)
+          ? coerceClassicTargetFromLegacy(parsedTargets[0])
+          : parsedTargets[0];
       }
     } catch (e) {
       // Ignored

@@ -64,13 +64,11 @@ export interface RouteItem {
   activeSchedule?: any;
 }
 
-export type RoutingMode = "strategy" | "opc_agent";
+export type RoutingMode = "classic" | "strategy";
 
 export type StrategyTaskType = "vision" | "debug" | "code" | "long_context" | "writing" | "general";
 
-export type OpcAgentTaskType = "vision" | "thinking" | "action" | "auto_review" | "memory" | "general";
-
-export type RouteTaskType = StrategyTaskType | OpcAgentTaskType;
+export type RouteTaskType = StrategyTaskType;
 
 export interface StrategyRoutingRule {
   taskType: RouteTaskType;

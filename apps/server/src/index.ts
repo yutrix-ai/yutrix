@@ -8,6 +8,7 @@ import crypto from "crypto";
 import path from "path";
 import "./services/chatLogService";
 import { scheduleDingTalkJobs } from "./services/dingtalk";
+import { scheduleDistillationJobs } from "./services/distillation/scheduler";
 import { logAction } from "./utils/actionLogger";
 
 const envPath = process.cwd().endsWith("server") ? "../../.env" : ".env";
@@ -181,6 +182,7 @@ import groupsRoutes from "./routes/groups";
 import openapiRoutes from "./routes/openapi";
 import chatLogsRoutes from "./routes/chatLogs";
 import cacheRoutes from "./routes/cache";
+import distillationRoutes from "./routes/distillation";
 import fastifyStatic from "@fastify/static";
 
 fastify.get("/api/health", async () => {
@@ -203,6 +205,7 @@ fastify.register(analyticsRoutes);
 fastify.register(logsRoutes);
 fastify.register(chatLogsRoutes);
 fastify.register(cacheRoutes);
+fastify.register(distillationRoutes);
 fastify.register(unifiedRoutes);
 fastify.register(eventsRoutes);
 fastify.register(groupsRoutes);
@@ -257,6 +260,7 @@ const start = async () => {
       });
 
       await scheduleDingTalkJobs();
+      await scheduleDistillationJobs();
     }
   } catch (err) {
     fastify.log.error(err);

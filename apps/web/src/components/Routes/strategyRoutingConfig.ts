@@ -53,51 +53,6 @@ export const STRATEGY_TASKS: RouteTaskDefinition[] = [
   },
 ];
 
-export const OPC_AGENT_TASKS: RouteTaskDefinition[] = [
-  {
-    type: "vision",
-    labelKey: "routes.opcAgent.tasks.vision",
-    fallbackLabel: "视觉感知",
-    descriptionKey: "routes.opcAgent.taskDescriptions.vision",
-    fallbackDescription: "屏幕截图、图片输入或 UI 定位任务，需要多模态视觉模型。",
-  },
-  {
-    type: "thinking",
-    labelKey: "routes.opcAgent.tasks.thinking",
-    fallbackLabel: "深度规划",
-    descriptionKey: "routes.opcAgent.taskDescriptions.thinking",
-    fallbackDescription: "新用户目标进入时的任务拆解与多步规划，适合深度推理模型。",
-  },
-  {
-    type: "action",
-    labelKey: "routes.opcAgent.tasks.action",
-    fallbackLabel: "操作执行",
-    descriptionKey: "routes.opcAgent.taskDescriptions.action",
-    fallbackDescription: "工具调用循环中的键鼠、Shell、文件等操作，需要强工具调用模型。",
-  },
-  {
-    type: "auto_review",
-    labelKey: "routes.opcAgent.tasks.auto_review",
-    fallbackLabel: "安全审评",
-    descriptionKey: "routes.opcAgent.taskDescriptions.auto_review",
-    fallbackDescription: "Agent 危险动作安全审计，要求低延迟轻量模型。",
-  },
-  {
-    type: "memory",
-    labelKey: "routes.opcAgent.tasks.memory",
-    fallbackLabel: "记忆压缩",
-    descriptionKey: "routes.opcAgent.taskDescriptions.memory",
-    fallbackDescription: "会话历史压缩与记忆提炼；上下文超限时也会路由到此模型。",
-  },
-  {
-    type: "general",
-    labelKey: "routes.opcAgent.tasks.general",
-    fallbackLabel: "通用兜底",
-    descriptionKey: "routes.opcAgent.taskDescriptions.general",
-    fallbackDescription: "普通对话轮次或未命中其他阶段时使用。",
-  },
-];
-
 export const ROUTING_MODES: Array<{
   value: RoutingMode;
   labelKey: string;
@@ -106,23 +61,73 @@ export const ROUTING_MODES: Array<{
   fallbackDescription: string;
 }> = [
   {
+    value: "classic",
+    labelKey: "routes.routingMode.classic",
+    fallbackLabel: "经典路由",
+    descriptionKey: "routes.routingMode.classicDescription",
+    fallbackDescription: "每层只选一个模型，按 L1→L2→L3 漏斗降级，适合大多数简单场景。",
+  },
+  {
     value: "strategy",
     labelKey: "routes.routingMode.strategy",
     fallbackLabel: "策略路由",
     descriptionKey: "routes.routingMode.strategyDescription",
     fallbackDescription: "面向 IDE / 编码助手等客户端，按内容意图分类（代码、报错、写作等）。",
   },
-  {
-    value: "opc_agent",
-    labelKey: "routes.routingMode.opcAgent",
-    fallbackLabel: "OPC 智能体路由",
-    descriptionKey: "routes.routingMode.opcAgentDescription",
-    fallbackDescription: "面向 Rakazo 等自主智能体，按执行阶段分类（视觉、规划、操作、审评、记忆）。",
-  },
 ];
 
+export function normalizeRoutingModeForForm(mode: string | undefined): RoutingMode {
+  if (mode === "opc_agent" || mode === "classic") return "classic";
+  if (mode === "strategy") return "strategy";
+  return "classic";
+}
+
+export function seedModelFromLegacyTarget(target: any): {
+  providerId: string;
+  providerProtocol: string;
+  modelId: string;
+} {
+  const rules = Array.isArray(target?.strategyRoutingRules)
+    ? target.strategyRoutingRules
+    : [];
+  const byType = new Map(rules.map((r: any) => [r.taskType, r]));
+  const seeded =
+    byType.get("general") ||
+    rules.find((r: any) => r?.providerId && r?.modelId) ||
+    null;
+  return {
+    providerId: seeded?.providerId || target?.providerId || "",
+    providerProtocol: seeded?.providerProtocol || target?.providerProtocol || "openai",
+    modelId: seeded?.modelId || target?.modelId || "",
+  };
+}
+
+export function coerceClassicTargetFromLegacy(target: any) {
+  const seed = seedModelFromLegacyTarget(target);
+  return {
+    ...target,
+    ...seed,
+    strategyRoutingEnabled: false,
+    strategyRoutingRules: [],
+  };
+}
+
+export function coerceTargetsForRoutingMode(
+  targets: any[],
+  mode: string | undefined,
+): any[] {
+  const normalizedMode = normalizeRoutingModeForForm(mode);
+  if (normalizedMode !== "classic") return targets;
+  return targets.map(coerceClassicTargetFromLegacy);
+}
+
+export function isClassicRoutingMode(mode: string | undefined): boolean {
+  return normalizeRoutingModeForForm(mode) === "classic";
+}
+
 export function tasksForRoutingMode(mode: string | undefined): RouteTaskDefinition[] {
-  return mode === "opc_agent" ? OPC_AGENT_TASKS : STRATEGY_TASKS;
+  if (isClassicRoutingMode(mode)) return [];
+  return STRATEGY_TASKS;
 }
 
 export function selectableModelsForProvider(models: ProviderModel[], providerId: string) {

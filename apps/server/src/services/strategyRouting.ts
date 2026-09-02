@@ -32,25 +32,22 @@ import {
   shouldAttemptLongContextHop,
 } from "../routes/gateway/degradePolicy";
 import {
-  classifyOpcAgentTask,
-  isOpcAgentTaskType,
   resolveRouteRoutingMode,
-  type OpcAgentTaskType,
   type RoutingMode,
 } from "./opcAgentRouting";
 export { hasImageInput };
 export { LONG_CONTEXT_SIZE_GATE_TOKENS, meetsLongContextSizeGate, shouldAttemptLongContextHop } from "../routes/gateway/degradePolicy";
 export {
   capacityTaskTypeForMode,
-  classifyOpcAgentTask,
-  isOpcAgentTaskType,
-  OPC_AGENT_TASK_TYPES,
   resolveRouteRoutingMode,
   ROUTING_MODES,
   strategyRoutingEnabledForLayer,
-  type OpcAgentTaskType,
   type RoutingMode,
 } from "./opcAgentRouting";
+
+import { applyRoutingWeightOverlay } from "./distillation/routingWeightsBridge";
+
+export { refreshRoutingWeightSnapshot } from "./distillation/routingWeightsBridge";
 
 export const STRATEGY_TASK_TYPES = [
   "vision",
@@ -69,7 +66,7 @@ export type StrategyTaskType = (typeof STRATEGY_TASK_TYPES)[number];
  * findStrategyRule, and the funnel degrade machinery all key off those two
  * names and keep working unchanged in OPC agent mode.
  */
-export type RouteTaskType = StrategyTaskType | OpcAgentTaskType;
+export type RouteTaskType = StrategyTaskType;
 
 /**
  * Floor for *classifying* a request as long_context from text (logs, documents).
@@ -156,7 +153,7 @@ export function isStrategyTaskType(value: unknown): value is StrategyTaskType {
 
 /** Accepts task types from either routing mode (rules are stored in one JSON shape). */
 export function isRouteTaskType(value: unknown): value is RouteTaskType {
-  return isStrategyTaskType(value) || isOpcAgentTaskType(value);
+  return isStrategyTaskType(value);
 }
 
 export function extractCurrentUserInputForRouting(body: any): string {
@@ -762,7 +759,10 @@ export function classifyStrategyTask(
 
   for (const word of words) {
     const w = word.toLowerCase();
-    if (w in ROUTING_WEIGHTS.debug) {
+    const debugWeights = applyRoutingWeightOverlay("debug", ROUTING_WEIGHTS.debug);
+    const codeWeights = applyRoutingWeightOverlay("code", ROUTING_WEIGHTS.code);
+    const writingWeights = applyRoutingWeightOverlay("writing", ROUTING_WEIGHTS.writing);
+    if (w in debugWeights) {
       if (
         (skipDebugTheme || routingLiveFailures.length === 0) &&
         (w === "bug" ||
@@ -782,12 +782,12 @@ export function classifyStrategyTask(
       ) {
         // skip branding / design-spec / writing theme tokens
       } else {
-        debugScore += ROUTING_WEIGHTS.debug[w];
+        debugScore += debugWeights[w];
       }
     }
-    if (w in ROUTING_WEIGHTS.code) codeScore += ROUTING_WEIGHTS.code[w];
-    if (w in ROUTING_WEIGHTS.writing)
-      writingScore += ROUTING_WEIGHTS.writing[w];
+    if (w in codeWeights) codeScore += codeWeights[w];
+    if (w in writingWeights)
+      writingScore += writingWeights[w];
   }
 
   const THRESHOLD = 5;
@@ -1241,10 +1241,8 @@ export async function resolveStrategyRoutingDecision(options: {
     };
   }
 
-  // OPC agents send a nominal placeholder model id (whatever the operator
-  // typed when connecting the endpoint); it must never suppress routing.
+  // Client placeholder model ids must never suppress routing.
   if (
-    routingMode !== "opc_agent" &&
     requestClass.requestClass === "user_intent" &&
     isClientNamedSmallFastModel(extractClientRequestedModel(options.body))
   ) {
@@ -1363,12 +1361,10 @@ export async function resolveStrategyRoutingDecision(options: {
   if (options.currentAttempt.reapplyLayerStrategy) {
     const inherited = options.currentAttempt.strategyTaskType;
     const inheritedReapplicable =
-      routingMode === "opc_agent"
-        ? !!inherited && inherited !== "vision" && isOpcAgentTaskType(inherited)
-        : !!inherited &&
-          inherited !== "long_context" &&
-          inherited !== "vision" &&
-          isStrategyTaskType(inherited);
+      !!inherited &&
+      inherited !== "long_context" &&
+      inherited !== "vision" &&
+      isStrategyTaskType(inherited);
     if (inherited && inheritedReapplicable && isRouteTaskType(inherited)) {
       const rules = parseRules(strategyRoutingRules);
       const rule = findStrategyRule(rules, inherited);
@@ -1412,15 +1408,8 @@ export async function resolveStrategyRoutingDecision(options: {
     }
   }
 
-  // ── Continuation requests (tool results, system-reminders, auto-drive, etc.) ──
-  // Strategy mode: not a real user input → unconditionally keep the current model.
-  // After an availability hop, re-select this layer's strategy instead of
-  // inheriting the previous layer's model.
-  // OPC agent mode intentionally skips this sticky inheritance: a tool
-  // continuation marks the agent's execution loop and must route to the
-  // action column (phase routing), not to whichever model planned the turn.
+  // Continuation requests: not a real user input → keep the current model when possible.
   if (
-    routingMode !== "opc_agent" &&
     options.isContinuation &&
     !options.currentAttempt.reapplyLayerStrategy
   ) {
@@ -1538,35 +1527,22 @@ export async function resolveStrategyRoutingDecision(options: {
   const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
   const isVision = tokenEst.imageCount > 0;
 
-  let selectedTaskType: RouteTaskType;
-  let reasons: string[];
+  const inputText = extractCurrentUserInputForRouting(options.body);
+  const classification = classifyStrategyTask(inputText, isVision);
 
-  if (routingMode === "opc_agent") {
-    const opcClassification = classifyOpcAgentTask({
-      body: options.body,
-      requestClass: requestClass.requestClass,
-      hasImageInput: isVision,
+  let selectedTaskType: RouteTaskType = classification.taskType;
+  let reasons: string[] = [...classification.reasons];
+  if (isVision) {
+    selectedTaskType = "vision";
+    reasons = ["required_capability_vision"];
+  } else if (selectedTaskType === "long_context") {
+    const gated = applyLongContextStrategyTokenGate({
+      taskType: "long_context",
+      estimatedInputTokens: tokenEst.totalTokens,
+      inputText,
     });
-    selectedTaskType = opcClassification.taskType;
-    reasons = [...opcClassification.reasons];
-  } else {
-    const inputText = extractCurrentUserInputForRouting(options.body);
-    const classification = classifyStrategyTask(inputText, isVision);
-
-    selectedTaskType = classification.taskType;
-    reasons = [...classification.reasons];
-    if (isVision) {
-      selectedTaskType = "vision";
-      reasons = ["required_capability_vision"];
-    } else if (selectedTaskType === "long_context") {
-      const gated = applyLongContextStrategyTokenGate({
-        taskType: "long_context",
-        estimatedInputTokens: tokenEst.totalTokens,
-        inputText,
-      });
-      selectedTaskType = gated.taskType;
-      reasons = [...reasons, ...gated.reasons];
-    }
+    selectedTaskType = gated.taskType;
+    reasons = [...reasons, ...gated.reasons];
   }
 
   const rules = parseRules(strategyRoutingRules);
@@ -1655,22 +1631,12 @@ export async function resolveFallbackStrategyRoutingDecision(options: {
     taskType = "vision";
     reasons = ["required_capability_vision"];
   } else if (!taskType) {
-    if (routingMode === "opc_agent") {
-      const opcClassification = classifyOpcAgentTask({
-        body: options.body,
-        requestClass: classifyGatewayRequestClass(options.body).requestClass,
-        hasImageInput: isVision,
-      });
-      taskType = opcClassification.taskType;
-      reasons = opcClassification.reasons;
-    } else {
-      const classification = classifyStrategyTask(inputText, isVision);
-      taskType = classification.taskType;
-      reasons = classification.reasons;
-    }
+    const classification = classifyStrategyTask(inputText, isVision);
+    taskType = classification.taskType;
+    reasons = classification.reasons;
   }
 
-  if (routingMode !== "opc_agent" && taskType === "long_context") {
+  if (taskType === "long_context") {
     const gated = applyLongContextStrategyTokenGate({
       taskType: "long_context",
       estimatedInputTokens: tokenEst.totalTokens,

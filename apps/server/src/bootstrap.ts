@@ -6,6 +6,7 @@ import crypto from "crypto";
 
 import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn, ensureSubdomainHostnameIdentity } from "./startup/migrations";
 import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings, seedLoopGuardSettings } from "./startup/seed";
+import { refreshRoutingWeightSnapshot } from "./services/distillation/routingWeightsBridge";
 import { refreshLoopGuardConfigCache } from "./services/loopGuard";
 
 export { isMigrationCompleted };
@@ -185,6 +186,7 @@ export async function bootstrap() {
   await seedModelDiscoverySettings();
   await seedLoopGuardSettings();
   await refreshLoopGuardConfigCache();
+  await refreshRoutingWeightSnapshot();
   await seedBuiltinPromptPolicies();
   await syncManualModels();
   await ensureDefaultGroup();

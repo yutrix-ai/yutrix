@@ -42,6 +42,7 @@ interface UserRoute {
   host: string;
   path: string;
   incomingProtocol: string;
+  routingMode?: string;
   allowClientModel?: boolean;
   providerId?: string;
   providerName?: string;
@@ -107,7 +108,7 @@ export default function UserRoutes() {
     if (route.useClientModel) {
       mode = "client";
       setSelectedModel("default");
-    } else if (route.overrideStrategyRules) {
+    } else if (route.overrideStrategyRules && route.routingMode !== "classic") {
       mode = "strategy";
       setSelectedModel("default");
       try {
@@ -179,6 +180,10 @@ export default function UserRoutes() {
     }
   };
 
+  const isClassicRoute = editingRoute?.routingMode === "classic";
+  const strategyOverrideAllowed =
+    !!editingRoute?.strategyRoutingEnabled && editingRoute?.routingMode !== "classic";
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -218,17 +223,22 @@ export default function UserRoutes() {
                   <SelectItem value="default">{t("routes.userRoutes.modeDefault", "默认策略")}</SelectItem>
                   <SelectItem value="client">{t("routes.userRoutes.modeClient", "客户端覆盖")}</SelectItem>
                   <SelectItem value="fixed">{t("routes.userRoutes.modeFixed", "全局固定模型")}</SelectItem>
-                  {editingRoute?.strategyRoutingEnabled && (
+                  {strategyOverrideAllowed && (
                     <SelectItem value="strategy">{t("routes.userRoutes.modeStrategy", "自定义策略映射")}</SelectItem>
                   )}
                 </SelectContent>
               </Select>
               {overrideMode === "client" && (
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t(
-                    "routes.userRoutes.modeClientHint",
-                    "按客户端请求中的模型名匹配本路由 L0 层配置；无法命中时走 General 兜底。与页面指定模型互斥。",
-                  )}
+                  {isClassicRoute
+                    ? t(
+                        "routes.userRoutes.modeClassicHint",
+                        "经典路由每层只有一个模型；您可覆盖为固定模型或启用客户端覆盖，不支持自定义策略矩阵。",
+                      )
+                    : t(
+                        "routes.userRoutes.modeClientHint",
+                        "按客户端请求中的模型名匹配本路由 L0 层配置；无法命中时走 General 兜底。与页面指定模型互斥。",
+                      )}
                 </p>
               )}
             </div>
@@ -257,7 +267,7 @@ export default function UserRoutes() {
               </div>
             )}
 
-            {overrideMode === "strategy" && editingRoute?.strategyRoutingEnabled && (
+            {overrideMode === "strategy" && strategyOverrideAllowed && (
               <div className="space-y-2 pt-2 border-t mt-4">
                 <UserStrategyEditor
                   rules={strategyRules}
@@ -305,7 +315,16 @@ export default function UserRoutes() {
               <TableBody>
                 {routes.map(r => (
                   <TableRow key={r.id}>
-                    <TableCell className="font-medium">{r.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <span>{r.name}</span>
+                        {r.routingMode === "classic" && (
+                          <Badge variant="secondary" className="text-[10px] font-normal">
+                            {t("routes.userRoutes.classicBadge", "经典路由")}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-zinc-500">{r.incomingProtocol === 'openai' ? 'OpenAI' : 'Anthropic'}</Badge>
                     </TableCell>

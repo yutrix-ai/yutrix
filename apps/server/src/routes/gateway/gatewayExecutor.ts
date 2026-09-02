@@ -698,9 +698,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   });
                 }
                 let previousModelId: string | null = null;
-                // OPC agent mode re-classifies every turn by agent-loop phase;
-                // sticky-model inheritance (and its chat-log lookup) is strategy-mode only.
-                if (isContinuation && resolveRouteRoutingMode(route) !== "opc_agent") {
+                if (isContinuation) {
                   const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string | undefined;
                   previousModelId = await getStickyModelForContinuation(body, authCtx.userId, clientSessionIdVal);
                 }
@@ -1345,11 +1343,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               baseActionLog,
               provider.name,
               {
-                // OPC agent clients (rakazo) often hardcode a small max_tokens.
-                // When the model has no admin ceiling, strip it so the provider
-                // default applies. Strategy-mode traffic keeps full passthrough.
-                stripClientMaxTokensWhenUnset:
-                  resolveRouteRoutingMode(route) === "opc_agent",
+                stripClientMaxTokensWhenUnset: false,
               },
             );
             isStreaming = detectedStreaming;

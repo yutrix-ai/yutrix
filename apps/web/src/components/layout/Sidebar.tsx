@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Database,
   FastForward,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,7 @@ export function Sidebar({ currentPath, onNavigate, sidebarOpen, onClose }: Sideb
         { path: "/routes", label: t("layout.routes", "路由配置"), icon: RouteIcon },
         { path: "/policies", label: t("layout.policies", "访问策略"), icon: Shield },
         { path: "/response-cache", label: t("layout.responseCache", "响应缓存"), icon: Database },
+        { path: "/distillation", label: t("layout.distillation", "蒸馏飞轮"), icon: Sparkles },
       ]
     },
     {

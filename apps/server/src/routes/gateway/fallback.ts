@@ -8,6 +8,10 @@ import { resolveModelContextWindow, fitsContextBudget } from "./gatewayExecutorU
 import type { AttemptState, BaseActionLog } from "./types";
 import type { AsyncQueue } from "../../utils/asyncQueue";
 import { hasImageInput } from "../../utils/multimodal";
+import {
+  coerceClassicTargetFromLegacy,
+  isClassicRoutingMode,
+} from "../../services/opcAgentRouting";
 
 export interface FallbackResult {
   newAttempt: AttemptState;
@@ -49,7 +53,9 @@ async function resolveFallbackTarget(
   const isVision = tokenEst.imageCount > 0;
 
   for (let i = targetIndex + 1; i < parsedTargets.length; i++) {
-    const target = parsedTargets[i];
+    const target = isClassicRoutingMode(route)
+      ? coerceClassicTargetFromLegacy(parsedTargets[i])
+      : parsedTargets[i];
     let targetFallbackModelId = target.modelId;
     let targetFallbackProtocol = target.providerProtocol || "openai";
     let targetFallbackProviderId = target.providerId;
@@ -57,7 +63,7 @@ async function resolveFallbackTarget(
     let strategyTaskType: string | undefined;
     let strategyReason: string | undefined;
 
-    if (isVision) {
+    if (isVision && !isClassicRoutingMode(route)) {
       const visionRule = getStrategyRuleForLayer(route, i, "vision");
       if (!visionRule) {
         if (logAction && baseActionLog) {

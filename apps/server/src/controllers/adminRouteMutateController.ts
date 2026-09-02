@@ -21,6 +21,7 @@ import { stringifyStrategyRoutingRules } from "../services/strategyRouting";
 import { normalizeIpAclForStorage } from "../utils/ipAcl";
 import { assertRouteIdentityAvailable } from "../services/routeIdentityGuard";
 import { DEFAULT_PROVIDER_TIMEOUT_MS, trimRouteName } from "@promptgate/shared";
+import { normalizeRoutingModeInput, resolveRouteRoutingMode } from "../services/opcAgentRouting";
 
 export async function createAdminRoute(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -48,7 +49,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     timeoutEjectEnabled,
   } = body;
   const hostInput = rawHostInput ?? body.host;
-  const resolvedRoutingMode = routingMode === "opc_agent" ? "opc_agent" : "strategy";
+  const resolvedRoutingMode = normalizeRoutingModeInput(routingMode);
 
   if (!hostInput || !path || !incomingProtocol || !targets || targets.length === 0) {
     return reply.code(400).send({ error: "缺少必填字段或路由目标为空" });
@@ -359,8 +360,8 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     retryCount: patchRetryCount,
     targets: JSON.stringify(resolvedTargets),
     routingMode: body.routingMode !== undefined
-      ? (body.routingMode === "opc_agent" ? "opc_agent" : "strategy")
-      : ((route as any).routingMode || "strategy"),
+      ? normalizeRoutingModeInput(body.routingMode, resolveRouteRoutingMode(route))
+      : resolveRouteRoutingMode(route),
     ipWhitelist: patchIpWhitelist,
     timeoutEjectEnabled: body.timeoutEjectEnabled !== undefined ? !!body.timeoutEjectEnabled : route.timeoutEjectEnabled,
     status: body.status !== undefined ? body.status : (body.enabled ? "active" : route.status),

@@ -399,6 +399,7 @@
     "logout": "退出登录",
     "openapi": "开放接口",
     "responseCache": "响应缓存",
+    "distillation": "蒸馏飞轮",
     "group": {
       "dashboard": "仪表盘",
       "playground": "Playground",
@@ -812,6 +813,9 @@
       "actions": "操作",
       "emptyTitle": "暂无路由目标",
       "emptyDescription": "点击右上角 \"添加目标层\" 开始构建多级漏斗转发目标规则。",
+      "emptyDescriptionClassic": "点击右上角「添加目标层」配置 L1、L2… 每层一个模型，失败时自动降级。",
+      "classicModel": "转发模型",
+      "classicModelDescription": "本层所有请求统一转发到所选模型；失败时降级到下一层。",
       "configureTarget": "配置目标",
       "searchPlaceholder": "搜索供应商或模型名称...",
       "noResults": "未找到匹配的供应商或模型",
@@ -928,6 +932,8 @@
       "modeClientHint": "按客户端请求中的模型名匹配本路由 L0 层配置；无法命中时走 General 兜底。与页面指定模型互斥。",
       "modeFixed": "全局固定模型",
       "modeStrategy": "自定义策略映射",
+      "classicBadge": "经典路由",
+      "modeClassicHint": "经典路由每层只有一个模型；您可覆盖为固定模型或启用客户端覆盖，不支持自定义策略矩阵。",
       "clientOverride": "客户端覆盖",
       "clientOverrideHint": "按请求模型匹配 L0",
       "customStrategy": "已覆盖个人策略",
@@ -994,6 +1000,8 @@
       }
     },
     "routingMode": {
+      "classic": "经典路由",
+      "classicDescription": "每层只选一个模型，按 L1→L2→L3 漏斗降级，适合大多数简单场景。",
       "strategy": "策略路由",
       "strategyDescription": "面向 IDE / 编码助手等客户端，按内容意图分类（代码、报错、写作等），逐层漏斗转发。",
       "opcAgent": "OPC 智能体路由",

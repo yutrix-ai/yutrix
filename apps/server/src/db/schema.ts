@@ -154,7 +154,7 @@ export const endpointRoutes = sqliteTable("endpoint_routes", {
   fallbackStrategyRoutingRules: text("fallbackStrategyRoutingRules"),
   strategyRoutingEnabled: integer("strategyRoutingEnabled", { mode: "boolean" }).notNull().default(false),
   strategyRoutingRules: text("strategyRoutingRules"),
-  /** 'strategy' (developer funnel columns) | 'opc_agent' (OS-agent / OPC bot columns). */
+  /** 'classic' | 'strategy' (legacy 'opc_agent' reads as classic). */
   routingMode: text("routingMode").notNull().default("strategy"),
   targets: text("targets"), // JSON array of targets for funnel routing
   weight: integer("weight").notNull().default(1),
@@ -357,4 +357,84 @@ export const responseCache = sqliteTable("response_cache", {
 }, (t) => ({
   unq_response_cache_inputhash: unique("unq_response_cache_inputhash").on(t.inputHash),
   idx_response_cache_inputhash: index("idx_response_cache_inputhash").on(t.inputHash),
+}));
+
+export const distillationJobs = sqliteTable("distillation_jobs", {
+  id: text("id").primaryKey(),
+  mode: text("mode").notNull(), // incremental | full_relearn | scheduled_incremental
+  status: text("status").notNull().default("pending"),
+  analysisRouteId: text("analysisRouteId"),
+  userIdsFilter: text("userIdsFilter"), // JSON array
+  timeRangeStart: integer("timeRangeStart", { mode: "timestamp" }),
+  timeRangeEnd: integer("timeRangeEnd", { mode: "timestamp" }),
+  maxRecords: integer("maxRecords"),
+  totalItems: integer("totalItems").notNull().default(0),
+  processedItems: integer("processedItems").notNull().default(0),
+  failedItems: integer("failedItems").notNull().default(0),
+  errorMessage: text("errorMessage"),
+  generationId: text("generationId").notNull(),
+  startedAt: integer("startedAt", { mode: "timestamp" }),
+  completedAt: integer("completedAt", { mode: "timestamp" }),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+}, (t) => ({
+  idx_distillation_jobs_status: index("idx_distillation_jobs_status").on(t.status),
+  idx_distillation_jobs_created: index("idx_distillation_jobs_created").on(t.createdAt),
+}));
+
+export const distillationJobItems = sqliteTable("distillation_job_items", {
+  id: text("id").primaryKey(),
+  jobId: text("jobId").notNull(),
+  chatLogId: text("chatLogId").notNull(),
+  userId: text("userId").notNull(),
+  status: text("status").notNull().default("pending"),
+  errorMessage: text("errorMessage"),
+  processedAt: integer("processedAt", { mode: "timestamp" }),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+}, (t) => ({
+  unq_distillation_job_chatlog: unique("unq_distillation_job_chatlog").on(t.jobId, t.chatLogId),
+  idx_distillation_job_items_job: index("idx_distillation_job_items_job").on(t.jobId, t.status),
+}));
+
+export const distillationLearnedRecords = sqliteTable("distillation_learned_records", {
+  chatLogId: text("chatLogId").primaryKey(),
+  jobId: text("jobId").notNull(),
+  generationId: text("generationId").notNull(),
+  learnedAt: integer("learnedAt", { mode: "timestamp" }).notNull(),
+});
+
+export const distillationRoutingProposals = sqliteTable("distillation_routing_proposals", {
+  id: text("id").primaryKey(),
+  jobId: text("jobId").notNull(),
+  chatLogId: text("chatLogId"),
+  sourceUserId: text("sourceUserId"),
+  status: text("status").notNull().default("draft"),
+  payload: text("payload").notNull(), // JSON DistillationRecordOutput.routing
+  validationResult: text("validationResult"),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+}, (t) => ({
+  idx_distillation_proposals_status: index("idx_distillation_proposals_status").on(t.status),
+}));
+
+export const distillationSignalVersions = sqliteTable("distillation_signal_versions", {
+  id: text("id").primaryKey(),
+  versionLabel: text("versionLabel").notNull(),
+  weightOverrides: text("weightOverrides").notNull(), // JSON
+  boundaryRules: text("boundaryRules").notNull(), // JSON array
+  proposalIds: text("proposalIds").notNull(), // JSON array
+  isActive: integer("isActive", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+});
+
+export const distillationSkillPackages = sqliteTable("distillation_skill_packages", {
+  id: text("id").primaryKey(),
+  userId: text("userId").notNull(),
+  username: text("username").notNull(),
+  version: integer("version").notNull(),
+  status: text("status").notNull().default("draft"), // draft | published
+  files: text("files").notNull(), // JSON map path -> content
+  sourceRecordCount: integer("sourceRecordCount").notNull().default(0),
+  jobId: text("jobId"),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+}, (t) => ({
+  idx_distillation_skill_user: index("idx_distillation_skill_user").on(t.userId, t.version),
 }));

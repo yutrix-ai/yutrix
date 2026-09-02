@@ -193,6 +193,72 @@ async function ensureTablesExist() {
       createdAt integer NOT NULL,
       updatedAt integer NOT NULL,
       lastUsedAt integer
+    );`,
+    `CREATE TABLE IF NOT EXISTS distillation_jobs (
+      id text PRIMARY KEY NOT NULL,
+      mode text NOT NULL,
+      status text DEFAULT 'pending' NOT NULL,
+      analysisRouteId text,
+      userIdsFilter text,
+      timeRangeStart integer,
+      timeRangeEnd integer,
+      maxRecords integer,
+      totalItems integer DEFAULT 0 NOT NULL,
+      processedItems integer DEFAULT 0 NOT NULL,
+      failedItems integer DEFAULT 0 NOT NULL,
+      errorMessage text,
+      generationId text NOT NULL,
+      startedAt integer,
+      completedAt integer,
+      createdAt integer NOT NULL
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_distillation_jobs_status ON distillation_jobs (status);`,
+    `CREATE TABLE IF NOT EXISTS distillation_job_items (
+      id text PRIMARY KEY NOT NULL,
+      jobId text NOT NULL,
+      chatLogId text NOT NULL,
+      userId text NOT NULL,
+      status text DEFAULT 'pending' NOT NULL,
+      errorMessage text,
+      processedAt integer,
+      createdAt integer NOT NULL
+    );`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS unq_distillation_job_chatlog ON distillation_job_items (jobId, chatLogId);`,
+    `CREATE TABLE IF NOT EXISTS distillation_learned_records (
+      chatLogId text PRIMARY KEY NOT NULL,
+      jobId text NOT NULL,
+      generationId text NOT NULL,
+      learnedAt integer NOT NULL
+    );`,
+    `CREATE TABLE IF NOT EXISTS distillation_routing_proposals (
+      id text PRIMARY KEY NOT NULL,
+      jobId text NOT NULL,
+      chatLogId text,
+      sourceUserId text,
+      status text DEFAULT 'draft' NOT NULL,
+      payload text NOT NULL,
+      validationResult text,
+      createdAt integer NOT NULL
+    );`,
+    `CREATE TABLE IF NOT EXISTS distillation_signal_versions (
+      id text PRIMARY KEY NOT NULL,
+      versionLabel text NOT NULL,
+      weightOverrides text NOT NULL,
+      boundaryRules text NOT NULL,
+      proposalIds text NOT NULL,
+      isActive integer DEFAULT 0 NOT NULL,
+      createdAt integer NOT NULL
+    );`,
+    `CREATE TABLE IF NOT EXISTS distillation_skill_packages (
+      id text PRIMARY KEY NOT NULL,
+      userId text NOT NULL,
+      username text NOT NULL,
+      version integer NOT NULL,
+      status text DEFAULT 'draft' NOT NULL,
+      files text NOT NULL,
+      sourceRecordCount integer DEFAULT 0 NOT NULL,
+      jobId text,
+      createdAt integer NOT NULL
     );`
   ];
 

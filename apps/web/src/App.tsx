@@ -27,6 +27,7 @@ import Playground from "./pages/Playground";
 import AdminOpenAPI from "./pages/AdminOpenAPI";
 import SystemInfo from "./pages/SystemInfo";
 import ResponseCache from "./pages/ResponseCache";
+import Distillation from "./pages/Distillation";
 function App() {
   const [location, setLocation] = useLocation();
   const { user, loading, checkAuth } = useAuth();
@@ -104,6 +105,7 @@ function App() {
             <AdminRoute path="/settings" component={Settings} />
             <AdminRoute path="/system-info" component={SystemInfo} />
             <AdminRoute path="/response-cache" component={ResponseCache} />
+            <AdminRoute path="/distillation" component={Distillation} />
             <Route path="/my-stats" component={MyStats} />
             <Route path="/playground" component={Playground} />
             <Route path="/change-password" component={ChangePassword} />

@@ -6,7 +6,9 @@ import { RouteItem, Provider, ProviderModel, Policy, StrategyRoutingRule } from 
 import {
   completeStrategyRules,
   createDefaultStrategyRules,
+  coerceTargetsForRoutingMode,
   firstModelForProvider,
+  normalizeRoutingModeForForm,
   providerProtocolForRule,
   tasksForRoutingMode,
 } from "./strategyRoutingConfig";
@@ -63,7 +65,7 @@ const emptyFormData = {
   hostInput: "*",
   path: "/v1/chat/completions",
   incomingProtocol: "openai",
-  routingMode: "strategy" as string,
+  routingMode: "classic" as string,
   targets: [] as any[],
   timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
   timeoutEjectEnabled: false,
@@ -203,6 +205,30 @@ export function useRoutesState() {
   const handleRoutingModeChange = (mode: string) => {
     setFormData(prev => {
       if (prev.routingMode === mode) return prev;
+
+      if (mode === "classic") {
+        const targets = (prev.targets || []).map((target: any) => {
+          const existingRules: any[] = Array.isArray(target.strategyRoutingRules)
+            ? target.strategyRoutingRules
+            : [];
+          const byType = new Map(existingRules.map((r: any) => [r.taskType, r]));
+          const seed = byType.get("general") || existingRules[0] || {
+            providerId: target.providerId || "",
+            providerProtocol: target.providerProtocol || "openai",
+            modelId: target.modelId || "",
+          };
+          return {
+            ...target,
+            providerId: seed.providerId || "",
+            providerProtocol: seed.providerProtocol || "openai",
+            modelId: seed.modelId || "",
+            strategyRoutingEnabled: false,
+            strategyRoutingRules: [],
+          };
+        });
+        return { ...prev, routingMode: mode, targets };
+      }
+
       const nextTasks = tasksForRoutingMode(mode);
       // Remap each layer's rules onto the new task set: keep task types shared by
       // both modes (vision/general), seed the rest from the layer's general/top-level target.
@@ -410,11 +436,21 @@ export function useRoutesState() {
         hostInput: formData.hostInput,
         path: formData.path,
         incomingProtocol: formData.incomingProtocol,
-        routingMode: formData.routingMode || "strategy",
-        targets: formData.targets.map((t: any) => ({
-          ...t,
-          promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId
-        })),
+        routingMode: formData.routingMode || "classic",
+        targets: formData.targets.map((t: any) => {
+          const base = {
+            ...t,
+            promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId,
+          };
+          if (formData.routingMode === "classic") {
+            return {
+              ...base,
+              strategyRoutingEnabled: false,
+              strategyRoutingRules: [],
+            };
+          }
+          return base;
+        }),
         timeoutMs: formData.timeoutMs,
         timeoutEjectEnabled: !!formData.timeoutEjectEnabled,
         retryCount: formData.retryCount,
@@ -484,8 +520,8 @@ export function useRoutesState() {
     setFormData({
       ...emptyFormData,
       ...draft,
-      targets: draft.targets,
-      routingMode: route.routingMode || "strategy",
+      targets: coerceTargetsForRoutingMode(draft.targets, route.routingMode),
+      routingMode: normalizeRoutingModeForForm(route.routingMode),
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
     });
     setDialogOpen(true);
@@ -497,11 +533,12 @@ export function useRoutesState() {
     let hostInput = route.host;
     if (hostInput === "all" || hostInput === "*") hostInput = "*";
     const epProto = route.incomingProtocol || "openai";
-    const parsedTargets = parseRouteTargets(route);
+    const normalizedMode = normalizeRoutingModeForForm(route.routingMode);
+    const parsedTargets = coerceTargetsForRoutingMode(parseRouteTargets(route), route.routingMode);
 
     setFormData({
       name: route.name, hostInput, path: route.path, incomingProtocol: epProto,
-      routingMode: route.routingMode || "strategy",
+      routingMode: normalizedMode,
       targets: parsedTargets,
       timeoutMs: route.timeoutMs,
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
