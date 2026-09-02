@@ -11,6 +11,7 @@ import {
   resolveRouteRoutingMode,
   resolveEffectiveLayerTarget,
   seedModelFromLegacyTarget,
+  shouldBypassCapabilityRouting,
   strategyRoutingEnabledForLayer,
 } from "../src/services/opcAgentRouting";
 
@@ -61,6 +62,7 @@ describe("classic routing mode", () => {
       targets: JSON.stringify([{ strategyRoutingEnabled: true, providerId: "p1", modelId: "m1" }]),
     };
     expect(strategyRoutingEnabledForLayer(legacyOpcRoute, 0)).toBe(false);
+    expect(shouldBypassCapabilityRouting(legacyOpcRoute)).toBe(true);
   });
 
   it("preserves strategy enablement for non-classic funnel routes", () => {

@@ -45,7 +45,7 @@ import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
 import { overflowHopTaskOrder } from "./overflowContextHop";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities } from "./inputTokenLimit";
-import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS, resolveRouteRoutingMode, capacityTaskTypeForMode, strategyRoutingEnabledForLayer } from "../../services/strategyRouting";
+import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS, resolveRouteRoutingMode, capacityTaskTypeForMode, strategyRoutingEnabledForLayer, shouldBypassCapabilityRouting } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
 import { classifyGatewayRequestClass, shouldRecordStrategyRoutingHop } from "../../services/requestRoutingClass";
 import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
@@ -1479,7 +1479,8 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             usageRequestBody = JSON.parse(JSON.stringify(upstreamBody));
             ctx.usageRequestBody = usageRequestBody;
 
-            // --- Vision Guard ---
+            // --- Vision Guard (strategy mode only; classic sends blind to layer model) ---
+            if (!shouldBypassCapabilityRouting(route)) {
             const outboundCapabilities = inspectOutboundCapabilities(usageRequestBody);
             if (outboundCapabilities.vision && !longContextOverrideApplied) {
               const currentLayerVision = getStrategyRuleForLayer(route, currentAttempt.targetIndex || 0, "vision");
@@ -1547,6 +1548,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   break;
                 }
               }
+            }
             }
             // --- 13. Initial Request Log ---
             const baseLog = buildBaseLog(ctx, provider, activeKeyId);

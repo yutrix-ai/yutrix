@@ -20,6 +20,11 @@ export function isClassicRoutingMode(route: any): boolean {
   return resolveRouteRoutingMode(route) === "classic";
 }
 
+/** Classic routes send all traffic to the layer model — no pre-flight capability routing. */
+export function shouldBypassCapabilityRouting(route: any): boolean {
+  return isClassicRoutingMode(route);
+}
+
 export function isLegacyOpcRoutingMode(value: unknown): boolean {
   return value === LEGACY_OPC_MODE;
 }

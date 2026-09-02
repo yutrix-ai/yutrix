@@ -17,6 +17,7 @@
 | 降级不变 | 网关仍按 targets 顺序漏斗降级 |
 | 新建默认 | 新建路由 `routingMode=classic` |
 | 普通用户 | 用户路由页仅提供默认/固定/客户端覆盖，隐藏策略矩阵 |
+| 盲送模型 | 不校验 vision/长上下文等能力；由上游响应或漏斗降级处理 |
 
 ## 3. 数据模型
 
@@ -46,7 +47,8 @@ resolveRouteRoutingMode(route) === "classic"
   → strategyRoutingEnabledForLayer() 恒为 false
   → resolveStrategyRoutingDecision() 返回 null
   → 使用当前层 providerId/modelId
-  → 失败/超时仍按 targets 索引降级
+  → **不运行 Vision Guard / 能力预检**（含图片请求），直接送上游
+  → 上游失败或超时 → 按 targets 索引自然降级，或原样返回上游错误
   → 不触发 long_context 列内跳转（无策略矩阵）
 ```
 

@@ -379,6 +379,59 @@ describe("Vision Fallback Integration Tests", () => {
     expect(json.error.code).toBe("vision_routing_unavailable");
   });
 
+  it("E. Classic routing bypasses vision guard and forwards image requests to layer model", async () => {
+    let fetchCount = 0;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      fetchCount++;
+      const reqBody = JSON.parse(String(init?.body || "{}"));
+      expect(reqBody.model).toBe("meta-llama/llama-3-8b-instruct");
+      return new Response(
+        JSON.stringify({
+          error: { message: "model does not support images", type: "invalid_request_error" },
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await db.update(endpointRoutes).set({
+      routingMode: "classic",
+      targets: JSON.stringify([
+        {
+          providerId: provId,
+          providerProtocol: "openai",
+          modelId: "meta-llama/llama-3-8b-instruct",
+          strategyRoutingEnabled: false,
+          strategyRoutingRules: [],
+          weight: 100,
+        },
+      ]),
+      fallbackEnabled: 0,
+    }).where(eq(endpointRoutes.id, "vision-route-1"));
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: {
+        model: "meta-llama/llama-3-8b-instruct",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "hello" },
+              { type: "image_url", image_url: { url: "data:image/jpeg;base64,mock" } },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(fetchCount).toBe(1);
+    expect(response.statusCode).toBe(400);
+    const json = JSON.parse(response.body);
+    expect(json.error?.code).not.toBe("vision_routing_unavailable");
+  });
+
   it("D. L1 Vision returns 404, fallback to L2 Vision", async () => {
     let fetchCount = 0;
     let requests: any[] = [];

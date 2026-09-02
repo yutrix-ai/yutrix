@@ -4,6 +4,7 @@
  */
 
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
+import { coerceClassicTargetFromLegacy, isClassicRoutingMode } from "../../services/opcAgentRouting";
 import { estimateMultimodalInputUsage } from "./inputTokenLimit";
 import {
   selectAvailabilityNextLayer,
@@ -137,21 +138,28 @@ export async function resolveEmptyOutputLayerHopFromRoute(options: {
   currentProviderId?: string;
   currentModelId?: string;
 }): Promise<EmptyOutputLayerHop | null> {
-  const parsed = parseFunnelLayersFromRoute(options.route);
+  const classic = isClassicRoutingMode(options.route);
+  const parsed = parseFunnelLayersFromRoute(options.route).map((layer) =>
+    classic ? { ...layer, ...coerceClassicTargetFromLegacy(layer) } : layer,
+  );
   if (parsed.length === 0) return null;
 
   const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
   const layers: EmptyOutputHopLayer[] = [];
 
   for (const layer of parsed) {
-    const visionRuleRaw = getStrategyRuleForLayer(options.route, layer.index, "vision");
-    const vision = visionRuleRaw && visionRuleRaw.taskType !== "long_context"
-      ? {
-          providerId: visionRuleRaw.providerId,
-          modelId: visionRuleRaw.modelId,
-          providerProtocol: visionRuleRaw.providerProtocol || layer.providerProtocol,
-        }
-      : null;
+    let vision = null;
+    if (!classic) {
+      const visionRuleRaw = getStrategyRuleForLayer(options.route, layer.index, "vision");
+      vision =
+        visionRuleRaw && visionRuleRaw.taskType !== "long_context"
+          ? {
+              providerId: visionRuleRaw.providerId,
+              modelId: visionRuleRaw.modelId,
+              providerProtocol: visionRuleRaw.providerProtocol || layer.providerProtocol,
+            }
+          : null;
+    }
 
     layers.push({
       index: layer.index,
@@ -165,7 +173,8 @@ export async function resolveEmptyOutputLayerHopFromRoute(options: {
 
   return selectEmptyOutputLayerHop({
     currentIndex: options.currentIndex,
-    hasImages: tokenEst.imageCount > 0,
+    // Classic: hop by layer model only; do not require a dedicated vision column.
+    hasImages: classic ? false : tokenEst.imageCount > 0,
     layers,
   });
 }

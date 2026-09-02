@@ -41,6 +41,7 @@ export {
   capacityTaskTypeForMode,
   resolveRouteRoutingMode,
   ROUTING_MODES,
+  shouldBypassCapabilityRouting,
   strategyRoutingEnabledForLayer,
   type RoutingMode,
 } from "./opcAgentRouting";
