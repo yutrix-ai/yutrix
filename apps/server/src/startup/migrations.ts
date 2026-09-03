@@ -5,10 +5,22 @@ import path from "path";
 import fs from "fs";
 
 export async function tableExists(tableName: string): Promise<boolean> {
-  const result = await db.run(sql`
-    SELECT name FROM sqlite_master WHERE type='table' AND name=${tableName}
-  `);
-  return result.rows.length > 0;
+  try {
+    const driver = getDbDriver();
+    if (driver === "postgres") {
+      const result = await (client as any).query(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1;",
+        [tableName],
+      );
+      return (result?.rows?.length ?? 0) > 0;
+    }
+    const result = await db.run(sql`
+      SELECT name FROM sqlite_master WHERE type='table' AND name=${tableName}
+    `);
+    return result.rows.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function columnExists(tableName: string, columnName: string): Promise<boolean> {
@@ -51,19 +63,299 @@ export async function ensureSubdomainHostnameIdentity() {
   await db.run(sql.raw("DROP INDEX IF EXISTS subdomains_name_unique"));
 }
 
-export async function ensureAnalyticsIndexes() {
-  if (!(await tableExists("request_logs"))) return;
-  const indexes = [
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_createdat ON request_logs (createdAt)",
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_user_created ON request_logs (userId, createdAt)",
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_provider_created ON request_logs (providerId, createdAt)",
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_model_created ON request_logs (model, createdAt)",
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_endpoint_created ON request_logs (endpointId, createdAt)",
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_subdomain_created ON request_logs (subdomainId, createdAt)",
-    "CREATE INDEX IF NOT EXISTS idx_request_logs_api_key_created ON request_logs (apiKeyId, createdAt)",
-  ];
-  for (const ddl of indexes) {
-    await db.run(sql.raw(ddl));
+export interface IndexSpec {
+  table: string;
+  name: string;
+  sqliteColumns: string;
+  pgColumns: string;
+  unique?: boolean;
+}
+
+export async function applyIndexSpec(spec: IndexSpec): Promise<void> {
+  if (!(await tableExists(spec.table))) return;
+
+  const driver = getDbDriver();
+  if (driver === "postgres") {
+    const concurrentSql = spec.unique
+      ? `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS ${spec.name} ON "${spec.table}" (${spec.pgColumns})`
+      : `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${spec.name} ON "${spec.table}" (${spec.pgColumns})`;
+    const fallbackSql = spec.unique
+      ? `CREATE UNIQUE INDEX IF NOT EXISTS ${spec.name} ON "${spec.table}" (${spec.pgColumns})`
+      : `CREATE INDEX IF NOT EXISTS ${spec.name} ON "${spec.table}" (${spec.pgColumns})`;
+
+    try {
+      // client.query executes outside of any transaction block on the pg pool
+      await (client as any).query(concurrentSql);
+    } catch (concurrentErr: any) {
+      console.warn(
+        `[PromptGate] Concurrent index creation for ${spec.name} on ${spec.table} failed (${concurrentErr?.message || concurrentErr}). Falling back to non-concurrent CREATE INDEX.`,
+      );
+      try {
+        await (client as any).query(fallbackSql);
+      } catch (fallbackErr: any) {
+        console.warn(
+          `[PromptGate] Failed to create index ${spec.name} on ${spec.table}:`,
+          fallbackErr?.message || fallbackErr,
+        );
+      }
+    }
+  } else {
+    const sqliteSql = spec.unique
+      ? `CREATE UNIQUE INDEX IF NOT EXISTS ${spec.name} ON ${spec.table} (${spec.sqliteColumns})`
+      : `CREATE INDEX IF NOT EXISTS ${spec.name} ON ${spec.table} (${spec.sqliteColumns})`;
+
+    try {
+      await (db as any).run(sql.raw(sqliteSql));
+    } catch (err: any) {
+      console.warn(
+        `[PromptGate] Failed to create index ${spec.name} on ${spec.table}:`,
+        err?.message || err,
+      );
+    }
+  }
+}
+
+export const ANALYTICS_INDEXES: IndexSpec[] = [
+  {
+    table: "request_logs",
+    name: "idx_request_logs_createdat",
+    sqliteColumns: "createdAt",
+    pgColumns: '"createdAt"',
+  },
+  {
+    table: "request_logs",
+    name: "idx_request_logs_user_created",
+    sqliteColumns: "userId, createdAt",
+    pgColumns: '"userId", "createdAt"',
+  },
+  {
+    table: "request_logs",
+    name: "idx_request_logs_provider_created",
+    sqliteColumns: "providerId, createdAt",
+    pgColumns: '"providerId", "createdAt"',
+  },
+  {
+    table: "request_logs",
+    name: "idx_request_logs_model_created",
+    sqliteColumns: "model, createdAt",
+    pgColumns: 'model, "createdAt"',
+  },
+  {
+    table: "request_logs",
+    name: "idx_request_logs_endpoint_created",
+    sqliteColumns: "endpointId, createdAt",
+    pgColumns: '"endpointId", "createdAt"',
+  },
+  {
+    table: "request_logs",
+    name: "idx_request_logs_subdomain_created",
+    sqliteColumns: "subdomainId, createdAt",
+    pgColumns: '"subdomainId", "createdAt"',
+  },
+  {
+    table: "request_logs",
+    name: "idx_request_logs_api_key_created",
+    sqliteColumns: "apiKeyId, createdAt",
+    pgColumns: '"apiKeyId", "createdAt"',
+  },
+];
+
+export async function ensureAnalyticsIndexes(): Promise<void> {
+  for (const spec of ANALYTICS_INDEXES) {
+    await applyIndexSpec(spec);
+  }
+}
+
+export const HOT_PATH_INDEXES: IndexSpec[] = [
+  // 1. action_logs: cleanup lt(createdAt) and time ordering
+  {
+    table: "action_logs",
+    name: "idx_action_logs_createdat",
+    sqliteColumns: "createdAt",
+    pgColumns: '"createdAt"',
+  },
+  // 2. api_keys: gateway auth every request (critical), user lookups, and status filters
+  {
+    table: "api_keys",
+    name: "idx_api_keys_keyhash",
+    sqliteColumns: "keyHash",
+    pgColumns: '"keyHash"',
+  },
+  {
+    table: "api_keys",
+    name: "idx_api_keys_userid",
+    sqliteColumns: "userId",
+    pgColumns: '"userId"',
+  },
+  {
+    table: "api_keys",
+    name: "idx_api_keys_user_status",
+    sqliteColumns: "userId, status",
+    pgColumns: '"userId", status',
+  },
+  // 3. invite_codes: signup / auth lookup by codeHash
+  {
+    table: "invite_codes",
+    name: "idx_invite_codes_codehash",
+    sqliteColumns: "codeHash",
+    pgColumns: '"codeHash"',
+  },
+  // 4. openapi_keys: key authentication by hash and user listings
+  {
+    table: "openapi_keys",
+    name: "idx_openapi_keys_keyhash",
+    sqliteColumns: "keyHash",
+    pgColumns: '"keyHash"',
+  },
+  {
+    table: "openapi_keys",
+    name: "idx_openapi_keys_userid",
+    sqliteColumns: "userId",
+    pgColumns: '"userId"',
+  },
+  // 5. provider_api_keys: provider gateway routing with active status and provider queries
+  {
+    table: "provider_api_keys",
+    name: "idx_provider_api_keys_provider_status",
+    sqliteColumns: "providerId, status",
+    pgColumns: '"providerId", status',
+  },
+  {
+    table: "provider_api_keys",
+    name: "idx_provider_api_keys_providerid",
+    sqliteColumns: "providerId",
+    pgColumns: '"providerId"',
+  },
+  // 6. provider_models: unq_provider_model(providerId, modelId) already covers providerId prefix; skip redundant index per rule 4.
+  // 7. endpoint_routes: gateway routing (endpointId, status), endpoint FK deletes, and subdomain queries
+  {
+    table: "endpoint_routes",
+    name: "idx_endpoint_routes_endpointid",
+    sqliteColumns: "endpointId",
+    pgColumns: '"endpointId"',
+  },
+  {
+    table: "endpoint_routes",
+    name: "idx_endpoint_routes_subdomainid",
+    sqliteColumns: "subdomainId",
+    pgColumns: '"subdomainId"',
+  },
+  {
+    table: "endpoint_routes",
+    name: "idx_endpoint_routes_endpoint_status",
+    sqliteColumns: "endpointId, status",
+    pgColumns: '"endpointId", status',
+  },
+  // 8. user_group_members: unq_user_one_group on userId ensures exclusive membership; skip redundant non-unique index.
+  // 9. route_authorizations: route auth lookups and group deletes/filters
+  {
+    table: "route_authorizations",
+    name: "idx_route_authorizations_userid",
+    sqliteColumns: "userId",
+    pgColumns: '"userId"',
+  },
+  {
+    table: "route_authorizations",
+    name: "idx_route_authorizations_groupid",
+    sqliteColumns: "groupId",
+    pgColumns: '"groupId"',
+  },
+  // 10. chat_logs: turn ordering within session and user/clientSession resolution
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_userid",
+    sqliteColumns: "userId",
+    pgColumns: '"userId"',
+  },
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_serversessionid",
+    sqliteColumns: "serverSessionId",
+    pgColumns: '"serverSessionId"',
+  },
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_createdat",
+    sqliteColumns: "createdAt",
+    pgColumns: '"createdAt"',
+  },
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_user_created",
+    sqliteColumns: "userId, createdAt",
+    pgColumns: '"userId", "createdAt"',
+  },
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_responsehash",
+    sqliteColumns: "responseHash",
+    pgColumns: '"responseHash"',
+  },
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_session_created",
+    sqliteColumns: "serverSessionId, createdAt",
+    pgColumns: '"serverSessionId", "createdAt"',
+  },
+  {
+    table: "chat_logs",
+    name: "idx_chat_logs_user_client_session",
+    sqliteColumns: "userId, clientSessionId",
+    pgColumns: '"userId", "clientSessionId"',
+  },
+  // 12. distillation_learned_records: filter/manage records by jobId
+  {
+    table: "distillation_learned_records",
+    name: "idx_distillation_learned_records_jobid",
+    sqliteColumns: "jobId",
+    pgColumns: '"jobId"',
+  },
+  // 13. distillation_routing_proposals: filter proposals by jobId
+  {
+    table: "distillation_routing_proposals",
+    name: "idx_distillation_proposals_jobid",
+    sqliteColumns: "jobId",
+    pgColumns: '"jobId"',
+  },
+  // 14. distillation_signal_versions: active version lookup in gateway routing overlay
+  {
+    table: "distillation_signal_versions",
+    name: "idx_distillation_signal_versions_is_active",
+    sqliteColumns: "isActive",
+    pgColumns: '"isActive"',
+  },
+  // 15. response_cache: admin cache list sorted by createdAt
+  {
+    table: "response_cache",
+    name: "idx_response_cache_createdat",
+    sqliteColumns: "createdAt",
+    pgColumns: '"createdAt"',
+  },
+  // 16. users: user status filtering (active / not deleted)
+  {
+    table: "users",
+    name: "idx_users_status",
+    sqliteColumns: "status",
+    pgColumns: "status",
+  },
+  // 17. prompt_injection_records: deduplication lookup during gateway injection
+  {
+    table: "prompt_injection_records",
+    name: "idx_prompt_injection_records_conv_policy",
+    sqliteColumns: "conversationId, promptPolicyId",
+    pgColumns: '"conversationId", "promptPolicyId"',
+  },
+  {
+    table: "prompt_injection_records",
+    name: "idx_prompt_injection_records_user_created",
+    sqliteColumns: "userId, createdAt",
+    pgColumns: '"userId", "createdAt"',
+  },
+];
+
+export async function ensureHotPathIndexes(): Promise<void> {
+  for (const spec of HOT_PATH_INDEXES) {
+    await applyIndexSpec(spec);
   }
 }
 

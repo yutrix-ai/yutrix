@@ -71,16 +71,37 @@ async function processChatLogInsert(payload: ChatLogPayload) {
       createdAt,
     };
 
-    try {
-      await db.insert(chatLogs).values(insertedLog);
-    } catch (insertErr: any) {
-      // Gracefully handle duplicate requestId (UNIQUE constraint violation)
-      if (insertErr?.code === "SQLITE_CONSTRAINT" || insertErr?.message?.includes("UNIQUE constraint") || insertErr?.cause?.message?.includes("UNIQUE constraint")) {
-        // Duplicate — silently skip
-        return;
+    let inserted = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await db.insert(chatLogs).values(insertedLog);
+        inserted = true;
+        break;
+      } catch (insertErr: any) {
+        // Gracefully handle duplicate requestId (UNIQUE constraint violation)
+        if (
+          insertErr?.code === "SQLITE_CONSTRAINT" ||
+          insertErr?.message?.includes("UNIQUE constraint") ||
+          insertErr?.cause?.message?.includes("UNIQUE constraint")
+        ) {
+          // Duplicate — silently skip
+          return;
+        }
+        if (attempt === 0) {
+          console.warn(
+            "[ChatLogService] Insert failed, retrying once...",
+            insertErr?.message || insertErr,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          continue;
+        }
+        console.error(
+          "[ChatLogService] Failed to insert chat log after retry:",
+          insertErr,
+        );
       }
-      throw insertErr;
     }
+    if (!inserted) return;
 
     if (finalServerSessionId !== payload.serverSessionId) {
       logEmitter.emit("chatSessionMerged", {
@@ -108,9 +129,9 @@ async function processChatLogInsert(payload: ChatLogPayload) {
   }
 }
 
-logEmitter.on("chatLogInsert", async (payload: ChatLogPayload) => {
+logEmitter.on("chatLogInsert", (payload: ChatLogPayload) => {
   try {
-    await enqueueAuditInsert(payload, () => processChatLogInsert(payload));
+    void enqueueAuditInsert(payload, () => processChatLogInsert(payload));
   } catch (error) {
     console.error("[ChatLogService] Failed to enqueue chat log insert:", error);
   }

@@ -74,35 +74,41 @@ export async function checkAndServeCachedResponse(
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        await insertRequestLog(cachedLog);
+        void insertRequestLog(cachedLog);
 
-        // Emit audit log event
-        const isAuditExempt = await isAuditExemptUser(userId);
-        if (!isAuditExempt) {
-          const detectedClientVal = detectAIClient(request.headers, body, reqPath);
-          const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
-          logEmitter.emit("chatLogInsert", {
-            id: baseActionLog.requestId,
-            requestId: baseActionLog.requestId,
-            serverSessionId: (request.headers["x-server-session-id"] as string) || baseActionLog.requestId,
-            clientSessionId: clientSessionIdVal,
-            turnId: parseInt(request.headers["x-turn-id"] as string) || 0,
-            userId,
-            clientName: apiKeyRecord.name || "API Client",
-            detectedClient: detectedClientVal,
-            model: cached.model || currentAttempt.modelId,
-            inputText: JSON.stringify(body),
-            outputText: cached.responseText,
-            inputTokens: 0,
-            outputTokens: 0,
-            latencyMs: Date.now() - startTime,
-            status: "cached",
-            error: null,
-            apiKey: providedKey,
-            noSummary: request.headers["x-promptgate-no-summary"] === "true",
-            createdAt: new Date().toISOString(),
-          });
-        }
+        // Emit audit log event in background (fire-and-forget)
+        void (async () => {
+          try {
+            const isAuditExempt = await isAuditExemptUser(userId);
+            if (!isAuditExempt) {
+              const detectedClientVal = detectAIClient(request.headers, body, reqPath);
+              const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
+              logEmitter.emit("chatLogInsert", {
+                id: baseActionLog.requestId,
+                requestId: baseActionLog.requestId,
+                serverSessionId: (request.headers["x-server-session-id"] as string) || baseActionLog.requestId,
+                clientSessionId: clientSessionIdVal,
+                turnId: parseInt(request.headers["x-turn-id"] as string) || 0,
+                userId,
+                clientName: apiKeyRecord.name || "API Client",
+                detectedClient: detectedClientVal,
+                model: cached.model || currentAttempt.modelId,
+                inputText: JSON.stringify(body),
+                outputText: cached.responseText,
+                inputTokens: 0,
+                outputTokens: 0,
+                latencyMs: Date.now() - startTime,
+                status: "cached",
+                error: null,
+                apiKey: providedKey,
+                noSummary: request.headers["x-promptgate-no-summary"] === "true",
+                createdAt: new Date().toISOString(),
+              });
+            }
+          } catch (err) {
+            console.error("[GatewayCache] Failed to emit audit log event:", err);
+          }
+        })();
 
         logAction({
           ...baseActionLog,

@@ -1552,7 +1552,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             }
             // --- 13. Initial Request Log ---
             const baseLog = buildBaseLog(ctx, provider, activeKeyId);
-            await insertInitialRequestLog(ctx, baseLog);
+            insertInitialRequestLog(ctx, baseLog);
             isLogInserted = ctx.isLogInserted;
 
             if (shouldSkipCurrentAttempt(timeoutEjectEnabled(route), route, currentAttempt)) {
@@ -2688,7 +2688,7 @@ export async function finalizeGatewayTerminalFailure(ctx: GatewayRequestContext,
        alias: ctx.activeModelConfig?.alias,
      };
      if (ctx.isLogInserted) {
-       await updateRequestLog(ctx.reqLogId, finalLog, finalLog);
+       void updateRequestLog(ctx.reqLogId, finalLog, finalLog);
      } else {
        publishRequestLogUpdate(finalLog);
      }

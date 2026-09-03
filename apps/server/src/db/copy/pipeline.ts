@@ -115,6 +115,7 @@ export async function ensureSqliteUpgraded(): Promise<void> {
     ensureTokenLimitColumns,
     ensureProviderModelContextWindowColumn,
     ensureAnalyticsIndexes,
+    ensureHotPathIndexes,
     ensureSubdomainHostnameIdentity,
     ensureExclusiveUserGroupMembership,
   } = await import("../../startup/migrations");
@@ -124,6 +125,7 @@ export async function ensureSqliteUpgraded(): Promise<void> {
   await ensureTokenLimitColumns().catch(() => {});
   await ensureProviderModelContextWindowColumn().catch(() => {});
   await ensureAnalyticsIndexes().catch(() => {});
+  await ensureHotPathIndexes().catch(() => {});
   await ensureSubdomainHostnameIdentity().catch(() => {});
   await ensureExclusiveUserGroupMembership().catch(() => {});
 }

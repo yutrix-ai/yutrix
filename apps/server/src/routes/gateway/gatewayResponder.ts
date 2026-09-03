@@ -108,7 +108,7 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
           cost: calculatedCost,
           routingTrace: ctx.routingTrace.length > 0 ? JSON.stringify(ctx.routingTrace) : null,
         };
-        await updateRequestLog(reqLogId, finalLog, finalLog);
+        void updateRequestLog(reqLogId, finalLog, finalLog);
 
         // ═══════════════════════════════════════════════════════════════
         // SACRED: Send the upstream response to the client UNCHANGED.
@@ -158,37 +158,43 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
             fallbackText: currentAttempt.fallbackReason,
           });
 
-          // Audit event for errors (before sending)
-          const isExempt = await isAuditExemptUser(authCtx.userId);
-          if (!isExempt) {
-            const auditOutputForLog = appendRoutingTraceToOutput(null, ctx.routingTrace);
-            const detectedClientVal = detectAIClient(request.headers, body, reqPath);
-            const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
-            logEmitter.emit("chatLogInsert", {
-              id: reqLogId,
-              requestId: reqLogId,
-              serverSessionId: (request.headers["x-server-session-id"] as string) || reqLogId,
-              clientSessionId: clientSessionIdVal,
-              turnId: parseInt(request.headers["x-turn-id"] as string) || 0,
-              userId: authCtx.userId,
-              clientName: authCtx.apiKeyRecord.name || "API Client",
-              detectedClient: detectedClientVal,
-              model: currentAttempt.modelId,
-              inputText: JSON.stringify(body),
-              outputText: auditOutputForLog,
-              inputTokens: ctx.stream.promptTokens,
-              outputTokens: ctx.stream.completionTokens,
-              latencyMs: Date.now() - startTime,
-              ttftMs: Date.now() - startTime,
-              cachedTokens: ctx.continuity.cacheReadTokens || 0,
-              isAborted: ctx.clientDisconnected,
-              status: "failed",
-              error: errorDetail || stringifyErrorPayload(responseData.data),
-              apiKey: authCtx.providedKey,
-              noSummary: request.headers["x-promptgate-no-summary"] === "true",
-              createdAt: new Date().toISOString(),
-            });
-          }
+          // Audit event for errors (background fire-and-forget, never block response)
+          void (async () => {
+            try {
+              const isExempt = await isAuditExemptUser(authCtx.userId);
+              if (!isExempt) {
+                const auditOutputForLog = appendRoutingTraceToOutput(null, ctx.routingTrace);
+                const detectedClientVal = detectAIClient(request.headers, body, reqPath);
+                const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
+                logEmitter.emit("chatLogInsert", {
+                  id: reqLogId,
+                  requestId: reqLogId,
+                  serverSessionId: (request.headers["x-server-session-id"] as string) || reqLogId,
+                  clientSessionId: clientSessionIdVal,
+                  turnId: parseInt(request.headers["x-turn-id"] as string) || 0,
+                  userId: authCtx.userId,
+                  clientName: authCtx.apiKeyRecord.name || "API Client",
+                  detectedClient: detectedClientVal,
+                  model: currentAttempt.modelId,
+                  inputText: JSON.stringify(body),
+                  outputText: auditOutputForLog,
+                  inputTokens: ctx.stream.promptTokens,
+                  outputTokens: ctx.stream.completionTokens,
+                  latencyMs: Date.now() - startTime,
+                  ttftMs: Date.now() - startTime,
+                  cachedTokens: ctx.continuity.cacheReadTokens || 0,
+                  isAborted: ctx.clientDisconnected,
+                  status: "failed",
+                  error: errorDetail || stringifyErrorPayload(responseData.data),
+                  apiKey: authCtx.providedKey,
+                  noSummary: request.headers["x-promptgate-no-summary"] === "true",
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            } catch (err) {
+              console.error("[GatewayResponder] Failed to emit error audit event:", err);
+            }
+          })();
           const errorMessage = errorDetail || stringifyErrorPayload(responseData.data);
           const canonicalErrorType = responseData.terminalError?.errorType;
           const anthropicType = incomingProtocol === "anthropic" && canonicalErrorType
@@ -215,45 +221,51 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
           return { isLengthTruncated: false, terminalError: responseData.terminalError, terminalEventSent: true, meaningfulClientOutputSent: false };
         }
 
-        // ─── Audit logging on COPY (success path) ───
-        const isExempt = await isAuditExemptUser(authCtx.userId);
-        if (!isExempt) {
-          const nonStreamOutputForLog = buildSafeNonStreamAuditOutput(
-            responseData.data,
-            responseData.observation,
-          );
+        // ─── Audit logging on COPY (success path - background fire-and-forget) ───
+        void (async () => {
+          try {
+            const isExempt = await isAuditExemptUser(authCtx.userId);
+            if (!isExempt) {
+              const nonStreamOutputForLog = buildSafeNonStreamAuditOutput(
+                responseData.data,
+                responseData.observation,
+              );
 
-          const auditOutputForLog = appendRoutingTraceToOutput(
-            nonStreamOutputForLog,
-            ctx.routingTrace,
-          );
-          const detectedClientVal = detectAIClient(request.headers, body, reqPath);
-          const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
-          logEmitter.emit("chatLogInsert", {
-            id: reqLogId,
-            requestId: reqLogId,
-            serverSessionId: (request.headers["x-server-session-id"] as string) || reqLogId,
-            clientSessionId: clientSessionIdVal,
-            turnId: parseInt(request.headers["x-turn-id"] as string) || 0,
-            userId: authCtx.userId,
-            clientName: authCtx.apiKeyRecord.name || "API Client",
-            detectedClient: detectedClientVal,
-            model: currentAttempt.modelId,
-            inputText: JSON.stringify(body),
-            outputText: auditOutputForLog,
-            inputTokens: ctx.continuity.promptTokens,
-            outputTokens: ctx.continuity.completionTokens,
-            latencyMs: Date.now() - startTime,
-            ttftMs: Date.now() - startTime,
-            cachedTokens: ctx.continuity.cacheReadTokens || 0,
-            isAborted: ctx.clientDisconnected,
-            status: "success",
-            error: null,
-            apiKey: authCtx.providedKey,
-            noSummary: request.headers["x-promptgate-no-summary"] === "true",
-            createdAt: new Date().toISOString(),
-          });
-        }
+              const auditOutputForLog = appendRoutingTraceToOutput(
+                nonStreamOutputForLog,
+                ctx.routingTrace,
+              );
+              const detectedClientVal = detectAIClient(request.headers, body, reqPath);
+              const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
+              logEmitter.emit("chatLogInsert", {
+                id: reqLogId,
+                requestId: reqLogId,
+                serverSessionId: (request.headers["x-server-session-id"] as string) || reqLogId,
+                clientSessionId: clientSessionIdVal,
+                turnId: parseInt(request.headers["x-turn-id"] as string) || 0,
+                userId: authCtx.userId,
+                clientName: authCtx.apiKeyRecord.name || "API Client",
+                detectedClient: detectedClientVal,
+                model: currentAttempt.modelId,
+                inputText: JSON.stringify(body),
+                outputText: auditOutputForLog,
+                inputTokens: ctx.continuity.promptTokens,
+                outputTokens: ctx.continuity.completionTokens,
+                latencyMs: Date.now() - startTime,
+                ttftMs: Date.now() - startTime,
+                cachedTokens: ctx.continuity.cacheReadTokens || 0,
+                isAborted: ctx.clientDisconnected,
+                status: "success",
+                error: null,
+                apiKey: authCtx.providedKey,
+                noSummary: request.headers["x-promptgate-no-summary"] === "true",
+                createdAt: new Date().toISOString(),
+              });
+            }
+          } catch (err) {
+            console.error("[GatewayResponder] Failed to emit success audit event:", err);
+          }
+        })();
 
         // Send the response to the client UNCHANGED
         reply.code(responseData.status).send(responseData.data);

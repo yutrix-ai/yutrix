@@ -4,8 +4,29 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import path from "path";
 import crypto from "crypto";
 
-import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn, ensureSubdomainHostnameIdentity, ensureExclusiveUserGroupMembership } from "./startup/migrations";
-import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings, seedLoopGuardSettings } from "./startup/seed";
+import {
+  ensureStrategyRoutingColumns,
+  preSeedMigrations,
+  isMigrationCompleted,
+  ensureAnalyticsColumns,
+  ensureAnalyticsIndexes,
+  ensureHotPathIndexes,
+  ensureTokenLimitColumns,
+  ensureFunnelRoutingColumns,
+  ensureProviderModelContextWindowColumn,
+  ensureSubdomainHostnameIdentity,
+  ensureExclusiveUserGroupMembership,
+} from "./startup/migrations";
+import {
+  seedAdminUser,
+  seedBrandingSettings,
+  seedDefaultApiKeyConcurrency,
+  seedBuiltinPromptPolicies,
+  syncManualModels,
+  ensureDefaultGroup,
+  seedModelDiscoverySettings,
+  seedLoopGuardSettings,
+} from "./startup/seed";
 import { refreshRoutingWeightSnapshot } from "./services/distillation/routingWeightsBridge";
 import { refreshLoopGuardConfigCache } from "./services/loopGuard";
 
@@ -26,14 +47,19 @@ async function ensureProviderApiKeysTable() {
 }
 
 async function migrateAndDropLegacyProviderKeyColumns() {
-  const providersCheck = await db.run(sql`SELECT name FROM sqlite_master WHERE type='table' AND name='providers'`);
+  const providersCheck = await db.run(
+    sql`SELECT name FROM sqlite_master WHERE type='table' AND name='providers'`,
+  );
   if (providersCheck.rows.length === 0) return;
 
   await ensureProviderApiKeysTable();
 
   const info = await db.run(sql`PRAGMA table_info(providers)`);
   const columnNames = new Set(info.rows.map((row: any) => row[1]));
-  const legacyColumns = ["openaiApiKeyEncrypted", "anthropicApiKeyEncrypted"].filter((column) => columnNames.has(column));
+  const legacyColumns = [
+    "openaiApiKeyEncrypted",
+    "anthropicApiKeyEncrypted",
+  ].filter((column) => columnNames.has(column));
   if (legacyColumns.length === 0) return;
 
   const selectSql = `SELECT id, ${legacyColumns.map((column) => `"${column}"`).join(", ")} FROM providers`;
@@ -63,41 +89,87 @@ async function migrateAndDropLegacyProviderKeyColumns() {
   }
 
   const providerColumns = [
-    { name: "id", ddl: "id text PRIMARY KEY NOT NULL", fallback: "lower(hex(randomblob(16)))" },
+    {
+      name: "id",
+      ddl: "id text PRIMARY KEY NOT NULL",
+      fallback: "lower(hex(randomblob(16)))",
+    },
     { name: "name", ddl: "name text NOT NULL", fallback: "'Unnamed Provider'" },
     { name: "openaiBaseUrl", ddl: "openaiBaseUrl text", fallback: "NULL" },
-    { name: "anthropicBaseUrl", ddl: "anthropicBaseUrl text", fallback: "NULL" },
-    { name: "concurrencyLimit", ddl: "concurrencyLimit integer DEFAULT 10 NOT NULL", fallback: "10" },
-    { name: "timeoutMs", ddl: "timeoutMs integer DEFAULT 30000 NOT NULL", fallback: "30000" },
-    { name: "maxOutputTokens", ddl: "maxOutputTokens integer DEFAULT 0 NOT NULL", fallback: "0" },
-    { name: "enabled", ddl: "enabled integer DEFAULT 1 NOT NULL", fallback: "1" },
+    {
+      name: "anthropicBaseUrl",
+      ddl: "anthropicBaseUrl text",
+      fallback: "NULL",
+    },
+    {
+      name: "concurrencyLimit",
+      ddl: "concurrencyLimit integer DEFAULT 10 NOT NULL",
+      fallback: "10",
+    },
+    {
+      name: "timeoutMs",
+      ddl: "timeoutMs integer DEFAULT 30000 NOT NULL",
+      fallback: "30000",
+    },
+    {
+      name: "maxOutputTokens",
+      ddl: "maxOutputTokens integer DEFAULT 0 NOT NULL",
+      fallback: "0",
+    },
+    {
+      name: "enabled",
+      ddl: "enabled integer DEFAULT 1 NOT NULL",
+      fallback: "1",
+    },
     { name: "manualModels", ddl: "manualModels text", fallback: "NULL" },
     { name: "lastTestAt", ddl: "lastTestAt integer", fallback: "NULL" },
     { name: "lastTestStatus", ddl: "lastTestStatus text", fallback: "NULL" },
     { name: "lastTestMessage", ddl: "lastTestMessage text", fallback: "NULL" },
-    { name: "upstreamProxyUrl", ddl: "upstreamProxyUrl text", fallback: "NULL" },
+    {
+      name: "upstreamProxyUrl",
+      ddl: "upstreamProxyUrl text",
+      fallback: "NULL",
+    },
     { name: "weightProxyUrl", ddl: "weightProxyUrl text", fallback: "NULL" },
-    { name: "createdAt", ddl: "createdAt integer NOT NULL", fallback: `${now}` },
-    { name: "updatedAt", ddl: "updatedAt integer NOT NULL", fallback: `${now}` },
+    {
+      name: "createdAt",
+      ddl: "createdAt integer NOT NULL",
+      fallback: `${now}`,
+    },
+    {
+      name: "updatedAt",
+      ddl: "updatedAt integer NOT NULL",
+      fallback: `${now}`,
+    },
   ];
-  const targetColumnNames = providerColumns.map((column) => `"${column.name}"`).join(", ");
+  const targetColumnNames = providerColumns
+    .map((column) => `"${column.name}"`)
+    .join(", ");
   const selectExpressions = providerColumns
-    .map((column) => columnNames.has(column.name) ? `"${column.name}"` : column.fallback)
+    .map((column) =>
+      columnNames.has(column.name) ? `"${column.name}"` : column.fallback,
+    )
     .join(", ");
 
   await db.run(sql`DROP TABLE IF EXISTS providers_without_legacy_keys`);
-  await db.run(sql.raw(`
+  await db.run(
+    sql.raw(`
     CREATE TABLE providers_without_legacy_keys (
       ${providerColumns.map((column) => column.ddl).join(",\n      ")}
     )
-  `));
-  await db.run(sql.raw(`
+  `),
+  );
+  await db.run(
+    sql.raw(`
     INSERT INTO providers_without_legacy_keys (${targetColumnNames})
     SELECT ${selectExpressions}
     FROM providers
-  `));
+  `),
+  );
   await db.run(sql`DROP TABLE providers`);
-  await db.run(sql`ALTER TABLE providers_without_legacy_keys RENAME TO providers`);
+  await db.run(
+    sql`ALTER TABLE providers_without_legacy_keys RENAME TO providers`,
+  );
   console.log("[PromptGate] Removed legacy provider protocol key columns.");
 }
 
@@ -128,9 +200,14 @@ export async function bootstrap() {
   // SQLite branch below (keeps existing PRAGMA / sqlite_master / ALTER behavior)
   try {
     await db.run(sql`PRAGMA journal_mode=DELETE`);
-    console.log("[PromptGate Bootstrap] Disabled SQLite WAL journal mode (reverted to DELETE).");
+    console.log(
+      "[PromptGate Bootstrap] Disabled SQLite WAL journal mode (reverted to DELETE).",
+    );
   } catch (err) {
-    console.error("[PromptGate Bootstrap] Failed to set WAL journal mode:", err);
+    console.error(
+      "[PromptGate Bootstrap] Failed to set WAL journal mode:",
+      err,
+    );
   }
 
   await ensureAnalyticsColumns();
@@ -139,9 +216,13 @@ export async function bootstrap() {
   await preSeedMigrations();
 
   try {
-    const tableCheck = await db.run(sql`SELECT name FROM sqlite_master WHERE type='table' AND name='provider_models'`);
+    const tableCheck = await db.run(
+      sql`SELECT name FROM sqlite_master WHERE type='table' AND name='provider_models'`,
+    );
     if (tableCheck.rows.length > 0) {
-      console.log("[PromptGate] Deduplicating provider_models to enforce unique (providerId, modelId)...");
+      console.log(
+        "[PromptGate] Deduplicating provider_models to enforce unique (providerId, modelId)...",
+      );
       await db.run(sql`
         DELETE FROM provider_models
         WHERE id NOT IN (
@@ -150,7 +231,10 @@ export async function bootstrap() {
       `);
     }
   } catch (err) {
-    console.error("[PromptGate Bootstrap] Error during provider_models deduplication:", err);
+    console.error(
+      "[PromptGate Bootstrap] Error during provider_models deduplication:",
+      err,
+    );
   }
 
   console.log("[PromptGate] Running migrations...");
@@ -167,7 +251,10 @@ export async function bootstrap() {
     await db.run(sql.raw("DROP TABLE IF EXISTS __new_providers;"));
     await db.run(sql.raw("DROP TABLE IF EXISTS __new_user_route_overrides;"));
   } catch (err) {
-    console.error("[PromptGate Bootstrap] Warning: Failed to clean up temp tables before migration:", err);
+    console.error(
+      "[PromptGate Bootstrap] Warning: Failed to clean up temp tables before migration:",
+      err,
+    );
   }
 
   const { migrateSqlite } = await import("./db/migrate-sqlite");
@@ -183,28 +270,67 @@ export async function bootstrap() {
   try {
     await migrateAndDropLegacyProviderKeyColumns();
   } catch (err) {
-    console.error("[PromptGate Bootstrap] Error during provider API key migration:", err);
+    console.error(
+      "[PromptGate Bootstrap] Error during provider API key migration:",
+      err,
+    );
   }
 
-  try { await db.run(sql`ALTER TABLE chat_logs ADD COLUMN responseHash text`); } catch { /* column already exists */ }
-  try { await db.run(sql`ALTER TABLE endpoint_routes ADD COLUMN fallbackMatchTarget integer DEFAULT 0 NOT NULL`); } catch { /* column already exists */ }
-  try { await db.run(sql`ALTER TABLE endpoint_routes ADD COLUMN schedules text`); } catch { /* column already exists */ }
+  try {
+    await db.run(sql`ALTER TABLE chat_logs ADD COLUMN responseHash text`);
+  } catch {
+    /* column already exists */
+  }
+  try {
+    await db.run(
+      sql`ALTER TABLE endpoint_routes ADD COLUMN fallbackMatchTarget integer DEFAULT 0 NOT NULL`,
+    );
+  } catch {
+    /* column already exists */
+  }
+  try {
+    await db.run(sql`ALTER TABLE endpoint_routes ADD COLUMN schedules text`);
+  } catch {
+    /* column already exists */
+  }
 
   await ensureFunnelRoutingColumns();
   await ensureStrategyRoutingColumns();
   await ensureTokenLimitColumns();
   await ensureProviderModelContextWindowColumn();
   await ensureAnalyticsIndexes();
+  await ensureHotPathIndexes();
   await ensureSubdomainHostnameIdentity();
 
-  try { await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS chat_logs_requestId_unique ON chat_logs (requestId)`); } catch { /* index already exists */ }
   try {
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_userid ON chat_logs (userId)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_serversessionid ON chat_logs (serverSessionId)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_createdat ON chat_logs (createdAt)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_user_created ON chat_logs (userId, createdAt)`);
-    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_responsehash ON chat_logs (responseHash)`);
-  } catch { /* indexes already exist */ }
+    await db.run(
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS chat_logs_requestId_unique ON chat_logs (requestId)`,
+    );
+  } catch {
+    /* index already exists */
+  }
+  try {
+    await db.run(
+      sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_userid ON chat_logs (userId)`,
+    );
+    await db.run(
+      sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_serversessionid ON chat_logs (serverSessionId)`,
+    );
+    await db.run(
+      sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_createdat ON chat_logs (createdAt)`,
+    );
+    await db.run(
+      sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_user_created ON chat_logs (userId, createdAt)`,
+    );
+    await db.run(
+      sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_responsehash ON chat_logs (responseHash)`,
+    );
+    await db.run(
+      sql`CREATE INDEX IF NOT EXISTS idx_chat_logs_session_created ON chat_logs (serverSessionId, createdAt)`,
+    );
+  } catch {
+    /* indexes already exist */
+  }
 
   await seedAdminUser();
   await seedBrandingSettings();

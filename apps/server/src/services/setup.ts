@@ -26,6 +26,7 @@ import {
   ensureTokenLimitColumns,
   ensureAnalyticsColumns,
   ensureAnalyticsIndexes,
+  ensureHotPathIndexes,
   ensureSubdomainHostnameIdentity,
   ensureExclusiveUserGroupMembership,
 } from "../startup/migrations";
@@ -266,6 +267,8 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
 
   if (params.driver === "postgres") {
     await migratePg(db as PgDb);
+    await ensureAnalyticsIndexes();
+    await ensureHotPathIndexes();
   } else {
     await migrateSqlite(db as LibSQLDb);
     await ensureFunnelRoutingColumns();
@@ -274,6 +277,7 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
     await ensureTokenLimitColumns();
     await ensureAnalyticsColumns();
     await ensureAnalyticsIndexes();
+    await ensureHotPathIndexes();
     await ensureSubdomainHostnameIdentity();
     await ensureExclusiveUserGroupMembership();
   }

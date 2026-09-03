@@ -49,9 +49,11 @@ export async function closeAndCleanup(client: any, dbFilePath: string) {
   const fullPath = resolveDbFilePath(dbFilePath, process.cwd());
   const { closeDb } = await import('../../src/db');
   await closeDb();
-  if (client && typeof client.close === 'function') {
-    try { await client.close(); } catch {}
-  }
+  try {
+    if (client && typeof client.close === 'function') {
+      await client.close();
+    }
+  } catch {}
   cleanupTestDatabaseFilesSync(fullPath);
 }
 

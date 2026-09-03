@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { db } from "../db";
-import { chatLogs, systemSettings, users } from "../db/schema";
-import { eq, and, sql, gte, lt, like, desc, asc, inArray } from "drizzle-orm";
+import { chatLogs, systemSettings, users, providerModels } from "../db/schema";
+import { eq, and, sql, gte, lt, like, desc, asc, inArray, ne } from "drizzle-orm";
 import { logEmitter } from "../utils/events";
 import { PassThrough } from "stream";
 import { fingerprintLogInput, normalizeChatLogTurn } from "../utils/chatTurns";
@@ -12,6 +12,8 @@ const SESSION_SCAN_MIN_ROWS = 200;
 const SESSION_SCAN_MAX_BATCH_ROWS = 800;
 const SESSION_SCAN_MAX_ROWS = 20000;
 const SESSION_SCAN_OVERFETCH_FACTOR = 12;
+const CANDIDATE_SCAN_MAX_ROWS = 1000;
+const PREVIEW_TEXT_CHARS = 500;
 
 type SessionSummary = {
   serverSessionId: string | null;
@@ -175,7 +177,7 @@ const sessionSummarySelect = {
   turnCount: sql<number>`COUNT(*)`,
   inputTokens: sql<number>`SUM(${chatLogs.inputTokens})`,
   outputTokens: sql<number>`SUM(${chatLogs.outputTokens})`,
-  firstInputText: sql<string>`(SELECT cl2.inputText FROM chat_logs cl2 WHERE cl2.serverSessionId = chat_logs.serverSessionId ORDER BY cl2.createdAt ASC, cl2.turnId ASC LIMIT 1)`,
+  firstInputText: sql<string>`(SELECT substr(cl2."inputText", 1, 500) FROM chat_logs cl2 WHERE cl2.serverSessionId = chat_logs.serverSessionId ORDER BY cl2.createdAt ASC, cl2.turnId ASC LIMIT 1)`,
   sessionTitle: sql<string>`MAX(${chatLogs.sessionTitle})`,
   firstCreatedAt: sql<Date>`MIN(${chatLogs.createdAt})`,
   lastUpdatedAt: sql<Date>`MAX(${chatLogs.createdAt})`,
@@ -199,9 +201,34 @@ const formatSessionSummaries = (rows: any[]): SessionSummary[] => rows.map((s) =
   relatedSessionIds: s.serverSessionId ? [s.serverSessionId] : [],
 }));
 
+const foldingSelect = {
+  id: chatLogs.id,
+  requestId: chatLogs.requestId,
+  serverSessionId: chatLogs.serverSessionId,
+  clientSessionId: chatLogs.clientSessionId,
+  turnId: chatLogs.turnId,
+  userId: chatLogs.userId,
+  clientName: chatLogs.clientName,
+  detectedClient: chatLogs.detectedClient,
+  model: chatLogs.model,
+  inputText: sql<string>`substr(${chatLogs.inputText}, 1, 500)`,
+  responseHash: chatLogs.responseHash,
+  conversationRootHash: chatLogs.conversationRootHash,
+  inputTokens: chatLogs.inputTokens,
+  outputTokens: chatLogs.outputTokens,
+  latencyMs: chatLogs.latencyMs,
+  ttftMs: chatLogs.ttftMs,
+  cachedTokens: chatLogs.cachedTokens,
+  isAborted: chatLogs.isAborted,
+  status: chatLogs.status,
+  error: chatLogs.error,
+  sessionTitle: chatLogs.sessionTitle,
+  createdAt: chatLogs.createdAt,
+};
+
 const resolveRelatedSessionIds = async (sessionId: string) => {
   const anchorTurns = await db
-    .select()
+    .select(foldingSelect)
     .from(chatLogs)
     .where(eq(chatLogs.serverSessionId, sessionId))
     .orderBy(asc(chatLogs.createdAt), asc(chatLogs.turnId));
@@ -209,7 +236,7 @@ const resolveRelatedSessionIds = async (sessionId: string) => {
   if (anchorTurns.length === 0) return [sessionId];
 
   const anchor = anchorTurns[0];
-  const anchorSummary = buildSessionSummariesFromTurns(anchorTurns)[0];
+  const anchorSummary = buildSessionSummariesFromTurns(anchorTurns as any)[0];
   const windowStart = new Date(new Date(anchorSummary.firstCreatedAt).getTime() - SIMILAR_SESSION_WINDOW_MS);
   const windowEnd = new Date(new Date(anchorSummary.lastUpdatedAt).getTime() + SIMILAR_SESSION_WINDOW_MS);
   const candidateConditions = [
@@ -223,12 +250,13 @@ const resolveRelatedSessionIds = async (sessionId: string) => {
   if (anchor.clientSessionId) candidateConditions.push(eq(chatLogs.clientSessionId, anchor.clientSessionId));
 
   const candidateTurns = await db
-    .select()
+    .select(foldingSelect)
     .from(chatLogs)
     .where(and(...candidateConditions))
-    .orderBy(asc(chatLogs.createdAt), asc(chatLogs.turnId));
+    .orderBy(asc(chatLogs.createdAt), asc(chatLogs.turnId))
+    .limit(CANDIDATE_SCAN_MAX_ROWS);
 
-  const foldedSessions = foldSimilarSessions(buildSessionSummariesFromTurns(candidateTurns));
+  const foldedSessions = foldSimilarSessions(buildSessionSummariesFromTurns(candidateTurns as any));
   const matched = foldedSessions.find((session) => session.relatedSessionIds.includes(sessionId));
   return matched?.relatedSessionIds?.length ? matched.relatedSessionIds : [sessionId];
 };
@@ -281,30 +309,63 @@ export async function getSessions(request: FastifyRequest, reply: FastifyReply) 
     Math.max(scanBatchSize, targetCount * SESSION_SCAN_OVERFETCH_FACTOR * 2),
   );
 
-  const paginatedSessionIds = await db
-    .select({ serverSessionId: chatLogs.serverSessionId })
-    .from(chatLogs)
-    .where(whereClause)
-    .groupBy(chatLogs.serverSessionId)
-    .orderBy(desc(sql<Date>`MAX(${chatLogs.createdAt})`))
-    .limit(limitNum)
-    .offset(offset);
+  // Bounded recency scan by createdAt DESC (uses idx_chat_logs_createdat) instead of
+  // full-table GROUP BY serverSessionId ORDER BY MAX(createdAt).
+  const orderedSessionIds: string[] = [];
+  const seen = new Set<string>();
+  let rowsScanned = 0;
+  let scanOffset = 0;
+
+  while (orderedSessionIds.length < targetCount && rowsScanned < maxRowsToScan) {
+    const batchLimit = Math.min(scanBatchSize, maxRowsToScan - rowsScanned);
+    const batch = await db
+      .select({
+        serverSessionId: chatLogs.serverSessionId,
+        createdAt: chatLogs.createdAt,
+      })
+      .from(chatLogs)
+      .where(whereClause)
+      .orderBy(desc(chatLogs.createdAt))
+      .limit(batchLimit)
+      .offset(scanOffset);
+
+    if (batch.length === 0) break;
+
+    rowsScanned += batch.length;
+    scanOffset += batch.length;
+
+    for (const row of batch) {
+      const sid = row.serverSessionId;
+      if (!sid || seen.has(sid)) continue;
+      seen.add(sid);
+      orderedSessionIds.push(sid);
+      if (orderedSessionIds.length >= targetCount) break;
+    }
+
+    if (batch.length < batchLimit) break;
+  }
+
+  const pageSessionIds = orderedSessionIds.slice(offset, offset + limitNum);
+  const hasMore = orderedSessionIds.length > offset + limitNum;
 
   let foldedSessions: SessionSummary[] = [];
-  const sessionIds = paginatedSessionIds.map(row => row.serverSessionId).filter(Boolean) as string[];
-
-  if (sessionIds.length > 0) {
-    const summaryWhereClause = inArray(chatLogs.serverSessionId, sessionIds);
+  if (pageSessionIds.length > 0) {
     const sessionRows = await db
       .select(sessionSummarySelect)
       .from(chatLogs)
-      .where(summaryWhereClause)
+      .where(inArray(chatLogs.serverSessionId, pageSessionIds))
       .groupBy(chatLogs.serverSessionId);
 
-    foldedSessions = foldSimilarSessions(formatSessionSummaries(sessionRows));
+    const byId = new Map(
+      formatSessionSummaries(sessionRows).map((s) => [s.serverSessionId || "", s]),
+    );
+    // Preserve recency order from the bounded scan
+    const ordered = pageSessionIds
+      .map((id) => byId.get(id))
+      .filter(Boolean) as SessionSummary[];
+    foldedSessions = foldSimilarSessions(ordered);
   }
 
-  const hasMore = paginatedSessionIds.length === limitNum;
   const total = hasMore ? offset + foldedSessions.length + 1 : offset + foldedSessions.length;
 
   return {
@@ -313,8 +374,10 @@ export async function getSessions(request: FastifyRequest, reply: FastifyReply) 
       page: pageNum,
       limit: limitNum,
       total,
-      totalPages: hasMore ? pageNum + 1 : Math.max(pageNum, Math.ceil(total / limitNum)),
+      totalPages: hasMore ? pageNum + 1 : Math.max(pageNum, Math.ceil(total / limitNum) || 1),
       hasMore,
+      rowsScanned,
+      scanCapped: rowsScanned >= maxRowsToScan && orderedSessionIds.length < targetCount,
     },
   };
 }
@@ -357,24 +420,52 @@ export async function getRequests(request: FastifyRequest, reply: FastifyReply) 
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(chatLogs).where(whereClause);
-  const total = countResult[0]?.count || 0;
+  const requestListSelect = {
+    id: chatLogs.id,
+    requestId: chatLogs.requestId,
+    serverSessionId: chatLogs.serverSessionId,
+    clientSessionId: chatLogs.clientSessionId,
+    turnId: chatLogs.turnId,
+    userId: chatLogs.userId,
+    clientName: chatLogs.clientName,
+    detectedClient: chatLogs.detectedClient,
+    model: chatLogs.model,
+    inputText: sql<string>`substr(${chatLogs.inputText}, 1, 500)`,
+    outputText: sql<string>`substr(${chatLogs.outputText}, 1, 500)`,
+    responseHash: chatLogs.responseHash,
+    conversationRootHash: chatLogs.conversationRootHash,
+    inputTokens: chatLogs.inputTokens,
+    outputTokens: chatLogs.outputTokens,
+    latencyMs: chatLogs.latencyMs,
+    ttftMs: chatLogs.ttftMs,
+    cachedTokens: chatLogs.cachedTokens,
+    isAborted: chatLogs.isAborted,
+    status: chatLogs.status,
+    error: chatLogs.error,
+    sessionTitle: chatLogs.sessionTitle,
+    createdAt: chatLogs.createdAt,
+  };
 
   const logs = await db
-    .select()
+    .select(requestListSelect)
     .from(chatLogs)
     .where(whereClause)
     .orderBy(desc(chatLogs.createdAt))
-    .limit(limitNum)
+    .limit(limitNum + 1)
     .offset(offset);
 
+  const hasMore = logs.length > limitNum;
+  const pageLogs = hasMore ? logs.slice(0, limitNum) : logs;
+  const total = hasMore ? offset + pageLogs.length + 1 : offset + pageLogs.length;
+
   return {
-    data: logs,
+    data: pageLogs,
     pagination: {
       page: pageNum,
       limit: limitNum,
       total,
-      totalPages: Math.ceil(total / limitNum),
+      totalPages: hasMore ? pageNum + 1 : Math.max(pageNum, Math.ceil(total / limitNum) || 1),
+      hasMore,
     },
   };
 }
@@ -392,30 +483,44 @@ export async function getSessionTurns(request: FastifyRequest, reply: FastifyRep
 }
 
 export async function getUsers(request: FastifyRequest, reply: FastifyReply) {
-  const distinctUsers = await db
-    .select({ id: chatLogs.userId })
-    .from(chatLogs)
-    .groupBy(chatLogs.userId);
-
-  const allUsers = await db.select({ id: users.id, username: users.username }).from(users);
-  const userMap = new Map(allUsers.map((u) => [u.id, u.username]));
+  const rows = await db
+    .select({ id: users.id, username: users.username })
+    .from(users)
+    .where(ne(users.status, "deleted"));
 
   return {
-    data: distinctUsers
-      .filter((u) => !!u.id)
-      .map((u) => ({
-        id: u.id,
-        username: userMap.get(u.id) || u.id,
-      })),
+    data: rows.map((u) => ({
+      id: u.id,
+      username: u.username || u.id,
+    })),
   };
 }
 
 export async function getModels(request: FastifyRequest, reply: FastifyReply) {
-  const models = await db
-    .select({ id: chatLogs.model })
+  const enabled = await db
+    .select({ modelId: providerModels.modelId, alias: providerModels.alias })
+    .from(providerModels)
+    .where(and(eq(providerModels.enabled, true), eq(providerModels.active, true)));
+
+  const names = new Set<string>();
+  for (const row of enabled) {
+    if (row.modelId) names.add(row.modelId);
+    if (row.alias) names.add(row.alias);
+  }
+
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const recent = await db
+    .select({ model: chatLogs.model })
     .from(chatLogs)
-    .groupBy(chatLogs.model);
-  return { data: models.map(m => m.id).filter(Boolean) };
+    .where(gte(chatLogs.createdAt, since))
+    .orderBy(desc(chatLogs.createdAt))
+    .limit(1000);
+
+  for (const row of recent) {
+    if (row.model) names.add(row.model);
+  }
+
+  return { data: Array.from(names).filter(Boolean).sort() };
 }
 
 export async function getStream(request: FastifyRequest, reply: FastifyReply) {

@@ -63,11 +63,12 @@ export function buildBaseLog(ctx: GatewayRequestContext, provider: any, activeKe
 
 /**
  * Insert the initial "queued" request log. Idempotent via isLogInserted flag.
+ * Non-blocking: background enqueue so gateway hot path never awaits DB insert.
  */
-export async function insertInitialRequestLog(
+export function insertInitialRequestLog(
   ctx: GatewayRequestContext,
   baseLog: Record<string, any>,
-): Promise<void> {
+): void {
   if (!ctx.isLogInserted) {
     const initialLog = {
       ...baseLog,
@@ -75,7 +76,7 @@ export async function insertInitialRequestLog(
       latencyMs: 0,
       totalTokens: 0,
     };
-    await insertRequestLog(initialLog as any);
+    void insertRequestLog(initialLog as any);
     ctx.isLogInserted = true;
   }
 }
@@ -153,41 +154,45 @@ export async function emitAuditEvent(
   status: "success" | "failed",
   errorMessage?: string | null,
 ): Promise<void> {
-  const isExempt = await isAuditExemptUser(ctx.auth.userId);
-  if (isExempt) return;
+  try {
+    const isExempt = await isAuditExemptUser(ctx.auth.userId);
+    if (isExempt) return;
 
-  const detectedClientVal = detectAIClient(
-    ctx.request.headers,
-    ctx.body,
-    ctx.routing.reqPath,
-  );
-  const clientSessionIdVal = extractClientSessionId(ctx.request);
+    const detectedClientVal = detectAIClient(
+      ctx.request.headers,
+      ctx.body,
+      ctx.routing.reqPath,
+    );
+    const clientSessionIdVal = extractClientSessionId(ctx.request);
 
-  logEmitter.emit("chatLogInsert", {
-    id: ctx.reqLogId,
-    requestId: ctx.reqLogId,
-    serverSessionId:
-      (ctx.request.headers["x-server-session-id"] as string) || ctx.reqLogId,
-    clientSessionId: clientSessionIdVal,
-    turnId: parseInt(ctx.request.headers["x-turn-id"] as string) || 0,
-    userId: ctx.auth.userId,
-    clientName: ctx.auth.apiKeyRecord.name || "API Client",
-    detectedClient: detectedClientVal,
-    model: ctx.currentAttempt.modelId,
-    inputText: JSON.stringify(ctx.body),
-    outputText,
-    inputTokens: ctx.stream.promptTokens,
-    outputTokens: ctx.stream.completionTokens,
-    latencyMs: Date.now() - ctx.startTime,
-    ttftMs: ctx.stream.ttft,
-    cachedTokens: ctx.continuity.cacheReadTokens || 0,
-    isAborted: ctx.clientDisconnected,
-    status,
-    error: errorMessage,
-    apiKey: ctx.auth.providedKey,
-    noSummary: ctx.request.headers["x-promptgate-no-summary"] === "true",
-    createdAt: new Date().toISOString(),
-  });
+    logEmitter.emit("chatLogInsert", {
+      id: ctx.reqLogId,
+      requestId: ctx.reqLogId,
+      serverSessionId:
+        (ctx.request.headers["x-server-session-id"] as string) || ctx.reqLogId,
+      clientSessionId: clientSessionIdVal,
+      turnId: parseInt(ctx.request.headers["x-turn-id"] as string) || 0,
+      userId: ctx.auth.userId,
+      clientName: ctx.auth.apiKeyRecord?.name || "API Client",
+      detectedClient: detectedClientVal,
+      model: ctx.currentAttempt.modelId,
+      inputText: JSON.stringify(ctx.body),
+      outputText,
+      inputTokens: ctx.stream.promptTokens,
+      outputTokens: ctx.stream.completionTokens,
+      latencyMs: Date.now() - ctx.startTime,
+      ttftMs: ctx.stream.ttft,
+      cachedTokens: ctx.continuity?.cacheReadTokens || 0,
+      isAborted: ctx.clientDisconnected,
+      status,
+      error: errorMessage,
+      apiKey: ctx.auth.providedKey,
+      noSummary: ctx.request.headers["x-promptgate-no-summary"] === "true",
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[GatewayLogging] Failed to emit audit event:", error);
+  }
 }
 
 /**
@@ -254,7 +259,7 @@ export async function finalizeStreamLog(
   };
 
   if (ctx.isLogInserted) {
-    await updateRequestLog(ctx.reqLogId, finalStreamLog, finalStreamLog);
+    void updateRequestLog(ctx.reqLogId, finalStreamLog, finalStreamLog);
   } else {
     publishRequestLogUpdate(finalStreamLog);
   }
@@ -267,7 +272,7 @@ export async function finalizeStreamLog(
   );
   ctx.stream.accumulatedCompletionText = origAccumulatedText;
 
-  await emitAuditEvent(
+  void emitAuditEvent(
     ctx,
     auditOutput,
     usageStatus === "failed" ? "failed" : "success",
