@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Server, Edit2, Trash2, Plus, Key } from "lucide-react";
+import { Server, Edit2, Trash2, Plus, Key, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { ProviderApiKeysModal } from "../components/ProviderApiKeysModal";
@@ -27,8 +27,10 @@ export interface Provider {
   openaiBaseUrl?: string;
   anthropicBaseUrl?: string;
   timeoutMs: number;
+  streamTimeoutMs?: number;
   concurrencyLimit: number;
   maxOutputTokens: number;
+  hourlyTokenLimit?: number;
   enabled: boolean;
   modelsCount: number;
   keysCount: number;
@@ -46,7 +48,7 @@ export default function Providers() {
   const [loading, setLoading] = useState(true);
 
   // Dialog states
-  const [editDialog, setEditDialog] = useState<{ open: boolean; provider: Provider | null }>({ open: false, provider: null });
+  const [editDialog, setEditDialog] = useState<{ open: boolean; provider: Provider | null; copying?: boolean }>({ open: false, provider: null, copying: false });
   const [modelListDialog, setModelListDialog] = useState<{ open: boolean; provider: Provider | null }>({ open: false, provider: null });
   const [apiKeysDialog, setApiKeysDialog] = useState<{ open: boolean; provider: Provider | null }>({ open: false, provider: null });
   
@@ -55,6 +57,18 @@ export default function Providers() {
     providerId: string | null;
     providerName: string;
   }>({ open: false, providerId: null, providerName: "" });
+
+  const openCreate = () => {
+    setEditDialog({ open: true, provider: null, copying: false });
+  };
+
+  const openEdit = (provider: Provider) => {
+    setEditDialog({ open: true, provider, copying: false });
+  };
+
+  const openCopy = (provider: Provider) => {
+    setEditDialog({ open: true, provider, copying: true });
+  };
 
   useEffect(() => {
     loadData();
@@ -109,7 +123,7 @@ export default function Providers() {
   return (
     <div className="space-y-6">
       <div className="flex justify-end items-center">
-        <Button onClick={() => setEditDialog({ open: true, provider: null })}>
+        <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
           {t("providers.actions.add", "添加供应商")}
         </Button>
@@ -124,7 +138,7 @@ export default function Providers() {
               description={t("providers.empty.description", "添加您的第一个 AI 供应商以开始使用")}
               action={{
                 label: t("providers.actions.add", "添加供应商"),
-                onClick: () => setEditDialog({ open: true, provider: null }),
+                onClick: openCreate,
               }}
             />
           ) : (
@@ -172,7 +186,17 @@ export default function Providers() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => setEditDialog({ open: true, provider: p })}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground"
+                          onClick={() => openCopy(p)}
+                          title={t("providers.actions.copy", "复制")}
+                          aria-label={t("providers.actions.copy", "复制")}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
                           <Edit2 className="h-4 w-4" />
                         </Button>
                         <Button
@@ -219,6 +243,8 @@ export default function Providers() {
         open={editDialog.open}
         onOpenChange={(open) => setEditDialog({ ...editDialog, open })}
         provider={editDialog.provider}
+        copying={editDialog.copying}
+        existingNames={providers.map((p) => p.name)}
         onSaveSuccess={loadData}
       />
     </div>

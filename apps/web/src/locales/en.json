@@ -549,10 +549,14 @@
     "title": "Providers",
     "actions": {
       "add": "Add Provider",
+      "copy": "Copy",
       "save": "Save Provider",
       "manageKeys": "Manage Keys",
       "keysInactive": ", {{count}} inactive",
       "viewModels": "View Models"
+    },
+    "copyName": {
+      "label": "Copy"
     },
     "status": {
       "configured": "Configured",
@@ -586,8 +590,10 @@
     "dialog": {
       "addTitle": "Add New Provider",
       "editTitle": "Edit Provider",
+      "copyTitle": "Copy Provider",
       "addDesc": "Configure provider settings for OpenAI-compatible or Anthropic protocol",
       "editDesc": "Update provider settings. Leave API Key blank to keep current.",
+      "copyDesc": "Configuration copied from original provider. Confirm the name and re-enter API Key if needed.",
       "prevStep": "Previous Step",
       "nextStep": "Next Step: Connectivity Test"
     },

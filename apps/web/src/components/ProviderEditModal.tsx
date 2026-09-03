@@ -5,6 +5,7 @@ import { fetchApi } from "@/lib/api";
 import {
   DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
   DEFAULT_PROVIDER_TIMEOUT_MS,
+  nextCopyRouteName,
 } from "@promptgate/shared";
 import {
   Dialog,
@@ -39,10 +40,19 @@ interface ProviderEditModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider: any | null; // null means 'create'
+  copying?: boolean;
+  existingNames?: string[];
   onSaveSuccess: () => void;
 }
 
-export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess }: ProviderEditModalProps) {
+export function ProviderEditModal({
+  open,
+  onOpenChange,
+  provider,
+  copying = false,
+  existingNames = [],
+  onSaveSuccess,
+}: ProviderEditModalProps) {
   const { t } = useTranslation();
   
   const [formData, setFormData] = useState<FormData>({
@@ -64,19 +74,27 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
   const [testing, setTesting] = useState(false);
   const [currentModels, setCurrentModels] = useState<string[]>([]);
   const [newModelInput, setNewModelInput] = useState("");
-  const isEditing = !!provider;
+  const isEditing = Boolean(provider && !copying);
 
   useEffect(() => {
     if (open) {
       if (provider) {
+        const computedName = copying
+          ? nextCopyRouteName(
+              provider.name,
+              existingNames || [],
+              t("providers.copyName.label", "副本"),
+            )
+          : provider.name;
+
         setFormData({
-          name: provider.name,
+          name: computedName,
           openaiBaseUrl: provider.openaiBaseUrl || "",
           anthropicBaseUrl: provider.anthropicBaseUrl || "",
           apiKey: "",
-          timeoutMs: provider.timeoutMs,
+          timeoutMs: provider.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS,
           streamTimeoutMs: provider.streamTimeoutMs ?? DEFAULT_PROVIDER_STREAM_TIMEOUT_MS,
-          concurrencyLimit: provider.concurrencyLimit,
+          concurrencyLimit: provider.concurrencyLimit ?? 4,
           maxOutputTokens: provider.maxOutputTokens || 0,
           hourlyTokenLimit: provider.hourlyTokenLimit || 0,
           enabled: provider.enabled ?? true,
@@ -84,19 +102,28 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
           weightProxyUrl: provider.weightProxyUrl || "",
         });
         
-        const models = provider.manualModels && Array.isArray(provider.manualModels) && provider.manualModels.length > 0 
-          ? provider.manualModels 
-          : [];
-        setCurrentModels(models);
+        let initialModels: string[] = [];
+        if (Array.isArray(provider.manualModels) && provider.manualModels.length > 0) {
+          initialModels = [...provider.manualModels];
+        } else if (typeof provider.manualModels === "string") {
+          try {
+            const parsed = JSON.parse(provider.manualModels);
+            if (Array.isArray(parsed)) initialModels = parsed;
+          } catch {}
+        }
+        setCurrentModels(initialModels);
 
-        // Fetch models from server if we don't have manual models locally in provider object
-        fetchApi(`/admin/providers/${provider.id}/models`).then((serverModels: any[]) => {
-          if (serverModels && Array.isArray(serverModels) && serverModels.length > 0) {
-            setCurrentModels(Array.from(new Set(serverModels.map(m => m.modelId))));
-          }
-        }).catch(() => {
-          // Ignore
-        });
+        // Fetch models from server if we don't have manual models locally in provider object or to load source models
+        if (provider.id) {
+          fetchApi(`/admin/providers/${provider.id}/models`).then((serverModels: any[]) => {
+            if (serverModels && Array.isArray(serverModels) && serverModels.length > 0) {
+              const serverModelIds = serverModels.map((m: any) => m.modelId || m.id).filter(Boolean);
+              setCurrentModels(prev => Array.from(new Set([...prev, ...serverModelIds])));
+            }
+          }).catch(() => {
+            // Ignore
+          });
+        }
       } else {
         // Reset for create
         setFormData({
@@ -117,7 +144,7 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
       }
       setTestResult(null);
     }
-  }, [open, provider]);
+  }, [open, provider, copying]);
 
   const handleTest = async () => {
     if (!formData.openaiBaseUrl && !formData.anthropicBaseUrl) {
@@ -129,7 +156,7 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
       const res = await fetchApi("/admin/providers/test", {
         method: "POST",
         body: JSON.stringify({
-          providerId: provider?.id || undefined,
+          providerId: isEditing ? provider?.id : undefined,
           openaiBaseUrl: formData.openaiBaseUrl || undefined,
           anthropicBaseUrl: formData.anthropicBaseUrl || undefined,
           apiKey: formData.apiKey || undefined,
@@ -183,9 +210,19 @@ export function ProviderEditModal({ open, onOpenChange, provider, onSaveSuccess 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-5xl h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="px-6 py-4 border-b shrink-0 bg-muted/30">
-          <DialogTitle>{isEditing ? t("providers.dialog.editTitle", "编辑供应商") : t("providers.dialog.addTitle", "添加新供应商")}</DialogTitle>
+          <DialogTitle>
+            {copying
+              ? t("providers.dialog.copyTitle", "复制供应商")
+              : isEditing
+              ? t("providers.dialog.editTitle", "编辑供应商")
+              : t("providers.dialog.addTitle", "添加新供应商")}
+          </DialogTitle>
           <DialogDescription>
-            {isEditing ? t("providers.dialog.editDesc", "更新供应商配置。") : t("providers.dialog.addDesc", "配置 OpenAI 兼容或 Anthropic 协议的供应商信息，并在右侧进行连通性测试。")}
+            {copying
+              ? t("providers.dialog.copyDesc", "已复制原供应商配置。请确认名称并在需要时重新输入密钥。")
+              : isEditing
+              ? t("providers.dialog.editDesc", "更新供应商配置。")
+              : t("providers.dialog.addDesc", "配置 OpenAI 兼容或 Anthropic 协议的供应商信息，并在右侧进行连通性测试。")}
           </DialogDescription>
         </DialogHeader>
 
