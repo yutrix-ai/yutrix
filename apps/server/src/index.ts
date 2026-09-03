@@ -346,6 +346,9 @@ const start = async () => {
         );
         await performUnattendedSetup();
         setSetupPending(false);
+        if (isPrimary) {
+          await bootstrap();
+        }
       } else {
         setSetupPending(true);
         console.log(

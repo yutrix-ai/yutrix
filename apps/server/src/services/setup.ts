@@ -19,6 +19,15 @@ import {
   syncManualModels,
   ensureDefaultGroup,
 } from "../startup/seed";
+import {
+  ensureFunnelRoutingColumns,
+  ensureStrategyRoutingColumns,
+  ensureProviderModelContextWindowColumn,
+  ensureTokenLimitColumns,
+  ensureAnalyticsColumns,
+  ensureAnalyticsIndexes,
+  ensureSubdomainHostnameIdentity,
+} from "../startup/migrations";
 import { refreshLoopGuardConfigCache } from "./loopGuard";
 import { refreshRoutingWeightSnapshot } from "./distillation/routingWeightsBridge";
 
@@ -258,6 +267,13 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
     await migratePg(db as PgDb);
   } else {
     await migrateSqlite(db as LibSQLDb);
+    await ensureFunnelRoutingColumns();
+    await ensureStrategyRoutingColumns();
+    await ensureProviderModelContextWindowColumn();
+    await ensureTokenLimitColumns();
+    await ensureAnalyticsColumns();
+    await ensureAnalyticsIndexes();
+    await ensureSubdomainHostnameIdentity();
   }
 
   // 4. Seed admin user (password hashed with bcrypt; never logged)
