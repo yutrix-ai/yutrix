@@ -1,0 +1,64 @@
+# Docker Compose Example: Yutrix with PostgreSQL 16
+#
+# Usage:
+#   1. Copy this file:
+#      cp docker-compose.postgres.example.yml docker-compose.yml
+#   2. Adjust passwords and secrets below.
+#   3. Start containers:
+#      docker compose up -d
+#   4. View logs:
+#      docker compose logs -f yutrix
+#
+# NOTE: Single-container SQLite remains the default and recommended quick start.
+# This Docker Compose setup is an optional alternative for teams requiring PostgreSQL.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: yutrix
+      POSTGRES_USER: yutrix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yutrix_secret_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yutrix -d yutrix"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yutrix_net
+
+  yutrix:
+    image: ghcr.io/yutrix-ai/yutrix:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_URL=postgres://yutrix:${POSTGRES_PASSWORD:-yutrix_secret_password}@postgres:5432/yutrix
+      - PROMPTGATE_SECRET=${PROMPTGATE_SECRET:-change-me-to-a-secure-random-32-byte-hex-string}
+      - LOG_LEVEL=info
+      - ACTION_LOG_FILE=/app/data/action.log
+      # Optional: Unattended admin configuration (bypasses /setup wizard if set)
+      # - YUTRIX_ADMIN_USER=admin
+      # - YUTRIX_ADMIN_PASSWORD=change-me-to-a-strong-password
+      # - YUTRIX_MAIN_DOMAIN=gateway.example.com
+    networks:
+      - yutrix_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  yutrix_net:
+    driver: bridge

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../lib/store";
 import { fetchApi } from "../lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,16 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const { setUser } = useAuth();
+
+  useEffect(() => {
+    fetchApi("/setup/status")
+      .then((data) => {
+        if (data.fresh) {
+          window.location.href = "/setup";
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

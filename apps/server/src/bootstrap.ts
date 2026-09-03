@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, initDb, getDbDriver } from "./db";
 import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import path from "path";
@@ -102,6 +102,29 @@ async function migrateAndDropLegacyProviderKeyColumns() {
 }
 
 export async function bootstrap() {
+  await initDb();
+  const driver = getDbDriver();
+
+  if (driver === "postgres") {
+    console.log("[PromptGate Bootstrap] Running PostgreSQL migrations...");
+    const { migratePg } = await import("./db/migrate-pg");
+    await migratePg(db as any);
+    console.log("[PromptGate Bootstrap] PostgreSQL migrations completed.");
+
+    await seedAdminUser();
+    await seedBrandingSettings();
+    await seedDefaultApiKeyConcurrency();
+    await seedModelDiscoverySettings();
+    await seedLoopGuardSettings();
+    await refreshLoopGuardConfigCache();
+    await refreshRoutingWeightSnapshot();
+    await seedBuiltinPromptPolicies();
+    await syncManualModels();
+    await ensureDefaultGroup();
+    return;
+  }
+
+  // SQLite branch below (keeps existing PRAGMA / sqlite_master / ALTER behavior)
   try {
     await db.run(sql`PRAGMA journal_mode=DELETE`);
     console.log("[PromptGate Bootstrap] Disabled SQLite WAL journal mode (reverted to DELETE).");
@@ -145,7 +168,8 @@ export async function bootstrap() {
     console.error("[PromptGate Bootstrap] Warning: Failed to clean up temp tables before migration:", err);
   }
 
-  await migrate(db, { migrationsFolder });
+  const { migrateSqlite } = await import("./db/migrate-sqlite");
+  await migrateSqlite(db as any, { migrationsFolder });
   console.log("[PromptGate] Migrations completed.");
 
   // Run auto migrations for missing columns

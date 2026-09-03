@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, initDb } from "../db";
 import { chatLogs } from "../db/schema";
 
 const CONFIRM_VALUE = "YES";
@@ -33,6 +33,7 @@ function backupDatabaseFile() {
 }
 
 async function run() {
+  await initDb();
   const beforeCount = await countChatLogs();
   const confirmed = process.env.CONFIRM_CLEAR_CHAT_LOGS === CONFIRM_VALUE;
   const shouldVacuum = process.env.VACUUM_AFTER_CLEAR === "true";

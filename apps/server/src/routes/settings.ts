@@ -11,6 +11,12 @@ import { z } from "zod";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 import { scheduleDingTalkJobs, triggerDingTalkPush } from "../services/dingtalk";
 import { refreshLoopGuardConfigCache, LOOP_GUARD_SETTING_STRING_DEFAULTS } from "../services/loopGuard";
+import { Pool } from "pg";
+import { getDbDriver, client } from "../db";
+import { loadDbConfig } from "../db/config";
+import { resolveDbFilePath } from "../db/path";
+import { runCopyPipeline, getMigrationProgress } from "../db/copy/pipeline";
+import { isMaintenanceMode, setMaintenanceMode } from "../services/maintenance";
 
 const execAsync = promisify(exec);
 
@@ -273,12 +279,29 @@ export default async function (fastify: FastifyInstance) {
     "/api/admin/database/info",
     { onRequest: [requireAdmin] },
     async (request, reply) => {
+      const driver = getDbDriver();
+      if (driver === "postgres") {
+        return {
+          driver: "postgres",
+          path: "PostgreSQL",
+          size: 0,
+          sizeFormatted: "Managed by PostgreSQL",
+          isBackupPasswordSet: false,
+        };
+      }
       const filePath = getDbPath();
-      const stat = fs.statSync(filePath);
+      let size = 0;
+      try {
+        const stat = fs.statSync(filePath);
+        size = stat.size;
+      } catch {
+        // file may not exist yet
+      }
       return {
+        driver: "sqlite",
         path: dbPath,
-        size: stat.size,
-        sizeFormatted: formatSize(stat.size),
+        size,
+        sizeFormatted: formatSize(size),
         isBackupPasswordSet: !!process.env.DB_BACKUP_PASSWORD,
       };
     },
@@ -288,6 +311,12 @@ export default async function (fastify: FastifyInstance) {
     "/api/admin/database/download",
     { onRequest: [requireAdmin] },
     async (request, reply) => {
+      if (getDbDriver() !== "sqlite") {
+        return reply.code(400).send({
+          error: "Database backup download is only supported for SQLite. For PostgreSQL, please use pg_dump.",
+        });
+      }
+
       const backupPassword = process.env.DB_BACKUP_PASSWORD;
       if (!backupPassword) {
         return reply.code(403).send({
@@ -310,6 +339,156 @@ export default async function (fastify: FastifyInstance) {
       );
       const stream = fs.createReadStream(filePath);
       return reply.send(stream);
+    },
+  );
+
+  // GET /api/settings/database
+  fastify.get(
+    "/api/settings/database",
+    { onRequest: [requireAdmin] },
+    async (request, reply) => {
+      const config = loadDbConfig();
+      const driver = getDbDriver();
+
+      if (driver === "sqlite") {
+        const rawFile = config.sqlite?.file || "data/promptgate.sqlite";
+        const resolved = resolveDbFilePath(rawFile, process.cwd());
+        let sizeBytes = 0;
+        let exists = false;
+        try {
+          if (fs.existsSync(resolved)) {
+            const stat = fs.statSync(resolved);
+            sizeBytes = stat.size;
+            exists = true;
+          }
+        } catch {
+          // Ignore
+        }
+        return {
+          driver: "sqlite",
+          sqlite: {
+            file: rawFile,
+            resolvedPath: resolved,
+            sizeBytes,
+            sizeFormatted: formatSize(sizeBytes),
+            exists,
+          },
+          maintenance: isMaintenanceMode(),
+        };
+      }
+
+      const rawUrl = config.postgres?.url || "";
+      const urlMasked = rawUrl ? rawUrl.replace(/:[^:@]+@/, ":****@") : "";
+      let currentDbName = "unknown";
+      let connected = false;
+      try {
+        const res = await (client as any).query("SELECT current_database() as db;");
+        currentDbName = res.rows[0]?.db || "unknown";
+        connected = true;
+      } catch {
+        // Query failed
+      }
+
+      return {
+        driver: "postgres",
+        postgres: {
+          urlMasked,
+          database: currentDbName,
+          connected,
+        },
+        maintenance: isMaintenanceMode(),
+      };
+    },
+  );
+
+  // POST /api/settings/database/test
+  fastify.post<{ Body: { databaseUrl: string } }>(
+    "/api/settings/database/test",
+    { onRequest: [requireAdmin] },
+    async (request, reply) => {
+      const { databaseUrl } = request.body || {};
+      if (!databaseUrl) {
+        return reply.code(400).send({ ok: false, error: "Database URL is required" });
+      }
+      let pool: Pool | null = null;
+      try {
+        pool = new Pool({
+          connectionString: databaseUrl,
+          connectionTimeoutMillis: 4000,
+        });
+        await pool.query("SELECT 1 as val;");
+        return { ok: true, message: "Connected to PostgreSQL database successfully" };
+      } catch (err: any) {
+        return reply.code(400).send({ ok: false, error: err.message || "Failed to connect to PostgreSQL" });
+      } finally {
+        if (pool) {
+          await pool.end().catch(() => {});
+        }
+      }
+    },
+  );
+
+  // POST /api/settings/database/migrate-to-pg
+  fastify.post<{ Body: { databaseUrl: string } }>(
+    "/api/settings/database/migrate-to-pg",
+    { onRequest: [requireAdmin] },
+    async (request, reply) => {
+      const driver = getDbDriver();
+      if (driver === "postgres") {
+        return reply.code(400).send({
+          ok: false,
+          error: "Current database is already PostgreSQL. Migration is only supported from SQLite.",
+        });
+      }
+
+      const { databaseUrl } = request.body || {};
+      if (!databaseUrl) {
+        return reply.code(400).send({ ok: false, error: "PostgreSQL databaseUrl is required." });
+      }
+
+      const progress = getMigrationProgress();
+      if (progress.inProgress) {
+        return reply.code(409).send({
+          ok: false,
+          error: "Migration is already in progress.",
+          progress,
+        });
+      }
+
+      try {
+        // 1. Enable maintenance mode & drain requests per PRD §9.2
+        await setMaintenanceMode(true, { drain: true, timeoutMs: 60_000 });
+
+        // 2. Run copy pipeline
+        const result = await runCopyPipeline({
+          targetPgUrl: databaseUrl,
+          batchSize: 1000,
+        });
+
+        // 3. Turn off maintenance mode (cleans temp setting)
+        await setMaintenanceMode(false);
+
+        return {
+          ok: true,
+          message: "Migration to PostgreSQL completed successfully. Please restart the server to switch to PostgreSQL.",
+          result,
+        };
+      } catch (err: any) {
+        await setMaintenanceMode(false);
+        return reply.code(500).send({
+          ok: false,
+          error: err.message || "Migration failed",
+        });
+      }
+    },
+  );
+
+  // GET /api/settings/database/migrate-status
+  fastify.get(
+    "/api/settings/database/migrate-status",
+    { onRequest: [requireAdmin] },
+    async () => {
+      return getMigrationProgress();
     },
   );
 

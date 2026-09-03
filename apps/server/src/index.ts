@@ -63,12 +63,64 @@ fastify.addContentTypeParser(
   }
 );
 
-import { db } from "./db";
+import { db, initDb } from "./db";
 import { systemSettings } from "./db/schema";
 import { eq } from "drizzle-orm";
+import {
+  isFreshInstall,
+  hasUnattendedEnv,
+  performUnattendedSetup,
+  getSetupPending,
+  setSetupPending,
+} from "./services/setup";
+import setupRoutes from "./routes/setup";
+import {
+  ERR_SETUP_REQUIRED,
+  ERR_SETUP_REQUIRED_MESSAGE,
+  ERR_MAINTENANCE_ACTIVE,
+  ERR_MAINTENANCE_ACTIVE_MESSAGE,
+} from "@promptgate/shared";
+import {
+  isMaintenanceMode,
+  incrementInFlight,
+  decrementInFlight,
+} from "./services/maintenance";
 
 // We manage CORS manually via hooks for dynamic origin allowing
 fastify.addHook("onRequest", async (request, reply) => {
+  incrementInFlight();
+
+  // Maintenance mode gate per PRD §9.2
+  if (isMaintenanceMode()) {
+    const url = request.url.split("?")[0];
+    if (url.startsWith("/v1/") || url.startsWith("/v0/")) {
+      return reply
+        .header("Retry-After", "30")
+        .code(503)
+        .send({
+          error: {
+            message: ERR_MAINTENANCE_ACTIVE_MESSAGE,
+            type: "maintenance_active",
+            code: ERR_MAINTENANCE_ACTIVE,
+          },
+        });
+    }
+    // Block mutating admin requests except database migration / status endpoints
+    if (
+      request.method !== "GET" &&
+      request.method !== "HEAD" &&
+      request.method !== "OPTIONS"
+    ) {
+      if (!url.startsWith("/api/settings/database")) {
+        return reply.code(503).send({
+          error: "System maintenance in progress",
+          code: ERR_MAINTENANCE_ACTIVE,
+          message: ERR_MAINTENANCE_ACTIVE_MESSAGE,
+        });
+      }
+    }
+  }
+
   const origin = request.headers.origin;
   if (origin) {
     try {
@@ -151,6 +203,56 @@ fastify.addHook("onRequest", async (request, reply) => {
     );
     return reply.send();
   }
+
+  // Setup pending gate
+  if (getSetupPending()) {
+    const url = request.url.split("?")[0];
+
+    // Always allow setup APIs, health check, setup UI, and static assets
+    if (
+      url.startsWith("/api/setup") ||
+      url === "/api/health" ||
+      url.startsWith("/assets/") ||
+      url === "/setup" ||
+      url === "/favicon.ico"
+    ) {
+      return;
+    }
+
+    // Gateway /v1/* returns clear uninitialized error from packages/shared
+    if (url.startsWith("/v1/")) {
+      return reply.code(503).send({
+        error: {
+          message: ERR_SETUP_REQUIRED_MESSAGE,
+          type: "uninitialized_error",
+          code: ERR_SETUP_REQUIRED,
+        },
+      });
+    }
+
+    // Console and auth routes redirect to /setup with 307
+    if (
+      url === "/login" ||
+      url === "/console" ||
+      url === "/admin" ||
+      url.startsWith("/api/auth")
+    ) {
+      return reply.code(307).redirect("/setup");
+    }
+
+    // Other API requests return 503
+    if (url.startsWith("/api/")) {
+      return reply.code(503).send({
+        error: "Setup required",
+        code: ERR_SETUP_REQUIRED,
+        message: ERR_SETUP_REQUIRED_MESSAGE,
+      });
+    }
+  }
+});
+
+fastify.addHook("onResponse", async () => {
+  decrementInFlight();
 });
 
 fastify.register(cookie);
@@ -210,6 +312,7 @@ fastify.register(unifiedRoutes);
 fastify.register(eventsRoutes);
 fastify.register(groupsRoutes);
 fastify.register(openapiRoutes);
+fastify.register(setupRoutes);
 
 // Serve frontend in production
 fastify.register(fastifyStatic, {
@@ -229,28 +332,53 @@ fastify.setNotFoundHandler(async (request, reply) => {
 
 const start = async () => {
   try {
+    await initDb();
+
     const isPrimary =
       !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === "0";
 
-    if (isPrimary) {
-      await bootstrap();
-    } else {
-      // Poll and wait for primary instance to complete migrations
-      let migrated = false;
-      for (let i = 0; i < 15; i++) {
-        migrated = await isMigrationCompleted();
-        if (migrated) break;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+    const fresh = await isFreshInstall();
+
+    if (fresh) {
+      if (hasUnattendedEnv()) {
+        console.log(
+          "[PromptGate Bootstrap] Unattended setup environment detected. Initializing system...",
+        );
+        await performUnattendedSetup();
+        setSetupPending(false);
+      } else {
+        setSetupPending(true);
+        console.log(
+          "[PromptGate] Fresh installation detected. Setup wizard is required.",
+        );
+        console.log(
+          `[PromptGate] Open http://${host}:${port}/setup to finish installation.`,
+        );
       }
-      if (!migrated) {
-        throw new Error("Database migrations did not complete on primary instance within timeout.");
+    } else {
+      setSetupPending(false);
+      if (isPrimary) {
+        await bootstrap();
+      } else {
+        // Poll and wait for primary instance to complete migrations
+        let migrated = false;
+        for (let i = 0; i < 15; i++) {
+          migrated = await isMigrationCompleted();
+          if (migrated) break;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        if (!migrated) {
+          throw new Error(
+            "Database migrations did not complete on primary instance within timeout.",
+          );
+        }
       }
     }
 
     await fastify.listen({ port, host });
     fastify.log.info(`Server listening on ${host}:${port}`);
 
-    if (isPrimary) {
+    if (isPrimary && !getSetupPending()) {
       logAction({
         level: "INFO",
         code: "system.started",

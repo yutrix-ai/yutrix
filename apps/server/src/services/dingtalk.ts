@@ -148,6 +148,13 @@ export async function triggerDingTalkPush(isManual: boolean = false) {
   await sendDingTalkMessage(webhook, secret, report);
 }
 
+export function stopDingTalkJobs() {
+  if (currentTask) {
+    currentTask.stop();
+    currentTask = null;
+  }
+}
+
 export async function scheduleDingTalkJobs() {
   if (currentTask) {
     currentTask.stop();

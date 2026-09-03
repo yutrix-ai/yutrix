@@ -49,7 +49,9 @@ describe("Vision and Routing TDD Integration Tests", () => {
       try { fs.unlinkSync(resolvedPath + "-shm"); } catch (e) {}
     }
 
-    ({ db } = await import("../src/db"));
+    const { db: importedDb, initDb } = await import("../src/db");
+    await initDb();
+    db = importedDb;
     ({ bootstrap } = await import("../src/bootstrap"));
     ({
       apiKeys,

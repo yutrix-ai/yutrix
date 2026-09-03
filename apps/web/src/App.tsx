@@ -9,6 +9,7 @@ import "./index.css";
 
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import Setup from "./pages/Setup";
 import ApiKeys from "./pages/ApiKeys";
 import Providers from "./pages/Providers";
 import Routes from "./pages/Routes";
@@ -47,14 +48,15 @@ function App() {
     );
   }
 
-  const isAuthPage = location === "/login";
+  const isSetupPage = location === "/setup";
+  const isAuthPage = location === "/login" || isSetupPage;
 
   if (!user && !isAuthPage) {
     setLocation("/login");
     return null;
   }
 
-  if (user && isAuthPage) {
+  if (user && isAuthPage && !isSetupPage) {
     setLocation("/");
     return null;
   }
@@ -63,6 +65,7 @@ function App() {
     if (isAuthPage) {
       return (
         <Switch>
+          <Route path="/setup" component={Setup} />
           <Route path="/login" component={Login} />
         </Switch>
       );

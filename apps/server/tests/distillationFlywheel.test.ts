@@ -9,7 +9,8 @@ process.env.DB_FILE = testDb;
 describe("distillation flywheel integration", () => {
   beforeAll(async () => {
     const { migrate } = await import("drizzle-orm/libsql/migrator");
-    const { db, initAutoMigrations } = await import("../src/db");
+    const { db, initAutoMigrations, initDb } = await import("../src/db");
+    await initDb();
     const { chatLogs, users } = await import("../src/db/schema");
     const migrationsFolder = path.resolve(process.cwd(), "drizzle");
     await migrate(db, { migrationsFolder });

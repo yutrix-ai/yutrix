@@ -4,7 +4,7 @@
   <img src="./apps/web/public/favicon.svg" width="120" alt="Yutrix Logo" />
 </p>
 
-[English README](./README.md)
+[English README](./README.md) | [Caddy 部署指南](./docs/deployment-caddy.md) | [Docker Compose (PostgreSQL) 示例](./docker-compose.postgres.example.yml)
 
 Yutrix（驭算，前身为 PromptGate）是一个轻量级 LLM 协议网关与管理控制台，用于在自有域名下统一管理 API Key、供应商、路由、提示词策略、并发控制、降级转发、Token 统计与实时日志。
 
@@ -97,7 +97,7 @@ Yutrix 的 Logo 采用了极具现代感的拱门（Gate）造型，中央悬浮
   - 跨客户端通用（curl、Claude Code、Cursor 等），因为匹配基于提取后的用户真实输入，而非完整请求体
   - 缓存管理页面可查看所有条目、命中次数、最后命中时间，并支持删除
   - 缓存命中的回复在审计日志中标记「缓存命中」徽章，并按正常策略合并会话
-- **系统信息与数据库管理**：在设置页面新增了全面的系统信息看板，可实时查看应用、内存及宿主机的详细运行状态。同时新增了 SQLite 数据库文件信息展示与备份下载功能。
+- **系统信息与数据库管理**：在设置页面新增了全面的系统信息看板，可实时查看应用、内存及宿主机的详细运行状态。同时支持数据库状态展示（SQLite / PostgreSQL）、SQLite 备份安全下载，以及从 SQLite 平滑一键迁移到 PostgreSQL。
 - **审计日志 UI 重构与 Markdown 支持**：全新设计的 LLM 审计日志界面，移除了中间栏，新增了交互式对话迷你地图（Minimap）、持久化自动滚动开关，并为 AI 回复添加了轻量级 Markdown 渲染，极大优化了长对话的阅读体验。
 - **Thinking 模型兼容性支持**：在网关层增加了对 OpenAI 兼容格式的“思考型”模型（如 DeepSeek-R1、Qwen）的支持。Yutrix 现会在将流式或非流式响应发送给客户端前，自动剥离 `reasoning_content` 字段，以防止旧版 LLM 客户端崩溃，同时在内部审计日志中完整保留该思考过程。
 - **LLM 审计日志与智能会话合并**：利用强大的四级降级策略系统，智能地将多轮对话和工具调用循环（例如来自 Claude Code, Cursor, Augment Code 等自动助手）合并为连贯的会话。同时新增了**免审计用户**功能，可为特定高权限用户完全豁免日志记录。
@@ -506,7 +506,7 @@ Yutrix 不直接暴露公网端口
 * Fastify
 * React
 * Vite
-* SQLite
+* SQLite（默认内置） / PostgreSQL（14+ 可选）
 * Drizzle ORM
 * pnpm workspace
 * PM2
@@ -518,7 +518,7 @@ Yutrix 不直接暴露公网端口
 Node.js 24.16.x LTS
 PM2
 Caddy
-SQLite
+SQLite（默认）或 PostgreSQL 14+
 ```
 
 ---
@@ -529,7 +529,7 @@ SQLite
 
 > 感谢 [Arthur](https://github.com/arthur-studio) 提供 Dockerfile 和启动命令。
 
-三条命令即可启动：
+三条命令即可使用默认的 SQLite 单容器启动：
 
 ```bash
 mkdir -p /opt/promptgate/data
@@ -557,7 +557,31 @@ docker run -d \
 docker logs -f yutrix
 ```
 
-首次启动会在日志中打印管理员用户名、密码和邀请码。
+#### 首次启动与配置向导（Setup Wizard）
+
+- **Web 设置向导（`/setup`）**：在未预设管理员账号的新安装环境下，Yutrix 启动后将进入向导模式并在终端打印：
+  ```text
+  [PromptGate] Fresh installation detected. Open http://<host>:3000/setup to finish installation.
+  ```
+  管理员在浏览器中访问 `/setup` 即可按步骤完成设置：选择数据库类型（SQLite 或 PostgreSQL 并测试连通性）、设置管理员用户名与密码（bcrypt 加密存储，绝不在日志输出明文密码）、配置主域名。
+- **无人值守模式（环境变量）**：对于容器化自动化运维，可通过环境变量跳过设置向导直接启动：
+  - `YUTRIX_ADMIN_USER=admin`
+  - `YUTRIX_ADMIN_PASSWORD=your_secure_password`
+  - `YUTRIX_MAIN_DOMAIN=gateway.example.com`
+  - `PROMPTGATE_SECRET=$(openssl rand -hex 32)`
+  - （可选）`DATABASE_URL=postgres://user:password@host:5432/dbname`（直接使用 PostgreSQL 启动）。
+- **已有数据平滑升级**：既有 SQLite 实例在升级更新时保持原有逻辑，绝不进入向导，不写新配置文件，管理员账号与路由规则无缝继续工作。
+
+#### Docker Compose 与 PostgreSQL（可选方案）
+
+对于生产环境希望使用独立 PostgreSQL 16 数据库的团队，可参考 [Docker Compose PostgreSQL 示例配置](./docker-compose.postgres.example.yml)：
+
+```bash
+cp docker-compose.postgres.example.yml docker-compose.yml
+# 修改 docker-compose.yml 中的密码和密钥
+docker compose up -d
+docker compose logs -f yutrix
+```
 
 #### 镜像标签
 
@@ -607,15 +631,7 @@ pm2 start ecosystem.config.cjs --update-env
 pm2 logs promptgate-server
 ```
 
-首次启动会在日志中打印：
-
-```text
-管理员用户名
-管理员初始密码
-邀请码
-```
-
-请登录后立即修改管理员密码。
+首次在全新环境启动时，访问 `http://127.0.0.1:3001/setup` 完成图形化安装向导，或在 `.env` 中配置无人值守环境变量（`YUTRIX_ADMIN_USER`、`YUTRIX_ADMIN_PASSWORD`、`YUTRIX_MAIN_DOMAIN`、`PROMPTGATE_SECRET`）。
 
 ---
 
@@ -635,7 +651,7 @@ Node.js 24.16.x LTS
 pnpm
 PM2
 Caddy
-SQLite
+SQLite（默认内置）或 PostgreSQL 14+（可选）
 ```
 
 ### 安装 Node.js 24.16
@@ -759,6 +775,60 @@ Yutrix 强依赖 Host 做多租户与路由匹配。
 
 ---
 
+## 数据库配置与迁移（SQLite 与 PostgreSQL）
+
+Yutrix 支持两种关系型数据库存储方案：
+- **SQLite**（默认）：内置轻量级数据库，数据文件默认位于 `data/promptgate.sqlite`（可通过环境变量 `DB_FILE` 修改）。适用于绝大多数单实例部署与快速启动。
+- **PostgreSQL 14+**（可选）：生产级客户端-服务端数据库，通过 `DATABASE_URL`（如 `postgres://user:pass@host:5432/dbname`）或 `data/yutrix.config.json` 进行配置。经 PostgreSQL 16 验证。
+
+### 配置加载优先级
+数据库配置按以下优先级生效：
+1. **环境变量**：`DATABASE_URL`（若设置则强制为 PostgreSQL）或 `DB_FILE`（SQLite 文件路径）。
+2. **持久化配置文件**：`data/yutrix.config.json`（由 `/setup` 向导或数据库迁移流水线生成，权限设为 `0600`）。
+3. **内置默认值**：SQLite 驱动，文件路径 `data/promptgate.sqlite`。
+
+### 从 SQLite 平滑迁移至 PostgreSQL
+现有运行在 SQLite 上的生产实例可无缝复制迁移至 PostgreSQL：
+
+1. **通过控制台界面（推荐）**：
+   - 登录管理后台，进入 **系统设置 → 数据库**。
+   - 输入目标 PostgreSQL 连接串，点击 **测试连接** 确保连通。
+   - 点击 **迁移到 PostgreSQL**。
+   - Yutrix 自动执行以下操作：
+     - 进入维护模式：网关请求（`/v1/*` 与 `/v0/*`）返回 `503 Service Unavailable`（带 `Retry-After: 30` 响应头），同时拦截非搬家管理端写入操作（路由 `enabled` 状态绝不修改）。
+     - 优雅排空正在处理的在途请求（默认超时 60 秒）。
+     - 执行 PostgreSQL 架构迁移（自动创建表结构与索引）。
+     - 批量复制所有数据表（自动转换 boolean、秒级时间戳，原样保持密文与 JSON 文本，剔除临时维护状态）。
+     - 校验目标表行数一致性与管理员账号哈希有效性。
+     - 将 `driver: "postgres"` 与连接串写入 `data/yutrix.config.json`。
+     - 退出维护模式。
+     - **源 SQLite 文件绝不删除，原样保留作为兜底备份。**
+   - 提示管理员重启 Yutrix 进程或容器（如 `pm2 restart promptgate-server` 或 `docker restart yutrix`）完成加载。
+
+2. **通过命令行 CLI**：
+   也可在离线维护窗口使用命令行进行迁移：
+   ```bash
+   pnpm --filter @promptgate/server db:copy --to-url postgres://user:password@host:5432/yutrix
+   ```
+
+> [!WARNING]
+> - **不支持 PG → SQLite 反向迁移**：迁移仅支持从 SQLite 单向迁往 PostgreSQL。
+> - **升级绝不自动搬迁数据**：日常版本升级仅会自动执行当前引擎的增量迁移，绝不会擅自移动数据。
+> - **必须保留同一 `PROMPTGATE_SECRET`**：加密存储的上游供应商 API Key 依赖该密钥，迁移前后切勿更改。
+
+### 数据库备份
+- **SQLite**：在配置了 `DB_BACKUP_PASSWORD` 后，管理员可直接在控制台页面（**设置 → 数据库**）下载备份文件。
+- **PostgreSQL**：在 PostgreSQL 模式下控制台下载自动关闭，请使用官方原生工具导出：
+  ```bash
+  pg_dump -Fc -h localhost -U yutrix -d yutrix > yutrix_backup.dump
+  ```
+
+### 应急运维说明（pgloader）
+对于包含数千万行历史请求日志的大型部署，资深运维可在 Yutrix 完成 PG 架构迁移（`migratePg`）后，使用 `pgloader` 的 `DATA ONLY` 模式作为离线批量导入加速手段。
+*注意：`pgloader` 仅为外部应急运维工具，不是产品依赖，也不会内置在 UI 中。严禁在 pgloader 中开启 `create tables`（以免生成与 Yutrix 不兼容的字段类型）。*
+
+---
+
 ## 环境变量
 
 `.env` 示例：
@@ -768,7 +838,12 @@ NODE_ENV=production
 HOST=127.0.0.1
 PORT=3001
 
+# 数据库配置（二选一）：
+# 1. 默认 SQLite
 DB_FILE=/opt/promptgate/data/promptgate.sqlite
+# 2. 或可选 PostgreSQL
+# DATABASE_URL=postgres://user:password@localhost:5432/yutrix
+
 PROMPTGATE_SECRET=change-me
 
 LOG_LEVEL=info
@@ -779,26 +854,29 @@ NODE_INTERPRETER=/home/user/.nvm/versions/node/v24.16.0/bin/node
 
 ### 变量说明
 
-| 变量                | 默认值                    | 说明                 |
-| ----------------- | ---------------------- | ------------------ |
-| NODE_ENV          | production             | 运行环境               |
-| HOST              | 127.0.0.1              | 监听地址               |
-| PORT              | 3000                   | 监听端口               |
-| DB_FILE           | data/promptgate.sqlite | SQLite 文件路径        |
-| PROMPTGATE_SECRET | 无                      | 用于加密供应商上游 API Key  |
-| DB_BACKUP_PASSWORD| 无                      | 下载数据库备份时所需的验证密钥    |
-| LOG_LEVEL         | info                   | 日志等级               |
-| ACTION_LOG_FILE   | data/action.log        | action log 文件      |
-| NODE_INTERPRETER  | node                   | PM2 使用的 Node 可执行文件 |
+| 变量                | 默认值                    | 说明                                      |
+| ----------------- | ---------------------- | --------------------------------------- |
+| NODE_ENV          | production             | 运行环境                                    |
+| HOST              | 127.0.0.1              | 监听地址                                    |
+| PORT              | 3000                   | 监听端口                                    |
+| DATABASE_URL      | 无                      | PostgreSQL 连接串（如设置则强制启用 PostgreSQL）     |
+| DB_FILE           | data/promptgate.sqlite | SQLite 文件路径（SQLite 模式下生效）               |
+| PROMPTGATE_SECRET | 无                      | 用于加密供应商上游 API Key（生产环境必填）               |
+| DB_BACKUP_PASSWORD| 无                      | 下载 SQLite 数据库备份时所需的验证密钥（SQLite 模式下生效） |
+| LOG_LEVEL         | info                   | 日志等级                                    |
+| ACTION_LOG_FILE   | data/action.log        | action log 文件                           |
+| NODE_INTERPRETER  | node                   | PM2 使用的 Node 可执行文件                      |
+| YUTRIX_ADMIN_USER | 无                      | 无人值守初始化：初始管理员用户名                        |
+| YUTRIX_ADMIN_PASSWORD| 无                   | 无人值守初始化：初始管理员密码                         |
+| YUTRIX_MAIN_DOMAIN| 无                      | 无人值守初始化：网关主域名                           |
 
 生产环境必须配置 `PROMPTGATE_SECRET`。
 
 ### 数据库备份安全配置
 
 为了满足企业安全合规要求并实施**职责分离 (Separation of Duties, SoD)** 原则，Yutrix 将应用配置管理与原始敏感数据的所有权进行解耦：
-* 默认情况下，数据库备份下载功能是**禁用的**（控制台中的密码框与下载按钮将被隐藏，且直接请求 API 会返回 `403 Forbidden`）。
-* 要启用该功能，请配置 `DB_BACKUP_PASSWORD` 环境变量（或在 `.env` 文件中设置）。
-* 启用后，管理员必须在控制台界面中输入正确的验证密码才可以激活下载按钮并导出 SQLite 备份文件。
+* 在 SQLite 模式下：数据库备份下载功能默认**禁用**。要启用该功能，请配置 `DB_BACKUP_PASSWORD` 环境变量（64位 hex 密钥）。管理员必须在控制台界面中输入正确的验证密码才可以激活下载按钮并导出 SQLite 备份文件。
+* 在 PostgreSQL 模式下：控制台禁用原始文件下载，请运维人员使用标准的 `pg_dump` 命令进行集中备份。
 
 生成方式：
 
@@ -810,28 +888,12 @@ openssl rand -hex 32
 
 ## 首次启动
 
-首次启动时 Yutrix 会自动：
+首次在全新环境启动时，可在浏览器中访问 `http://<host>:<port>/setup` 完成图形化安装向导，或在启动前配置无人值守环境变量（`YUTRIX_ADMIN_USER`、`YUTRIX_ADMIN_PASSWORD`、`YUTRIX_MAIN_DOMAIN`、`PROMPTGATE_SECRET`）。
 
-1. 初始化数据库；
-2. 创建管理员账号；
-3. 创建邀请码；
-4. 在日志中打印管理员初始密码和邀请码。
-
-查看日志：
-
-```bash
-pm2 logs promptgate-server
-```
-
-你会看到类似：
-
-```text
-管理员用户名: admin
-管理员密码: xxxxxxxxxxxxxxxx
-邀请码: pg-inv-xxxxxxxxxxxx
-```
-
-请妥善保存并立即修改管理员密码。
+向导会自动：
+1. 引导选择数据库引擎（SQLite 或 PostgreSQL）并验证连通性；
+2. 创建初始管理员账号（密码使用 bcrypt 加密，绝不在标准输出中打印明文密码）；
+3. 生成并持久化系统配置文件 `data/yutrix.config.json`。
 
 ---
 
@@ -855,7 +917,10 @@ docker rm yutrix
 # 使用上文相同 docker run 命令，并保持同一个 /app/data 挂载
 ```
 
-*注意：数据库的表结构更新（Migrations）会在应用每次启动时自动安全地执行，无需手动干预。* 本次升级切换到策略路由：新增路由级 `strategyRoutingEnabled` / `strategyRoutingRules`，移除旧 LLM 模型交接字段和供应商模型的路由指引字段，并删除旧路由缓存表。既有固定路由会保持策略路由关闭状态继续工作，部署后可立即在路由编辑页配置策略。
+*注意：当前所用数据库引擎（SQLite 或 PostgreSQL）的表结构更新（Migrations）会在应用每次启动时自动安全地执行，无需手动干预。* 本次升级切换到策略路由：新增路由级 `strategyRoutingEnabled` / `strategyRoutingRules`，移除旧 LLM 模型交接字段和供应商模型的路由指引字段，并删除旧路由缓存表。既有固定路由会保持策略路由关闭状态继续工作，部署后可立即在路由编辑页配置策略。
+
+> [!IMPORTANT]
+> **升级绝不会自动将 SQLite 数据迁移至 PostgreSQL**：系统升级后仍保持使用原有 SQLite 数据文件。如需切换至 PostgreSQL，请参考上方[数据库配置与迁移指南](#数据库配置与迁移sqlite-与-postgresql)。
 
 ---
 
@@ -1318,7 +1383,7 @@ Yutrix 监听 127.0.0.1
 Caddy 提供 HTTPS
 Caddy 保留 Host header
 不要直接暴露 Yutrix 端口
-定期备份 SQLite 数据库
+定期备份数据库（SQLite 或 PostgreSQL）
 妥善保存 PROMPTGATE_SECRET
 建议使用非特权用户（如 yutrix）运行服务，不要使用 root 用户
 ```
@@ -1370,7 +1435,7 @@ Yutrix/
 │   └── web/                    # React + Vite 前端
 ├── packages/
 │   └── shared/                 # 共享类型和校验
-├── data/                       # SQLite 数据库和 action.log
+├── data/                       # SQLite 数据库（若使用 SQLite）、yutrix.config.json 与 action.log
 ├── logs/                       # 可选日志目录
 ├── docs/                       # 部署、测试、回归文档
 ├── scripts/                    # 安装 / 检查脚本

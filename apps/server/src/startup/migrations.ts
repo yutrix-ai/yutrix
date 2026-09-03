@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { db, initDb, getDbDriver, client } from "../db";
 import { sql } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
@@ -318,6 +318,29 @@ export async function preSeedMigrations() {
 
 export async function isMigrationCompleted(): Promise<boolean> {
   try {
+    await initDb();
+    const driver = getDbDriver();
+
+    if (driver === "postgres") {
+      const migrationsFolder = path.resolve(
+        process.cwd(),
+        process.cwd().endsWith("server") ? "./drizzle/pg" : "apps/server/drizzle/pg",
+      );
+      const journalPath = path.join(migrationsFolder, "meta/_journal.json");
+      if (!fs.existsSync(journalPath)) {
+        return false;
+      }
+      const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+      const expectedCount = journal.entries?.length || 0;
+
+      const res = await (client as any).query(
+        "SELECT count(*) as count FROM drizzle.__drizzle_migrations;"
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const actualCount = Number(res.rows[0]?.count ?? 0);
+
+      return actualCount >= expectedCount;
+    }
+
     const migrationsFolder = path.resolve(
       process.cwd(),
       process.cwd().endsWith("server") ? "./drizzle" : "apps/server/drizzle",

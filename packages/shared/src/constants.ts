@@ -19,3 +19,11 @@ export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
  * thinking pauses after the first ping/role/thinking token.
  */
 export const DEFAULT_PROVIDER_STREAM_TIMEOUT_MS = 300_000;
+
+export const ERR_SETUP_REQUIRED = "SETUP_REQUIRED";
+export const ERR_SETUP_REQUIRED_MESSAGE =
+  "System is not initialized. Please complete setup at /setup first.";
+export const ERR_MAINTENANCE_ACTIVE = "MAINTENANCE_ACTIVE";
+export const ERR_MAINTENANCE_ACTIVE_MESSAGE =
+  "System is undergoing database maintenance. Please retry later.";
+

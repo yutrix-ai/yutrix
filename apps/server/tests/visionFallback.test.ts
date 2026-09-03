@@ -46,7 +46,9 @@ describe("Vision Fallback Integration Tests", () => {
       try { fs.unlinkSync(resolvedPath + "-wal"); } catch (e) {}
     }
 
-    db = (await import("../src/db")).db;
+    const { db: importedDb, initDb } = await import("../src/db");
+    await initDb();
+    db = importedDb;
     bootstrap = (await import("../src/bootstrap")).bootstrap;
     ({
       apiKeys,

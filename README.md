@@ -13,7 +13,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-f69220.svg)](https://pnpm.io/)
 
-[中文文档 / Chinese documentation](./README.zh-CN.md) | [Caddy deployment guide](./docs/deployment-caddy.md)
+[中文文档 / Chinese documentation](./README.zh-CN.md) | [Caddy deployment guide](./docs/deployment-caddy.md) | [Docker Compose (PostgreSQL) Example](./docker-compose.postgres.example.yml)
 
 Yutrix focuses on the gateway layer of LLM applications: one entry point, one authentication layer, one routing system, one logging surface, and one fallback path. It is not trying to reinvent a full model platform.
 
@@ -87,7 +87,7 @@ The Yutrix logo features a modern arch or gateway with a central glowing code sp
   - Works across all clients (curl, Claude Code, Cursor, etc.) because matching is based on the extracted user input, not the full request body
   - Cache management page to view all entries, hit counts, last hit time, and delete entries
   - Cached responses are marked with a "Cache Hit" badge in audit logs and follow the normal session merging behavior
-- **System Information & Database Management**: Added a comprehensive system information panel to the Settings page, displaying application, memory, and host machine details. Also introduced the ability to view SQLite database file information and download backups directly from the admin console.
+- **System Information & Database Management**: Added a comprehensive system information panel to the Settings page, displaying application, memory, and host machine details. Also introduced the ability to view database status (SQLite or PostgreSQL), download SQLite backups directly from the admin console, and seamlessly migrate from SQLite to PostgreSQL.
 - **Audit Logs UI Redesign & Markdown Support**: Redesigned the LLM Audit Logs interface with a new interactive minimap, persistent auto-scroll toggles, and lightweight markdown rendering for assistant outputs, making it much easier to review long conversations.
 - **Thinking Models Compatibility**: Added gateway-level support for OpenAI-compatible "Thinking" models (e.g., DeepSeek-R1, Qwen). Yutrix now automatically strips `reasoning_content` from both stream and non-stream responses before sending them to the client, preventing naive LLM clients from crashing while still preserving the content for internal audit logs.
 - **LLM Audit Logs & Smart Session Merging**: Intelligently merges multi-turn and tool-call loops (e.g., from Claude Code, Cursor, Augment Code) into cohesive sessions using a robust 4-priority fallback system. Also includes an **Audit Exemption** feature to completely bypass logging for specific privileged users.
@@ -318,7 +318,7 @@ Yutrix is a single service:
 - admin API;
 - gateway API;
 - realtime logs;
-- SQLite-backed persistence.
+- SQLite-backed persistence (default) or optional PostgreSQL (14+).
 
 Recommended:
 
@@ -334,7 +334,7 @@ Recommended:
 
 > Thanks to [Arthur](https://github.com/arthur-studio) for providing the Dockerfile and startup commands.
 
-Three commands to get started:
+Three commands to get started with the default SQLite setup:
 
 ```bash
 mkdir -p /opt/promptgate/data
@@ -362,7 +362,31 @@ docker run -d \
 docker logs -f yutrix
 ```
 
-First startup prints admin username, password, and invite code.
+#### First Startup & Setup Wizard
+
+- **Web Setup Wizard (`/setup`)**: On a fresh install without preset admin credentials, Yutrix starts in setup mode and outputs:
+  ```text
+  [PromptGate] Fresh installation detected. Open http://<host>:3000/setup to finish installation.
+  ```
+  Open `/setup` in your browser to choose your database engine (SQLite or PostgreSQL), set your admin username and password, and configure your primary gateway domain.
+- **Unattended Mode (Environment Variables)**: To skip the web setup wizard and bootstrap directly into production, provide the following environment variables:
+  - `YUTRIX_ADMIN_USER=admin`
+  - `YUTRIX_ADMIN_PASSWORD=your_secure_password`
+  - `YUTRIX_MAIN_DOMAIN=gateway.example.com`
+  - `PROMPTGATE_SECRET=$(openssl rand -hex 32)`
+  - (Optional) `DATABASE_URL=postgres://user:password@host:5432/dbname` (boots directly with PostgreSQL).
+- **Existing Deployments (Seamless Upgrade)**: Existing installations with data in SQLite continue working seamlessly. Upgrades never enter `/setup`, never rewrite your config, and preserve all existing admin accounts and routes.
+
+#### Docker Compose with PostgreSQL (Optional)
+
+For production deployments requiring PostgreSQL 16 instead of embedded SQLite, see the [Docker Compose PostgreSQL Example](./docker-compose.postgres.example.yml):
+
+```bash
+cp docker-compose.postgres.example.yml docker-compose.yml
+# Adjust passwords and secrets in docker-compose.yml
+docker compose up -d
+docker compose logs -f yutrix
+```
 
 #### Image tags
 
@@ -377,7 +401,7 @@ First startup prints admin username, password, and invite code.
 
 - Node.js `>= 24.16.0`
 - pnpm
-- SQLite
+- SQLite (default, zero configuration) or PostgreSQL 14+ (optional)
 
 #### Install
 
@@ -408,13 +432,7 @@ pm2 start ecosystem.config.cjs --update-env
 pm2 logs promptgate-server
 ```
 
-On first startup, Yutrix initializes the SQLite database and prints:
-
-- the initial admin username;
-- the initial admin password;
-- an invite code.
-
-Change the admin password after first login.
+On first startup of a fresh installation, visit `http://127.0.0.1:3001/setup` to finish the setup wizard, or supply the unattended environment variables (`YUTRIX_ADMIN_USER`, `YUTRIX_ADMIN_PASSWORD`, `YUTRIX_MAIN_DOMAIN`, `PROMPTGATE_SECRET`).
 
 ### Upgrading
 
@@ -436,7 +454,10 @@ docker rm yutrix
 # run the same docker run command as above, with the same /app/data volume
 ```
 
-*Note: Database migrations (schema updates) are applied automatically when the application starts up.* This release moves routing to Strategy Routing. The migration adds route-level `strategyRoutingEnabled` / `strategyRoutingRules`, removes the old LLM handoff columns and per-model routing guideline column, and drops the old routing cache table. Existing fixed routes continue to work with Strategy Routing disabled until you configure it.
+*Note: Database migrations (schema updates) for the currently active database engine (SQLite or PostgreSQL) are applied automatically when the application starts up.* This release moves routing to Strategy Routing. The migration adds route-level `strategyRoutingEnabled` / `strategyRoutingRules`, removes the old LLM handoff columns and per-model routing guideline column, and drops the old routing cache table. Existing fixed routes continue to work with Strategy Routing disabled until you configure it.
+
+> [!IMPORTANT]
+> **No Automatic SQLite → PostgreSQL Data Migration on Upgrade**: Upgrades will NOT automatically move existing SQLite data to PostgreSQL. Yutrix continues using SQLite by default. If you wish to migrate to PostgreSQL, see [Database Configuration & Migration](#database-configuration--migration-sqlite--postgresql).
 
 ## Example Requests
 
@@ -539,6 +560,58 @@ server {
 
 See [docs/deployment-caddy.md](./docs/deployment-caddy.md) for more details.
 
+## Database Configuration & Migration (SQLite & PostgreSQL)
+
+Yutrix supports two relational database backends:
+- **SQLite** (default): Embedded, zero-configuration database stored at `data/promptgate.sqlite` (configurable via `DB_FILE`). Recommended for most single-instance deployments and quick starts.
+- **PostgreSQL 14+** (optional): Production client-server database configured via `DATABASE_URL` (e.g. `postgres://user:pass@host:5432/dbname`) or `data/yutrix.config.json`. Tested on PostgreSQL 16.
+
+### Configuration Precedence
+Database settings are loaded in the following order of priority:
+1. **Environment Variables**: `DATABASE_URL` (if set, forces driver to PostgreSQL) or `DB_FILE` (for SQLite).
+2. **Persistent Config File**: `data/yutrix.config.json` (written by the `/setup` wizard or migration pipeline, permissions `0600`).
+3. **Built-in Defaults**: SQLite with database file at `data/promptgate.sqlite`.
+
+### Migration from SQLite to PostgreSQL
+Existing deployments running on SQLite can be copied to PostgreSQL with zero data loss:
+
+1. **Via Web Console (Recommended)**:
+   - Go to **Settings → Database** in the Admin Console.
+   - Enter your target PostgreSQL connection string and click **Test Connection**.
+   - Click **Migrate to PostgreSQL**.
+   - Yutrix automatically:
+     - Enters maintenance mode: gateway calls to `/v1/*` and `/v0/*` return `503 Service Unavailable` with `Retry-After: 30`, and non-migration admin writes are temporarily blocked (route `enabled` states remain unchanged).
+     - Gracefully drains in-flight requests (default 60 seconds).
+     - Applies PostgreSQL schema migrations.
+     - Batch-copies all tables in chunks (converting booleans, normalizing unix timestamps, preserving raw JSON text and encrypted keys byte-for-byte, and filtering out temporary maintenance keys).
+     - Verifies table row counts and admin credentials.
+     - Writes `driver: "postgres"` and the database URL into `data/yutrix.config.json`.
+     - Exits maintenance mode.
+     - **Leaves the source SQLite database file completely intact as a rollback backup.**
+   - Restart the Yutrix process or container (`pm2 restart promptgate-server` or `docker restart yutrix`) to boot onto PostgreSQL.
+
+2. **Via CLI**:
+   Run the copy pipeline offline via the CLI:
+   ```bash
+   pnpm --filter @promptgate/server db:copy --to-url postgres://user:password@host:5432/yutrix
+   ```
+
+> [!WARNING]
+> - **No PG → SQLite Reverse Migration**: Migration is one-way from SQLite to PostgreSQL. Reverse migration is **NOT** supported.
+> - **No Automatic Data Move on Upgrade**: Standard updates only apply schema migrations for the currently active database engine; they will never move your data behind the scenes.
+> - **Preserve `PROMPTGATE_SECRET`**: Encrypted upstream provider credentials depend on `PROMPTGATE_SECRET`. Never change this secret during or after migration.
+
+### Database Backups
+- **SQLite**: Administrators can download SQLite database backups directly from the Web Console (**Settings → Database**) when `DB_BACKUP_PASSWORD` is configured.
+- **PostgreSQL**: Web download is intentionally disabled when running on PostgreSQL. Use standard PostgreSQL tooling (e.g., `pg_dump`):
+  ```bash
+  pg_dump -Fc -h localhost -U yutrix -d yutrix > yutrix_backup.dump
+  ```
+
+### Operational Note: Large Tables & pgloader
+For emergency ops or massive historical request log tables (millions of rows), `pgloader` with `DATA ONLY` can be used as an offline batch loader *after* Yutrix has generated the target PostgreSQL schema tables via `migratePg`.
+*Note: `pgloader` is an external operations tool, NOT a product dependency, and is not included in the UI. Never run `pgloader` with table creation enabled (`create tables` is prohibited as it creates incompatible schema types).*
+
 ## Configuration
 
 Important environment variables:
@@ -548,21 +621,24 @@ Important environment variables:
 | `NODE_ENV` | `production` | Runtime environment |
 | `HOST` | `127.0.0.1` | Listen address |
 | `PORT` | `3000` | Listen port |
-| `DB_FILE` | `data/promptgate.sqlite` | SQLite database path |
-| `PROMPTGATE_SECRET` | none | Secret used to encrypt upstream provider API keys |
-| `DB_BACKUP_PASSWORD` | none | Password required to authorize database downloads |
+| `DATABASE_URL` | none | PostgreSQL connection string (`postgres://...`). If set, activates PostgreSQL driver |
+| `DB_FILE` | `data/promptgate.sqlite` | SQLite database path (used when driver is SQLite) |
+| `PROMPTGATE_SECRET` | none | Secret used to encrypt upstream provider API keys (required in production) |
+| `DB_BACKUP_PASSWORD` | none | Password required to authorize database downloads in SQLite mode |
 | `LOG_LEVEL` | `info` | Server log level |
 | `ACTION_LOG_FILE` | `data/action.log` | Action log file |
 | `NODE_INTERPRETER` | `node` | Node executable used by PM2 |
+| `YUTRIX_ADMIN_USER` | none | Unattended setup: initial admin username |
+| `YUTRIX_ADMIN_PASSWORD` | none | Unattended setup: initial admin password |
+| `YUTRIX_MAIN_DOMAIN` | none | Unattended setup: primary gateway domain |
 
 `PROMPTGATE_SECRET` is required in production. Keep it stable and backed up; losing it can make encrypted provider credentials unrecoverable.
 
 ### Database Backup Security Configuration
 
 For security compliance and to enforce **Separation of Duties (SoD)**, Yutrix decouples application administration from raw database custody:
-* By default, database backup downloading is **disabled** (the download button and input field are hidden, and API calls return `403 Forbidden`).
-* To enable this feature, define the `DB_BACKUP_PASSWORD` environment variable (or configure it in your `.env` file).
-* Once configured, administrators must enter the correct verification password in the console UI to activate and download the SQLite backup file.
+* When running on SQLite: database backup downloading is **disabled** by default. To enable it, set `DB_BACKUP_PASSWORD` (64-character hex string). Administrators must enter this password in the console UI to download the SQLite backup file.
+* When running on PostgreSQL: web backup download is disabled; operators should use `pg_dump`.
 
 ## Project Structure
 
@@ -573,7 +649,7 @@ Yutrix/
 │   └── web/             # React + Vite admin console
 ├── packages/
 │   └── shared/          # Shared types and validation
-├── data/                # SQLite database and action.log
+├── data/                # SQLite database (if SQLite), yutrix.config.json, and action.log
 ├── docs/                # Deployment and regression docs
 ├── scripts/             # Operational scripts
 ├── ecosystem.config.cjs # PM2 configuration

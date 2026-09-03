@@ -39,10 +39,6 @@ export async function seedAdminUser() {
       updatedAt: new Date(),
     });
 
-    console.log(`  管理员用户名: admin`);
-    console.log(`  管理员密码: ${rawPassword}`);
-    console.log("  请在首次登录后修改管理员密码。");
-
     const rawInviteCode = "pg-inv-" + generateRandomString(12);
     const codeHash = crypto
       .createHash("sha256")
@@ -61,8 +57,7 @@ export async function seedAdminUser() {
       createdAt: new Date(),
     });
 
-    console.log(`  邀请码: ${rawInviteCode}`);
-    console.log("  注意：以上信息仅在首次初始化时打印，请妥善保存。");
+    console.log("[PromptGate Bootstrap] Admin user initialized. Use setup wizard or configured unattended credentials to authenticate.");
 
     const defaultSettings = [
       { key: "theme", value: "system" },

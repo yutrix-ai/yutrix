@@ -1,35 +1,267 @@
-import { drizzle } from "drizzle-orm/libsql";
+import { drizzle as drizzleLibsql, LibSQLDatabase } from "drizzle-orm/libsql";
+import { drizzle as drizzlePg, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import { createClient } from "@libsql/client";
-import * as schema from "./schema";
-import dotenv from "dotenv";
+import { Pool } from "pg";
+import * as schemaSqlite from "./schema.sqlite";
+import * as schemaPg from "./schema.pg";
+import fs from "fs";
+import path from "path";
+import { resolveDbFilePath } from "./path";
+import { loadDbConfig, YutrixDbConfig, DbDriver } from "./config";
+import { migratePg } from "./migrate-pg";
+import { setDefaultDialectDriver } from "./dialect";
 
-const envPath = process.cwd().endsWith("server") ? "../../.env" : ".env";
-dotenv.config({ path: envPath });
+export type LibSQLDb = LibSQLDatabase<typeof schemaSqlite>;
+export type PgDb = NodePgDatabase<typeof schemaPg>;
+export type AppDb = LibSQLDb & PgDb;
 
-// Path is relative to the current working directory where the server is started
-const dbPath = process.env.DB_FILE || "data/promptgate.sqlite";
+export interface CreateDbResult {
+  db: AppDb;
+  client: any;
+  driver: DbDriver;
+}
 
-import { resolveDbFilePath } from './path';
+let currentDb: AppDb | null = null;
+let currentClient: any = null;
+let currentConfig: YutrixDbConfig | null = null;
+let currentDriver: DbDriver | null = null;
 
-const getDbPath = () => resolveDbFilePath(dbPath, process.cwd());
+export function getDb(): AppDb {
+  if (!currentDb) {
+    throw new Error("Database has not been initialized. Call await initDb() first.");
+  }
+  return currentDb;
+}
 
-export const client = createClient({ url: "file:" + getDbPath() });
-export const db = drizzle(client, { schema, logger: true });
+export function getClient(): any {
+  if (!currentClient) {
+    throw new Error("Database client has not been initialized. Call await initDb() first.");
+  }
+  return currentClient;
+}
+
+export function getDbDriver(): DbDriver {
+  return currentDriver || currentConfig?.driver || "sqlite";
+}
+
+export function isDbInitialized(): boolean {
+  return currentDb !== null;
+}
 
 /**
- * Idempotent auto-migrations that run on every startup.
+ * Proxy for db export.
+ * Delegates all property lookups to active currentDb.
+ * Throws a descriptive error if accessed before initDb() is called.
+ */
+export let db: AppDb = new Proxy({} as AppDb, {
+  get(target, prop, receiver) {
+    if (!currentDb) {
+      if (prop === "then") return undefined;
+      if (prop === "toJSON") return () => "[Uninitialized Database]";
+      if (prop === Symbol.toStringTag) return "Database";
+      if (prop === Symbol.for("nodejs.util.inspect.custom")) {
+        return () => "[Uninitialized Database]";
+      }
+      throw new Error("Database has not been initialized. Call await initDb() first.");
+    }
+    // Polyfill db.run on PostgreSQL instances (delegates to db.execute)
+    if (
+      prop === "run" &&
+      !Reflect.has(currentDb, "run") &&
+      typeof (currentDb as any).execute === "function"
+    ) {
+      return (currentDb as any).execute.bind(currentDb);
+    }
+    const val = Reflect.get(currentDb, prop);
+    return typeof val === "function" ? val.bind(currentDb) : val;
+  },
+  has(target, prop) {
+    if (!currentDb) {
+      throw new Error("Database has not been initialized. Call await initDb() first.");
+    }
+    return Reflect.has(currentDb, prop);
+  },
+  apply(target, thisArg, argArray) {
+    if (!currentDb) {
+      throw new Error("Database has not been initialized. Call await initDb() first.");
+    }
+    return Reflect.apply(currentDb as any, thisArg, argArray);
+  },
+});
+
+/**
+ * Proxy for client export.
+ * Delegates all property lookups to active currentClient.
+ * Throws a descriptive error if accessed before initDb() is called.
+ */
+export let client: any = new Proxy({} as any, {
+  get(target, prop, receiver) {
+    if (!currentClient) {
+      if (prop === "then") return undefined;
+      if (prop === "toJSON") return () => "[Uninitialized Client]";
+      if (prop === Symbol.toStringTag) return "Client";
+      if (prop === Symbol.for("nodejs.util.inspect.custom")) {
+        return () => "[Uninitialized Client]";
+      }
+      throw new Error("Database client has not been initialized. Call await initDb() first.");
+    }
+    // Cross-engine polyfill: client.execute on Postgres Pool
+    if (
+      prop === "execute" &&
+      !Reflect.has(currentClient, "execute") &&
+      typeof currentClient.query === "function"
+    ) {
+      return async (queryArg: any, params?: any[]) => {
+        if (typeof queryArg === "object" && queryArg !== null && "sql" in queryArg) {
+          const res = await currentClient.query(queryArg.sql, queryArg.args);
+          return { rows: res.rows };
+        }
+        const res = await currentClient.query(queryArg, params);
+        return { rows: res.rows };
+      };
+    }
+    // Cross-engine polyfill: client.query on LibSQL Client
+    if (
+      prop === "query" &&
+      !Reflect.has(currentClient, "query") &&
+      typeof currentClient.execute === "function"
+    ) {
+      return async (queryArg: any, params?: any[]) => {
+        if (typeof queryArg === "string") {
+          const res = await currentClient.execute({ sql: queryArg, args: params || [] });
+          return { rows: res.rows };
+        }
+        const res = await currentClient.execute(queryArg);
+        return { rows: res.rows };
+      };
+    }
+    const val = Reflect.get(currentClient, prop);
+    return typeof val === "function" ? val.bind(currentClient) : val;
+  },
+  has(target, prop) {
+    if (!currentClient) {
+      throw new Error("Database client has not been initialized. Call await initDb() first.");
+    }
+    return Reflect.has(currentClient, prop);
+  },
+});
+
+/**
+ * Creates a new DB connection and Drizzle instance without mutating global state.
+ */
+export async function createDb(config?: YutrixDbConfig): Promise<CreateDbResult> {
+  const cfg = config ?? loadDbConfig();
+
+  if (cfg.driver === "postgres") {
+    const url = cfg.postgres?.url;
+    if (!url) {
+      throw new Error(
+        "PostgreSQL URL is required when driver is postgres (set DATABASE_URL or postgres.url in config)"
+      );
+    }
+    const pool = new Pool({
+      connectionString: url,
+    });
+    const createdDb = drizzlePg(pool, { schema: schemaPg, logger: true });
+    return { db: createdDb as unknown as AppDb, client: pool, driver: "postgres" };
+  }
+
+  const rawFile = cfg.sqlite?.file || "data/promptgate.sqlite";
+  const resolvedPath = resolveDbFilePath(rawFile, process.cwd());
+
+  const dir = path.dirname(resolvedPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const createdClient = createClient({ url: "file:" + resolvedPath });
+  const createdDb = drizzleLibsql(createdClient, { schema: schemaSqlite, logger: true });
+
+  return { db: createdDb as unknown as AppDb, client: createdClient, driver: "sqlite" };
+}
+
+function isSameConfig(a: YutrixDbConfig, b: YutrixDbConfig): boolean {
+  if (a.driver !== b.driver) return false;
+  if (a.driver === "sqlite") {
+    const fileA = resolveDbFilePath(a.sqlite?.file || "data/promptgate.sqlite", process.cwd());
+    const fileB = resolveDbFilePath(b.sqlite?.file || "data/promptgate.sqlite", process.cwd());
+    return fileA === fileB;
+  }
+  if (a.driver === "postgres") {
+    return a.postgres?.url === b.postgres?.url;
+  }
+  return false;
+}
+
+/**
+ * Initializes the database connection asynchronously.
+ * Sets the active `db` and `client` singleton instances.
+ * When driver=postgres, automatically executes PG migrations per PRD §7.4.
+ */
+export async function initDb(config?: YutrixDbConfig): Promise<AppDb> {
+  const targetConfig = config ?? loadDbConfig();
+
+  // Reuse existing connection if configuration is identical
+  if (currentDb && currentConfig && isSameConfig(currentConfig, targetConfig)) {
+    return currentDb;
+  }
+
+  // Close previous connection if one exists
+  if (currentClient) {
+    try {
+      if (typeof currentClient.end === "function") {
+        await currentClient.end();
+      } else if (typeof currentClient.close === "function") {
+        await currentClient.close();
+      }
+    } catch {
+      // Ignore errors when closing old client
+    }
+  }
+
+  const result = await createDb(targetConfig);
+  currentDb = result.db;
+  currentClient = result.client;
+  currentConfig = targetConfig;
+  currentDriver = result.driver;
+  setDefaultDialectDriver(result.driver);
+
+  // Auto-run PG migrations on PostgreSQL driver initialization per Slice P0-3
+  if (result.driver === "postgres") {
+    await migratePg(currentDb as PgDb);
+  }
+
+  return currentDb;
+}
+
+/**
+ * Closes the active database connection and resets initialized state.
+ */
+export async function closeDb(): Promise<void> {
+  if (currentClient) {
+    try {
+      if (typeof currentClient.end === "function") {
+        await currentClient.end();
+      } else if (typeof currentClient.close === "function") {
+        await currentClient.close();
+      }
+    } catch {
+      // Ignore errors when closing client
+    }
+  }
+  currentDb = null;
+  currentClient = null;
+  currentConfig = null;
+  currentDriver = null;
+  setDefaultDialectDriver("sqlite");
+}
+
+/**
+ * Idempotent auto-migrations that run on every startup for SQLite.
  * Each entry safely adds a column if it doesn't already exist.
  * SQLite's ALTER TABLE ADD COLUMN will error with "duplicate column name"
  * if it already exists — we catch and ignore that specific error.
- *
- * This ensures users upgrading from ANY older version get a working DB
- * without needing to run drizzle-kit push (which is unreliable on SQLite).
- *
- * HOW TO ADD A NEW MIGRATION:
- *   1. Append a new entry to the `migrations` array below.
- *   2. Use the exact SQL: ALTER TABLE <table> ADD COLUMN <col> <type> [DEFAULT <val>];
- *   3. Never remove old entries — they are idempotent and harmless.
  */
 async function runAutoMigrations() {
   const migrations = [
@@ -95,7 +327,7 @@ async function runAutoMigrations() {
 
   for (const query of migrations) {
     try {
-      await db.run(sql.raw(query));
+      await (db as any).run(sql.raw(query));
     } catch (e: any) {
       const msg = String(e.cause?.message || e.message || "").toLowerCase();
       if (!msg.includes("duplicate column") && !msg.includes("no such column")) {
@@ -106,17 +338,16 @@ async function runAutoMigrations() {
   }
 
   // Cleanup any leftover temp tables from failed drizzle-kit push attempts
-  await db.run(sql.raw("DROP TABLE IF EXISTS __new_user_route_overrides;")).catch(() => {});
-  await db.run(sql.raw("DROP TABLE IF EXISTS __new_providers;")).catch(() => {});
-  await db.run(sql.raw("DROP TABLE IF EXISTS __new_provider_models;")).catch(() => {});
+  await (db as any).run(sql.raw("DROP TABLE IF EXISTS __new_user_route_overrides;")).catch(() => {});
+  await (db as any).run(sql.raw("DROP TABLE IF EXISTS __new_providers;")).catch(() => {});
+  await (db as any).run(sql.raw("DROP TABLE IF EXISTS __new_provider_models;")).catch(() => {});
   await client.execute("DROP TABLE IF EXISTS __new_endpoint_routes;").catch(() => {});
 
   // Force cache invalidation / transaction reset for LibSQL/Drizzle connections
-  // This ensures that the schema changes are immediately visible to subsequent queries.
   try {
-    await db.run(sql.raw("BEGIN IMMEDIATE"));
-    await db.run(sql.raw("COMMIT"));
-    await db.run(sql.raw("PRAGMA schema_version"));
+    await (db as any).run(sql.raw("BEGIN IMMEDIATE"));
+    await (db as any).run(sql.raw("COMMIT"));
+    await (db as any).run(sql.raw("PRAGMA schema_version"));
   } catch (e: any) {
     // Ignore errors here
   }
@@ -264,9 +495,8 @@ async function ensureTablesExist() {
 
   for (const query of tableSqls) {
     try {
-      await db.run(sql.raw(query));
+      await (db as any).run(sql.raw(query));
     } catch (e: any) {
-      // Ignore "already exists" errors
       if (!e.message?.includes("already exists")) {
         console.warn("[auto-migrate:table]", e.message);
       }
@@ -275,6 +505,12 @@ async function ensureTablesExist() {
 }
 
 export const initAutoMigrations = async () => {
-  await ensureTablesExist();
-  await runAutoMigrations();
+  if (!currentDb) {
+    await initDb();
+  }
+  // Auto-migrations apply only to SQLite
+  if (getDbDriver() === "sqlite") {
+    await ensureTablesExist();
+    await runAutoMigrations();
+  }
 };

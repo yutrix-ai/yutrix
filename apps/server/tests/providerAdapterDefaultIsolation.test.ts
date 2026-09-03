@@ -27,7 +27,8 @@ describe("Provider Adapter Default Isolation E2E Matrix", () => {
     }
 
     process.env.DB_FILE = "data/promptgate-test-isolation.sqlite";
-    const { db: importedDb } = await import("../src/db");
+    const { db: importedDb, initDb } = await import("../src/db");
+    await initDb();
     db = importedDb;
 
     const { migrate } = await import("drizzle-orm/libsql/migrator");

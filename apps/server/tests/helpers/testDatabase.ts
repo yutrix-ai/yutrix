@@ -14,7 +14,8 @@ export async function initTestDatabase(config: TestDatabaseConfig) {
 
   process.env.DB_FILE = config.dbFilePath;
 
-  const { db, client } = await import('../../src/db');
+  const { db, client, initDb } = await import('../../src/db');
+  await initDb();
 
   // Apply parallel-safe SQLite settings explicitly for test isolation
   await client.execute('PRAGMA journal_mode = WAL;');
@@ -46,7 +47,11 @@ export async function initTestDatabase(config: TestDatabaseConfig) {
 
 export async function closeAndCleanup(client: any, dbFilePath: string) {
   const fullPath = resolveDbFilePath(dbFilePath, process.cwd());
-  await client.close();
+  const { closeDb } = await import('../../src/db');
+  await closeDb();
+  if (client && typeof client.close === 'function') {
+    try { await client.close(); } catch {}
+  }
   cleanupTestDatabaseFilesSync(fullPath);
 }
 

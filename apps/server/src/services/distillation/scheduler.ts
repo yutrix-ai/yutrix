@@ -4,6 +4,13 @@ import { getDistillationSettings } from "./settingsService";
 
 let currentTask: ScheduledTask | null = null;
 
+export function stopDistillationJobs(): void {
+  if (currentTask) {
+    currentTask.stop();
+    currentTask = null;
+  }
+}
+
 export async function scheduleDistillationJobs(): Promise<void> {
   if (currentTask) {
     currentTask.stop();
