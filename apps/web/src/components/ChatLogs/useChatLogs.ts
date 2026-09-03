@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { fetchApi, API_BASE } from "@/lib/api";
+import { fetchApi, API_BASE, getAuthHeaders } from "@/lib/api";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { toast } from "sonner";
 import { normalizeInputMessages, getContentText } from "./ChatLogUtils";
 
@@ -28,7 +29,7 @@ export function useChatLogs() {
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
 
   const [isStreaming, setIsStreaming] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const [showRawInput, setShowRawInput] = useState(false);
   const [showRawOutput, setShowRawOutput] = useState(false);
@@ -68,9 +69,7 @@ export function useChatLogs() {
 
 
   const handleCacheResponse = async (turn: any) => {
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const headers = getAuthHeaders({ "Content-Type": "application/json" });
 
     try {
       const res = await fetch(`${API_BASE}/admin/cache`, {
@@ -290,143 +289,172 @@ export function useChatLogs() {
 
   const startStreaming = () => {
     stopStreaming();
-    const eventSource = new EventSource("/api/admin/chat-logs/stream", { withCredentials: true });
-    
-    eventSource.addEventListener("chatLog", (event) => {
-      try {
-        const data = JSON.parse((event as MessageEvent).data);
-        
-        // Use refs for latest filter state
-        const currentFilterUserId = filterUserIdRef.current;
-        const currentFilterModel = filterModelRef.current;
-        if (currentFilterUserId && data.userId !== currentFilterUserId) return;
-        if (currentFilterModel && !data.model?.includes(currentFilterModel)) return;
-        
-        // Add to live turns
-        setLiveTurns((prev) => [data, ...prev].slice(0, 500));
-
-        // If viewing this session, append to sessionTurns
-        const currentSelectedSessionId = selectedSessionIdRef.current;
-        if (currentSelectedSessionId !== "LIVE" && data.serverSessionId === currentSelectedSessionId) {
-          setSessionTurns((prev) => [...prev, data]);
-        }
-
-        // Update sessions list dynamically
-        setSessions((prevSessions) => {
-          const sessionIndex = prevSessions.findIndex(s => s.serverSessionId === data.serverSessionId);
-          if (sessionIndex > -1) {
-            const updatedSessions = [...prevSessions];
-            const session = { ...updatedSessions[sessionIndex] };
-            session.turnCount = (session.turnCount || 0) + 1;
-            session.inputTokens = (session.inputTokens || 0) + (data.inputTokens || 0);
-            session.outputTokens = (session.outputTokens || 0) + (data.outputTokens || 0);
-            session.lastUpdatedAt = data.createdAt || new Date().toISOString();
-            
-            // Move to top
-            updatedSessions.splice(sessionIndex, 1);
-            updatedSessions.unshift(session);
-            return updatedSessions;
-          } else {
-            const newSession = {
-              serverSessionId: data.serverSessionId,
-              clientSessionId: data.clientSessionId,
-              userId: data.userId,
-              clientName: data.clientName,
-              detectedClient: data.detectedClient,
-              model: data.model,
-              turnCount: 1,
-              inputTokens: data.inputTokens || 0,
-              outputTokens: data.outputTokens || 0,
-              firstInputText: data.inputText,
-              firstCreatedAt: data.createdAt || new Date().toISOString(),
-              lastUpdatedAt: data.createdAt || new Date().toISOString()
-            };
-            return [newSession, ...prevSessions];
-          }
-        });
-      } catch (e) {
-        console.error("Error parsing chat log EventSource data:", e);
-      }
-    });
-
-    eventSource.addEventListener("sessionMerged", (event) => {
-      try {
-        const data = JSON.parse((event as MessageEvent).data);
-        setSessions((prevSessions) => {
-          const oldIndex = prevSessions.findIndex(s => s.serverSessionId === data.oldSessionId);
-          const newIndex = prevSessions.findIndex(s => s.serverSessionId === data.newSessionId);
-          
-          let updated = [...prevSessions];
-          
-          if (oldIndex > -1 && newIndex > -1) {
-            // Merge old into new
-            const newSession = { ...updated[newIndex] };
-            const oldSession = updated[oldIndex];
-            newSession.turnCount = (newSession.turnCount || 0) + (oldSession.turnCount || 0);
-            newSession.inputTokens = (newSession.inputTokens || 0) + (oldSession.inputTokens || 0);
-            newSession.outputTokens = (newSession.outputTokens || 0) + (oldSession.outputTokens || 0);
-            newSession.lastUpdatedAt = data.createdAt || new Date().toISOString();
-            
-            // Remove old session from the list
-            updated.splice(oldIndex, 1);
-            
-            // Move the combined new session to top
-            const finalNewIndex = updated.findIndex(s => s.serverSessionId === data.newSessionId);
-            if (finalNewIndex > -1) {
-              updated.splice(finalNewIndex, 1);
-            }
-            updated.unshift(newSession);
-          } else if (oldIndex > -1) {
-            // The new parent session is not loaded, just update the ID of the old one
-            const session = { ...updated[oldIndex] };
-            session.serverSessionId = data.newSessionId;
-            updated[oldIndex] = session;
-          }
-          
-          return updated;
-        });
-
-        // Also update the selectedSessionId if we are currently viewing the old session
-        if (selectedSessionIdRef.current === data.oldSessionId) {
-          setSelectedSessionId(data.newSessionId);
-        }
-      } catch (e) {
-        console.error("Error parsing sessionMerged SSE data:", e);
-      }
-    });
-
-    eventSource.addEventListener("sessionTitleUpdate", (event) => {
-      try {
-        const data = JSON.parse((event as MessageEvent).data);
-        setSessions((prevSessions) => {
-          return prevSessions.map((s) => {
-            if (s.serverSessionId === data.serverSessionId) {
-              return {
-                ...s,
-                sessionTitle: data.sessionTitle
-              };
-            }
-            return s;
-          });
-        });
-      } catch (e) {
-        console.error("Error parsing sessionTitleUpdate SSE data:", e);
-      }
-    });
-
-    eventSource.onerror = () => {
-      setIsStreaming(false);
-      eventSource.close();
-    };
-
-    eventSourceRef.current = eventSource;
+    const ctrl = new AbortController();
+    abortControllerRef.current = ctrl;
     setIsStreaming(true);
+
+    // Native EventSource cannot set Authorization headers and relies solely on cookies,
+    // which fail behind Docker / reverse proxies. Using fetchEventSource ensures Bearer
+    // token from localStorage/sessionStorage is sent along with credentials: 'include'.
+    void fetchEventSource("/api/admin/chat-logs/stream", {
+      method: "GET",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      signal: ctrl.signal,
+      openWhenHidden: true,
+      async onopen(response) {
+        if (response.ok && response.headers.get("content-type")?.startsWith("text/event-stream")) {
+          // Connected successfully
+        } else {
+          setIsStreaming(false);
+          throw new Error("Failed to connect to chat-logs SSE stream");
+        }
+      },
+      onmessage(msg) {
+        if (ctrl.signal.aborted) return;
+        if (msg.event === "chatLog") {
+          try {
+            const data = JSON.parse(msg.data);
+            
+            // Use refs for latest filter state
+            const currentFilterUserId = filterUserIdRef.current;
+            const currentFilterModel = filterModelRef.current;
+            if (currentFilterUserId && data.userId !== currentFilterUserId) return;
+            if (currentFilterModel && !data.model?.includes(currentFilterModel)) return;
+            
+            // Add to live turns
+            setLiveTurns((prev) => [data, ...prev].slice(0, 500));
+
+            // If viewing this session, append to sessionTurns
+            const currentSelectedSessionId = selectedSessionIdRef.current;
+            if (currentSelectedSessionId !== "LIVE" && data.serverSessionId === currentSelectedSessionId) {
+              setSessionTurns((prev) => [...prev, data]);
+            }
+
+            // Update sessions list dynamically
+            setSessions((prevSessions) => {
+              const sessionIndex = prevSessions.findIndex(s => s.serverSessionId === data.serverSessionId);
+              if (sessionIndex > -1) {
+                const updatedSessions = [...prevSessions];
+                const session = { ...updatedSessions[sessionIndex] };
+                session.turnCount = (session.turnCount || 0) + 1;
+                session.inputTokens = (session.inputTokens || 0) + (data.inputTokens || 0);
+                session.outputTokens = (session.outputTokens || 0) + (data.outputTokens || 0);
+                session.lastUpdatedAt = data.createdAt || new Date().toISOString();
+                
+                // Move to top
+                updatedSessions.splice(sessionIndex, 1);
+                updatedSessions.unshift(session);
+                return updatedSessions;
+              } else {
+                const newSession = {
+                  serverSessionId: data.serverSessionId,
+                  clientSessionId: data.clientSessionId,
+                  userId: data.userId,
+                  clientName: data.clientName,
+                  detectedClient: data.detectedClient,
+                  model: data.model,
+                  turnCount: 1,
+                  inputTokens: data.inputTokens || 0,
+                  outputTokens: data.outputTokens || 0,
+                  firstInputText: data.inputText,
+                  firstCreatedAt: data.createdAt || new Date().toISOString(),
+                  lastUpdatedAt: data.createdAt || new Date().toISOString()
+                };
+                return [newSession, ...prevSessions];
+              }
+            });
+          } catch (e) {
+            console.error("Error parsing chat log EventSource data:", e);
+          }
+          return;
+        }
+
+        if (msg.event === "sessionMerged") {
+          try {
+            const data = JSON.parse(msg.data);
+            setSessions((prevSessions) => {
+              const oldIndex = prevSessions.findIndex(s => s.serverSessionId === data.oldSessionId);
+              const newIndex = prevSessions.findIndex(s => s.serverSessionId === data.newSessionId);
+              
+              let updated = [...prevSessions];
+              
+              if (oldIndex > -1 && newIndex > -1) {
+                // Merge old into new
+                const newSession = { ...updated[newIndex] };
+                const oldSession = updated[oldIndex];
+                newSession.turnCount = (newSession.turnCount || 0) + (oldSession.turnCount || 0);
+                newSession.inputTokens = (newSession.inputTokens || 0) + (oldSession.inputTokens || 0);
+                newSession.outputTokens = (newSession.outputTokens || 0) + (oldSession.outputTokens || 0);
+                newSession.lastUpdatedAt = data.createdAt || new Date().toISOString();
+                
+                // Remove old session from the list
+                updated.splice(oldIndex, 1);
+                
+                // Move the combined new session to top
+                const finalNewIndex = updated.findIndex(s => s.serverSessionId === data.newSessionId);
+                if (finalNewIndex > -1) {
+                  updated.splice(finalNewIndex, 1);
+                }
+                updated.unshift(newSession);
+              } else if (oldIndex > -1) {
+                // The new parent session is not loaded, just update the ID of the old one
+                const session = { ...updated[oldIndex] };
+                session.serverSessionId = data.newSessionId;
+                updated[oldIndex] = session;
+              }
+              
+              return updated;
+            });
+
+            // Also update the selectedSessionId if we are currently viewing the old session
+            if (selectedSessionIdRef.current === data.oldSessionId) {
+              setSelectedSessionId(data.newSessionId);
+            }
+          } catch (e) {
+            console.error("Error parsing sessionMerged SSE data:", e);
+          }
+          return;
+        }
+
+        if (msg.event === "sessionTitleUpdate") {
+          try {
+            const data = JSON.parse(msg.data);
+            setSessions((prevSessions) => {
+              return prevSessions.map((s) => {
+                if (s.serverSessionId === data.serverSessionId) {
+                  return {
+                    ...s,
+                    sessionTitle: data.sessionTitle
+                  };
+                }
+                return s;
+              });
+            });
+          } catch (e) {
+            console.error("Error parsing sessionTitleUpdate SSE data:", e);
+          }
+          return;
+        }
+      },
+      onerror(err) {
+        if (ctrl.signal.aborted) return;
+        setIsStreaming(false);
+        throw err;
+      }
+    }).catch(() => {
+      if (ctrl.signal.aborted) return;
+      setIsStreaming(false);
+      if (abortControllerRef.current === ctrl) {
+        abortControllerRef.current = null;
+      }
+    });
   };
 
   const stopStreaming = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     setIsStreaming(false);
   };

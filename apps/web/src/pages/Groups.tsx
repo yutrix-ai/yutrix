@@ -194,11 +194,15 @@ export default function Groups() {
     const userId = userIdOverride || selectedUserId;
     if (!membersGroup || !userId) return;
     try {
-      await fetchApi(`/admin/groups/${membersGroup.id}/members`, {
+      const res = await fetchApi(`/admin/groups/${membersGroup.id}/members`, {
         method: "POST",
         body: JSON.stringify({ userId }),
       });
-      toast.success(t("groups.toasts.addMemberSuccess", "成员已添加"));
+      if (res?.moved) {
+        toast.success(t("groups.toasts.moveMemberSuccess", "已移动到该组"));
+      } else {
+        toast.success(t("groups.toasts.addMemberSuccess", "成员已添加"));
+      }
       setSelectedUserId("");
       setAddUserDialogOpen(false);
       const membersData = await fetchApi(`/admin/groups/${membersGroup.id}/members`);
@@ -407,7 +411,7 @@ export default function Groups() {
         <DialogContent className="sm:max-w-2xl h-[70vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{t("groups.membersTitle", "管理成员")} - {membersGroup ? getGroupDisplayName(membersGroup, t) : ""}</DialogTitle>
-            <DialogDescription>{t("groups.membersDesc", "添加或移除该组的成员")}</DialogDescription>
+            <DialogDescription>{t("groups.membersDesc", "添加或移除该组的成员（用户最多属于一个组，添加时自动移出原所在组）")}</DialogDescription>
           </DialogHeader>
           <DialogBody className="py-4">
             <div className="flex justify-end mb-4">
@@ -454,8 +458,8 @@ export default function Groups() {
       <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("groups.addMemberTitle", "添加成员")}</DialogTitle>
-            <DialogDescription>{t("groups.addMemberDesc", "选择要添加到该组的用户")}</DialogDescription>
+            <DialogTitle>{t("groups.addMemberTitle", "添加 / 移动成员")}</DialogTitle>
+            <DialogDescription>{t("groups.addMemberDesc", "选择要加入该组的用户（若已在其他组将自动移出）")}</DialogDescription>
           </DialogHeader>
           <div className="pt-2">
             {availableUsers.length === 0 ? (
@@ -475,6 +479,7 @@ export default function Groups() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{u.username}</div>
+                      <div className="text-xs text-muted-foreground truncate">{t("groups.moveHint", "选择后将自动移出原所在组")}</div>
                     </div>
                     <UserPlus className="h-4 w-4 text-muted-foreground" />
                   </div>

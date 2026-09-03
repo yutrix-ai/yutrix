@@ -6,7 +6,7 @@ import {
   users,
   routeAuthorizations,
 } from "../db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import { requireAdmin } from "../middleware/auth";
 import { logAction } from "../utils/actionLogger";
@@ -198,27 +198,50 @@ export default async function (fastify: FastifyInstance) {
       return reply.code(404).send({ error: "用户不存在" });
     }
 
-    const existing = await db
+    const existingMemberships = await db
       .select()
       .from(userGroupMembers)
-      .where(
-        and(
-          eq(userGroupMembers.groupId, id),
-          eq(userGroupMembers.userId, userId)
-        )
-      );
-    if (existing.length > 0) {
-      return reply.code(400).send({ error: "用户已在该组中" });
+      .where(eq(userGroupMembers.userId, userId));
+
+    const alreadyInTarget = existingMemberships.some((m) => m.groupId === id);
+    const otherMemberships = existingMemberships.filter((m) => m.groupId !== id);
+    const previousGroupIds = Array.from(new Set(otherMemberships.map((m) => m.groupId)));
+    const moved = otherMemberships.length > 0;
+
+    // Remove user from all other groups
+    if (otherMemberships.length > 0) {
+      await db
+        .delete(userGroupMembers)
+        .where(
+          and(
+            eq(userGroupMembers.userId, userId),
+            ne(userGroupMembers.groupId, id)
+          )
+        );
     }
 
-    await db.insert(userGroupMembers).values({
-      id: crypto.randomUUID(),
-      groupId: id,
-      userId,
-      createdAt: new Date(),
-    });
+    // Ensure membership in the target group
+    if (!alreadyInTarget) {
+      await db.insert(userGroupMembers).values({
+        id: crypto.randomUUID(),
+        groupId: id,
+        userId,
+        createdAt: new Date(),
+      });
+    } else {
+      // Clean up any redundant duplicate rows in the target group
+      const targetMemberships = existingMemberships.filter((m) => m.groupId === id);
+      if (targetMemberships.length > 1) {
+        const extraIds = targetMemberships.slice(1).map((m) => m.id);
+        await db.delete(userGroupMembers).where(inArray(userGroupMembers.id, extraIds));
+      }
+    }
 
-    return { success: true };
+    return {
+      success: true,
+      moved,
+      previousGroupIds,
+    };
   });
 
   fastify.delete("/api/admin/groups/:id/members/:userId", { onRequest: [requireAdmin] }, async (request, reply) => {

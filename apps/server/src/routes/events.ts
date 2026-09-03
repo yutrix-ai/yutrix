@@ -6,6 +6,9 @@ import { getQueryDateRange } from "../utils/timeRange";
 import { withPublicModelName } from "../utils/modelAlias";
 
 export default async function (fastify: FastifyInstance) {
+  // SSE stream endpoint for real-time events.
+  // Protected by requireAuth. In Docker / reverse proxy setups where cookies may be dropped
+  // or stripped, clients must send "Authorization: Bearer <token>" and credentials: 'include'.
   fastify.get(
     "/api/events/stream",
     { onRequest: [requireAuth] },

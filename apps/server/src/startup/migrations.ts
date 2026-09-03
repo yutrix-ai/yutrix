@@ -1,5 +1,6 @@
 import { db, initDb, getDbDriver, client } from "../db";
-import { sql } from "drizzle-orm";
+import { sql, eq, inArray } from "drizzle-orm";
+import { userGroupMembers, userGroups } from "../db/schema";
 import path from "path";
 import fs from "fs";
 
@@ -128,6 +129,110 @@ export async function ensureFunnelRoutingColumns() {
   }
 }
 
+/**
+ * Product rule: A user may belong to at most one user group at a time.
+ * On boot, repairs any multi-membership pollution:
+ * Keep-which-group heuristic:
+ * 1. Prefer a membership whose group has isDefault === false over the default group.
+ * 2. If still multiple, keep the row with the latest createdAt.
+ * 3. If still tied, keep the lexicographically smallest membership id (stable).
+ * 4. Delete all other membership rows for that user.
+ */
+export async function ensureExclusiveUserGroupMembership(): Promise<{ repairedRows: number; repairedUsers: number }> {
+  try {
+    // Check whether tables are ready before querying
+    await db.select({ id: userGroupMembers.id }).from(userGroupMembers).limit(1);
+    await db.select({ id: userGroups.id }).from(userGroups).limit(1);
+  } catch {
+    return { repairedRows: 0, repairedUsers: 0 };
+  }
+
+  const allMemberships = await db
+    .select({
+      id: userGroupMembers.id,
+      userId: userGroupMembers.userId,
+      groupId: userGroupMembers.groupId,
+      createdAt: userGroupMembers.createdAt,
+      isDefault: userGroups.isDefault,
+    })
+    .from(userGroupMembers)
+    .leftJoin(userGroups, eq(userGroupMembers.groupId, userGroups.id));
+
+  const userMap = new Map<string, typeof allMemberships>();
+  for (const row of allMemberships) {
+    const list = userMap.get(row.userId) || [];
+    list.push(row);
+    userMap.set(row.userId, list);
+  }
+
+  const getTime = (val: any): number => {
+    if (val instanceof Date) return val.getTime();
+    if (typeof val === "number") return val;
+    if (typeof val === "string") {
+      const parsed = new Date(val).getTime();
+      return isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+
+  const isDefaultGroup = (val: any): boolean => {
+    return val === true || val === 1 || val === "true";
+  };
+
+  const idsToDelete: string[] = [];
+  let repairedUsersCount = 0;
+
+  for (const [, userMemberships] of userMap.entries()) {
+    if (userMemberships.length <= 1) continue;
+
+    userMemberships.sort((a, b) => {
+      // 1. Prefer custom group (isDefault === false) over default group (isDefault === true)
+      const aIsDefault = isDefaultGroup(a.isDefault);
+      const bIsDefault = isDefaultGroup(b.isDefault);
+      if (aIsDefault !== bIsDefault) {
+        return aIsDefault ? 1 : -1;
+      }
+
+      // 2. If still multiple, keep the row with latest createdAt
+      const timeA = getTime(a.createdAt);
+      const timeB = getTime(b.createdAt);
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+
+      // 3. If still tied, keep lexicographically smallest membership id (stable)
+      return a.id.localeCompare(b.id);
+    });
+
+    const toDelete = userMemberships.slice(1);
+    for (const row of toDelete) {
+      idsToDelete.push(row.id);
+    }
+    repairedUsersCount++;
+  }
+
+  if (idsToDelete.length > 0) {
+    for (let i = 0; i < idsToDelete.length; i += 500) {
+      const chunk = idsToDelete.slice(i, i + 500);
+      await db.delete(userGroupMembers).where(inArray(userGroupMembers.id, chunk));
+    }
+    console.log(`[PromptGate] Repaired ${idsToDelete.length} exclusive group membership(s) for ${repairedUsersCount} user(s).`);
+  }
+
+  // Safe unique index creation after cleanup
+  try {
+    const driver = getDbDriver();
+    if (driver === "postgres") {
+      await (db as any).run(sql.raw('CREATE UNIQUE INDEX IF NOT EXISTS unq_user_one_group ON user_group_members ("userId")'));
+    } else {
+      await (db as any).run(sql.raw('CREATE UNIQUE INDEX IF NOT EXISTS unq_user_one_group ON user_group_members (userId)'));
+    }
+  } catch (err: any) {
+    // Non-fatal if index creation fails on specific engine
+  }
+
+  return { repairedRows: idsToDelete.length, repairedUsers: repairedUsersCount };
+}
 
 export async function preSeedMigrations() {
   try {

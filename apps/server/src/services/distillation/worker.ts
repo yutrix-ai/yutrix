@@ -20,7 +20,15 @@ import { getDistillationSettings, setLastIncrementalCursor } from "./settingsSer
 
 let analyzer: DistillationAnalyzer = defaultDistillationAnalyzer;
 const cancelledJobs = new Set<string>();
+const pausedJobs = new Set<string>();
 const activeWorkers = new Map<string, Promise<void>>();
+const jobSkillAccum = new Map<
+  string,
+  Map<
+    string,
+    { username: string; fragments: import("@promptgate/shared").DistillationRecordOutput["skill"][] }
+  >
+>();
 
 export function setDistillationAnalyzer(a: DistillationAnalyzer): void {
   analyzer = a;
@@ -28,23 +36,73 @@ export function setDistillationAnalyzer(a: DistillationAnalyzer): void {
 
 export function cancelDistillationWorker(jobId: string): void {
   cancelledJobs.add(jobId);
+  pausedJobs.delete(jobId);
+  jobSkillAccum.delete(jobId);
+  if (!activeWorkers.has(jobId)) {
+    cancelledJobs.delete(jobId);
+  }
+}
+
+export function pauseDistillationWorker(jobId: string): void {
+  pausedJobs.add(jobId);
+  if (!activeWorkers.has(jobId)) {
+    pausedJobs.delete(jobId);
+  }
+}
+
+export function resumeDistillationWorker(jobId: string): void {
+  pausedJobs.delete(jobId);
+  cancelledJobs.delete(jobId);
+}
+
+export function isDistillationWorkerRunning(jobId: string): boolean {
+  return activeWorkers.has(jobId);
 }
 
 export function startDistillationWorker(jobId: string): void {
-  if (activeWorkers.has(jobId)) return;
+  const existing = activeWorkers.get(jobId);
+  if (existing) {
+    const task = existing
+      .then(async () => {
+        if (!cancelledJobs.has(jobId) && !pausedJobs.has(jobId)) {
+          await runWorker(jobId);
+        }
+      })
+      .finally(() => {
+        if (activeWorkers.get(jobId) === task) {
+          activeWorkers.delete(jobId);
+        }
+      });
+    activeWorkers.set(jobId, task);
+    return;
+  }
   const task = runWorker(jobId).finally(() => {
-    activeWorkers.delete(jobId);
+    if (activeWorkers.get(jobId) === task) {
+      activeWorkers.delete(jobId);
+    }
   });
   activeWorkers.set(jobId, task);
 }
 
 async function runWorker(jobId: string): Promise<void> {
-  const settings = await getDistillationSettings();
-  const concurrency = settings.concurrency;
-  await db
-    .update(distillationJobs)
-    .set({ status: "running", startedAt: new Date() })
-    .where(eq(distillationJobs.id, jobId));
+  if (cancelledJobs.has(jobId)) {
+    cancelledJobs.delete(jobId);
+    pausedJobs.delete(jobId);
+    jobSkillAccum.delete(jobId);
+    await db
+      .update(distillationJobs)
+      .set({ status: "cancelled", completedAt: new Date() })
+      .where(eq(distillationJobs.id, jobId));
+    return;
+  }
+  if (pausedJobs.has(jobId)) {
+    pausedJobs.delete(jobId);
+    await db
+      .update(distillationJobs)
+      .set({ status: "paused" })
+      .where(eq(distillationJobs.id, jobId));
+    return;
+  }
 
   const jobRows = await db
     .select()
@@ -53,13 +111,30 @@ async function runWorker(jobId: string): Promise<void> {
     .limit(1);
   const job = jobRows[0];
   if (!job) return;
+  if (job.status === "cancelled" || job.status === "completed" || job.status === "failed") {
+    return;
+  }
 
-  const skillAccum = new Map<
-    string,
-    { username: string; fragments: import("@promptgate/shared").DistillationRecordOutput["skill"][] }
-  >();
+  const settings = await getDistillationSettings();
+  const concurrency = settings.concurrency;
+  await db
+    .update(distillationJobs)
+    .set({
+      status: "running",
+      startedAt: job.startedAt ?? new Date(),
+    })
+    .where(eq(distillationJobs.id, jobId));
 
-  while (!cancelledJobs.has(jobId)) {
+  let skillAccum = jobSkillAccum.get(jobId);
+  if (!skillAccum) {
+    skillAccum = new Map<
+      string,
+      { username: string; fragments: import("@promptgate/shared").DistillationRecordOutput["skill"][] }
+    >();
+    jobSkillAccum.set(jobId, skillAccum);
+  }
+
+  while (!cancelledJobs.has(jobId) && !pausedJobs.has(jobId)) {
     const pending = await db
       .select()
       .from(distillationJobItems)
@@ -75,7 +150,7 @@ async function runWorker(jobId: string): Promise<void> {
 
     await Promise.all(
       pending.map(async (item) => {
-        if (cancelledJobs.has(jobId)) return;
+        if (cancelledJobs.has(jobId) || pausedJobs.has(jobId)) return;
         await db
           .update(distillationJobItems)
           .set({ status: "processing" })
@@ -188,6 +263,26 @@ async function runWorker(jobId: string): Promise<void> {
     );
   }
 
+  if (pausedJobs.has(jobId)) {
+    pausedJobs.delete(jobId);
+    await db
+      .update(distillationJobs)
+      .set({ status: "paused" })
+      .where(eq(distillationJobs.id, jobId));
+    return;
+  }
+
+  if (cancelledJobs.has(jobId)) {
+    cancelledJobs.delete(jobId);
+    pausedJobs.delete(jobId);
+    jobSkillAccum.delete(jobId);
+    await db
+      .update(distillationJobs)
+      .set({ status: "cancelled", completedAt: new Date() })
+      .where(eq(distillationJobs.id, jobId));
+    return;
+  }
+
   for (const [userId, acc] of skillAccum) {
     const existing = await db
       .select()
@@ -218,10 +313,9 @@ async function runWorker(jobId: string): Promise<void> {
 
   await setLastIncrementalCursor(new Date());
 
-  const finalStatus = cancelledJobs.has(jobId) ? "cancelled" : "completed";
-  cancelledJobs.delete(jobId);
+  jobSkillAccum.delete(jobId);
   await db
     .update(distillationJobs)
-    .set({ status: finalStatus, completedAt: new Date() })
+    .set({ status: "completed", completedAt: new Date() })
     .where(eq(distillationJobs.id, jobId));
 }

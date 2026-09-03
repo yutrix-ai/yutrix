@@ -12,6 +12,14 @@ export default async function distillationRoutes(fastify: FastifyInstance) {
   fastify.post("/api/admin/distillation/jobs", distillationController.createJob);
   fastify.get("/api/admin/distillation/jobs/:id", distillationController.getJob);
   fastify.post(
+    "/api/admin/distillation/jobs/:id/pause",
+    distillationController.pauseJob,
+  );
+  fastify.post(
+    "/api/admin/distillation/jobs/:id/resume",
+    distillationController.resumeJob,
+  );
+  fastify.post(
     "/api/admin/distillation/jobs/:id/cancel",
     distillationController.cancelJob,
   );

@@ -114,7 +114,10 @@ export default async function (fastify: FastifyInstance) {
     }
   );
 
-  // SSE endpoint for real-time logs
+  // SSE endpoint for real-time logs.
+  // Protected by requireAdmin. In Docker / reverse proxy environments, clients must send
+  // "Authorization: Bearer <token>" with credentials: 'include' via fetchEventSource
+  // rather than native EventSource which cannot set headers.
   fastify.get(
     "/api/admin/logs/stream",
     { onRequest: [requireAdmin] },

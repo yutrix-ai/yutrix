@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useAuth } from "@/lib/store";
+import { getAuthHeaders } from "@/lib/api";
 
 export type SSEStatus = "connecting" | "connected" | "error" | "closed";
 
 interface UseEventStreamOptions {
   url?: string;
+  headers?: Record<string, string>;
   onMessage?: (event: string, data: any) => void;
   onConnected?: () => void;
   onError?: (err: any) => void;
@@ -30,10 +32,14 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
     abortControllerRef.current = ctrl;
     setStatus("connecting");
 
-    // fetch-event-source takes care of auto-reconnect on most errors
+    // fetch-event-source takes care of auto-reconnect on most errors.
+    // SSE endpoints behind reverse proxies / Docker need Bearer authentication headers
+    // and credentials: 'include' as session cookies are often omitted or stripped.
     const streamUrl = optionsRef.current.url || "/api/events/stream";
     void fetchEventSource(streamUrl, {
       method: "GET",
+      headers: getAuthHeaders(optionsRef.current.headers),
+      credentials: "include",
       openWhenHidden: true,
       signal: ctrl.signal,
       async onopen(response) {

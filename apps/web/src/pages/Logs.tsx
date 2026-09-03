@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { fetchApi } from "@/lib/api";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
+import { getAuthHeaders } from "@/lib/api";
 import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,12 +57,15 @@ export default function Logs() {
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const { t } = useTranslation();
   const terminalRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     startStreaming();
     return () => {
-      eventSourceRef.current?.close();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
     };
   }, []);
 
@@ -85,50 +89,85 @@ export default function Logs() {
   };
 
   const startStreaming = () => {
-    eventSourceRef.current?.close();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setStreamError("");
     setDisabledMessage("");
 
-    const eventSource = new EventSource("/api/admin/logs/stream", {
-      withCredentials: true,
-    });
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.line || data.serverLine || data.code) {
-          appendLog(data);
-        } else if (data.text) {
-          appendLog(parseLegacyLog(data.text));
-        }
-      } catch {
-        appendLog(parseLegacyLog(event.data));
-      }
-    };
-
-    eventSource.addEventListener("disabled", (event) => {
-      const data = JSON.parse((event as MessageEvent).data);
-      setDisabledMessage(data.message || t("logs.actions.streamDisabled", "实时日志已关闭"));
-      setIsStreaming(false);
-    });
-
-    eventSource.addEventListener("ping", () => {
-      setStreamError("");
-    });
-
-    eventSource.onerror = () => {
-      setStreamError(t("logs.actions.streamFailed", "实时日志连接失败，请检查服务是否运行或重新登录。"));
-      setIsStreaming(false);
-      eventSource.close();
-    };
-
-    eventSourceRef.current = eventSource;
+    const ctrl = new AbortController();
+    abortControllerRef.current = ctrl;
     setIsStreaming(true);
+
+    // Native EventSource cannot set Authorization headers and relies solely on cookies,
+    // which fail behind Docker / reverse proxies. Using fetchEventSource ensures Bearer
+    // token from localStorage/sessionStorage is sent along with credentials: 'include'.
+    void fetchEventSource("/api/admin/logs/stream", {
+      method: "GET",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      signal: ctrl.signal,
+      openWhenHidden: true,
+      async onopen(response) {
+        if (response.ok && response.headers.get("content-type")?.startsWith("text/event-stream")) {
+          setStreamError("");
+        } else {
+          setStreamError(t("logs.actions.streamFailed", "实时日志连接失败，请检查服务是否运行或重新登录。"));
+          setIsStreaming(false);
+          throw new Error("Failed to connect to SSE stream");
+        }
+      },
+      onmessage(msg) {
+        if (ctrl.signal.aborted) return;
+        if (msg.event === "disabled") {
+          try {
+            const data = JSON.parse(msg.data);
+            setDisabledMessage(data.message || t("logs.actions.streamDisabled", "实时日志已关闭"));
+          } catch {
+            setDisabledMessage(t("logs.actions.streamDisabled", "实时日志已关闭"));
+          }
+          setIsStreaming(false);
+          ctrl.abort();
+          return;
+        }
+
+        if (msg.event === "ping") {
+          setStreamError("");
+          return;
+        }
+
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.line || data.serverLine || data.code) {
+            appendLog(data);
+          } else if (data.text) {
+            appendLog(parseLegacyLog(data.text));
+          }
+        } catch {
+          appendLog(parseLegacyLog(msg.data));
+        }
+      },
+      onerror(err) {
+        if (ctrl.signal.aborted) return;
+        setStreamError(t("logs.actions.streamFailed", "实时日志连接失败，请检查服务是否运行或重新登录。"));
+        setIsStreaming(false);
+        throw err;
+      },
+    }).catch(() => {
+      if (ctrl.signal.aborted) return;
+      setIsStreaming(false);
+      if (abortControllerRef.current === ctrl) {
+        abortControllerRef.current = null;
+      }
+    });
   };
 
   const stopStreaming = () => {
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setIsStreaming(false);
     toast.info(t("logs.actions.pausedToast", "已暂停实时日志"));
   };

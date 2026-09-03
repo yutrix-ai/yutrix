@@ -9,12 +9,15 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   Play,
+  Pause,
+  Square,
   Download,
   CheckCircle2,
   RotateCcw,
   Loader2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type Job = {
   id: string;
@@ -66,6 +69,10 @@ export default function DistillationPage() {
   const [validating, setValidating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [previewSkill, setPreviewSkill] = useState<SkillPkg | null>(null);
+  const [actionJobId, setActionJobId] = useState<string | null>(null);
+  const [terminateJobId, setTerminateJobId] = useState<string | null>(null);
+  const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
+  const [terminating, setTerminating] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
@@ -115,6 +122,58 @@ export default function DistillationPage() {
       toast.error(e.message);
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handlePause = async (id: string) => {
+    setActionJobId(id);
+    try {
+      await fetchApi(`/admin/distillation/jobs/${id}/pause`, {
+        method: "POST",
+      });
+      toast.success(t("distillation.pauseSuccess", "作业已暂停"));
+      await loadAll();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setActionJobId(null);
+    }
+  };
+
+  const handleResume = async (id: string) => {
+    setActionJobId(id);
+    try {
+      await fetchApi(`/admin/distillation/jobs/${id}/resume`, {
+        method: "POST",
+      });
+      toast.success(t("distillation.resumeSuccess", "作业已继续"));
+      await loadAll();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setActionJobId(null);
+    }
+  };
+
+  const openTerminateConfirm = (id: string) => {
+    setTerminateJobId(id);
+    setTerminateConfirmOpen(true);
+  };
+
+  const handleConfirmTerminate = async () => {
+    if (!terminateJobId) return;
+    setTerminating(true);
+    try {
+      await fetchApi(`/admin/distillation/jobs/${terminateJobId}/cancel`, {
+        method: "POST",
+      });
+      toast.success(t("distillation.terminateSuccess", "作业已终止"));
+      await loadAll();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setTerminating(false);
+      setTerminateJobId(null);
     }
   };
 
@@ -201,7 +260,10 @@ export default function DistillationPage() {
     }
   };
 
-  const runningJob = jobs.find((j) => j.status === "running" || j.status === "pending");
+  const activeJob = jobs.find(
+    (j) =>
+      j.status === "running" || j.status === "pending" || j.status === "paused",
+  );
   const draftCount = proposals.filter((p) => p.status === "draft").length;
   const validatedCount = proposals.filter((p) => p.status === "validated").length;
 
@@ -236,39 +298,171 @@ export default function DistillationPage() {
           <Card>
             <CardContent className="p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => startJob("incremental")} disabled={starting || !!runningJob}>
+                <Button onClick={() => startJob("incremental")} disabled={starting || !!activeJob}>
                   {starting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   {t("distillation.startIncremental", "开始增量蒸馏")}
                 </Button>
-                <Button variant="secondary" onClick={() => startJob("full_relearn")} disabled={starting || !!runningJob}>
+                <Button variant="secondary" onClick={() => startJob("full_relearn")} disabled={starting || !!activeJob}>
                   {t("distillation.startFull", "全量重学")}
                 </Button>
               </div>
-              {runningJob && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>{runningJob.status}</span>
-                    <span>{runningJob.processedItems}/{runningJob.totalItems}</span>
+              {activeJob && (
+                <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-foreground font-semibold">
+                        {activeJob.id.slice(0, 8)}…
+                      </span>
+                      <Badge variant="outline">{activeJob.mode}</Badge>
+                      <Badge
+                        variant={
+                          activeJob.status === "paused"
+                            ? "secondary"
+                            : activeJob.status === "running"
+                            ? "default"
+                            : "outline"
+                        }
+                      >
+                        {activeJob.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">
+                        {activeJob.processedItems}/{activeJob.totalItems}
+                      </span>
+                      {(activeJob.status === "running" || activeJob.status === "pending") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handlePause(activeJob.id)}
+                          disabled={actionJobId === activeJob.id}
+                        >
+                          {actionJobId === activeJob.id ? (
+                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                          ) : (
+                            <Pause className="w-3.5 h-3.5 mr-1" />
+                          )}
+                          {t("distillation.pause", "暂停")}
+                        </Button>
+                      )}
+                      {activeJob.status === "paused" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleResume(activeJob.id)}
+                          disabled={actionJobId === activeJob.id}
+                        >
+                          {actionJobId === activeJob.id ? (
+                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 mr-1" />
+                          )}
+                          {t("distillation.resume", "继续")}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => openTerminateConfirm(activeJob.id)}
+                        disabled={actionJobId === activeJob.id || terminating}
+                      >
+                        <Square className="w-3.5 h-3.5 mr-1" />
+                        {t("distillation.terminate", "终止")}
+                      </Button>
+                    </div>
                   </div>
                   <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                     <div
                       className="h-full bg-primary transition-all"
                       style={{
-                        width: `${runningJob.totalItems ? (runningJob.processedItems / runningJob.totalItems) * 100 : 0}%`,
+                        width: `${activeJob.totalItems ? (activeJob.processedItems / activeJob.totalItems) * 100 : 0}%`,
                       }}
                     />
                   </div>
                 </div>
               )}
               <div className="divide-y rounded-md border">
-                {jobs.slice(0, 8).map((job) => (
-                  <div key={job.id} className="flex items-center justify-between p-3 text-sm">
-                    <span className="font-mono text-xs">{job.id.slice(0, 8)}…</span>
-                    <Badge variant="outline">{job.mode}</Badge>
-                    <Badge>{job.status}</Badge>
-                    <span className="text-muted-foreground">{job.processedItems}/{job.totalItems}</span>
-                  </div>
-                ))}
+                {jobs.slice(0, 8).map((job) => {
+                  const isActive =
+                    job.status === "running" ||
+                    job.status === "pending" ||
+                    job.status === "paused";
+                  return (
+                    <div
+                      key={job.id}
+                      className="flex items-center justify-between p-3 text-sm gap-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs">{job.id.slice(0, 8)}…</span>
+                        <Badge variant="outline">{job.mode}</Badge>
+                        <Badge
+                          variant={
+                            job.status === "paused"
+                              ? "secondary"
+                              : job.status === "completed"
+                              ? "default"
+                              : job.status === "cancelled"
+                              ? "destructive"
+                              : "outline"
+                          }
+                        >
+                          {job.status}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-muted-foreground text-xs">
+                          {job.processedItems}/{job.totalItems}
+                        </span>
+                        {isActive && (
+                          <div className="flex items-center gap-1">
+                            {(job.status === "running" || job.status === "pending") && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => handlePause(job.id)}
+                                disabled={actionJobId === job.id}
+                              >
+                                {actionJobId === job.id ? (
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Pause className="w-3 h-3 mr-1" />
+                                )}
+                                {t("distillation.pause", "暂停")}
+                              </Button>
+                            )}
+                            {job.status === "paused" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => handleResume(job.id)}
+                                disabled={actionJobId === job.id}
+                              >
+                                {actionJobId === job.id ? (
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Play className="w-3 h-3 mr-1" />
+                                )}
+                                {t("distillation.resume", "继续")}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => openTerminateConfirm(job.id)}
+                              disabled={actionJobId === job.id || terminating}
+                            >
+                              <Square className="w-3 h-3 mr-1" />
+                              {t("distillation.terminate", "终止")}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -402,6 +596,20 @@ export default function DistillationPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={terminateConfirmOpen}
+        onOpenChange={setTerminateConfirmOpen}
+        title={t("distillation.confirmTerminateTitle", "终止作业")}
+        description={t(
+          "distillation.confirmTerminate",
+          "确定要终止此蒸馏作业吗？未处理的记录将被取消。",
+        )}
+        confirmLabel={t("distillation.terminate", "终止")}
+        variant="destructive"
+        onConfirm={handleConfirmTerminate}
+        loading={terminating}
+      />
     </div>
   );
 }

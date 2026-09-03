@@ -12,6 +12,8 @@ import {
   listDistillationJobs,
   listRoutingProposals,
   listSkillPackages,
+  pauseDistillationJob,
+  resumeDistillationJob,
   rollbackRoutingOverlay,
   validateDraftProposals,
 } from "../services/distillation/jobService";
@@ -74,12 +76,49 @@ export async function getJob(
   reply.send(job);
 }
 
+export async function pauseJob(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  try {
+    await pauseDistillationJob(req.params.id);
+    reply.send({ ok: true });
+  } catch (e: any) {
+    if (e.message === "Job not found") {
+      return reply.code(404).send({ error: e.message });
+    }
+    return reply.code(409).send({ error: e.message });
+  }
+}
+
+export async function resumeJob(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  try {
+    await resumeDistillationJob(req.params.id);
+    reply.send({ ok: true });
+  } catch (e: any) {
+    if (e.message === "Job not found") {
+      return reply.code(404).send({ error: e.message });
+    }
+    return reply.code(409).send({ error: e.message });
+  }
+}
+
 export async function cancelJob(
   req: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply,
 ) {
-  await cancelDistillationJob(req.params.id);
-  reply.send({ ok: true });
+  try {
+    await cancelDistillationJob(req.params.id);
+    reply.send({ ok: true });
+  } catch (e: any) {
+    if (e.message === "Job not found") {
+      return reply.code(404).send({ error: e.message });
+    }
+    return reply.code(409).send({ error: e.message });
+  }
 }
 
 export async function getProposals(req: FastifyRequest, reply: FastifyReply) {

@@ -45,7 +45,10 @@ export default async function (fastify: FastifyInstance) {
     getModels
   );
 
-  // 3. SSE endpoint for real-time chat logs
+  // 3. SSE endpoint for real-time chat logs.
+  // Protected by requireAdmin. In Docker / reverse proxy environments, clients must send
+  // "Authorization: Bearer <token>" with credentials: 'include' via fetchEventSource
+  // rather than native EventSource which cannot set headers.
   fastify.get(
     "/api/admin/chat-logs/stream",
     { onRequest: [requireAdmin] },

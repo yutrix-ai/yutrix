@@ -16,7 +16,12 @@ import {
   selectPendingLearningRecords,
 } from "./recordSelector";
 import { getDistillationSettings } from "./settingsService";
-import { startDistillationWorker, cancelDistillationWorker } from "./worker";
+import {
+  startDistillationWorker,
+  cancelDistillationWorker,
+  pauseDistillationWorker,
+  resumeDistillationWorker,
+} from "./worker";
 import { mergeRoutingAdjustments } from "./routingMerger";
 import { validateRoutingProposals } from "./proposalValidation";
 import { clearRoutingOverlayCache } from "./routingOverlay";
@@ -42,13 +47,16 @@ export async function getDistillationJob(id: string) {
 export async function createDistillationJob(
   input: CreateDistillationJobInput,
 ): Promise<{ jobId: string }> {
-  const running = await db
+  const activeJobs = await db
     .select()
     .from(distillationJobs)
-    .where(eq(distillationJobs.status, "running"))
+    .where(inArray(distillationJobs.status, ["pending", "running", "paused"]))
     .limit(1);
-  if (running.length > 0) {
-    throw new Error("A distillation job is already running");
+  if (activeJobs.length > 0) {
+    const active = activeJobs[0]!;
+    throw new Error(
+      `A distillation job is already active (${active.status}: ${active.id})`,
+    );
   }
 
   const settings = await getDistillationSettings();
@@ -102,7 +110,58 @@ export async function createDistillationJob(
   return { jobId };
 }
 
+export async function pauseDistillationJob(jobId: string): Promise<void> {
+  const job = await getDistillationJob(jobId);
+  if (!job) {
+    throw new Error("Job not found");
+  }
+  if (job.status !== "pending" && job.status !== "running") {
+    throw new Error(`Cannot pause job with status "${job.status}"`);
+  }
+  pauseDistillationWorker(jobId);
+  await db
+    .update(distillationJobs)
+    .set({ status: "paused" })
+    .where(eq(distillationJobs.id, jobId));
+}
+
+export async function resumeDistillationJob(jobId: string): Promise<void> {
+  const job = await getDistillationJob(jobId);
+  if (!job) {
+    throw new Error("Job not found");
+  }
+  if (job.status !== "paused") {
+    throw new Error(`Cannot resume job with status "${job.status}"`);
+  }
+  resumeDistillationWorker(jobId);
+  await db
+    .update(distillationJobs)
+    .set({ status: "pending" })
+    .where(eq(distillationJobs.id, jobId));
+  await db
+    .update(distillationJobItems)
+    .set({ status: "pending" })
+    .where(
+      and(
+        eq(distillationJobItems.jobId, jobId),
+        eq(distillationJobItems.status, "processing"),
+      ),
+    );
+  startDistillationWorker(jobId);
+}
+
 export async function cancelDistillationJob(jobId: string): Promise<void> {
+  const job = await getDistillationJob(jobId);
+  if (!job) {
+    throw new Error("Job not found");
+  }
+  if (
+    job.status !== "pending" &&
+    job.status !== "running" &&
+    job.status !== "paused"
+  ) {
+    throw new Error(`Cannot cancel job with status "${job.status}"`);
+  }
   cancelDistillationWorker(jobId);
   await db
     .update(distillationJobs)

@@ -3,6 +3,7 @@ import { z } from "zod";
 export const DISTILLATION_JOB_STATUSES = [
   "pending",
   "running",
+  "paused",
   "completed",
   "failed",
   "cancelled",

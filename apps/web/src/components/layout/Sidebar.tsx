@@ -219,7 +219,7 @@ export function Sidebar({ currentPath, onNavigate, sidebarOpen, onClose }: Sideb
                     <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-primary rounded-r" />
                   )}
                   <Icon className={cn("h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110", isActive ? "text-primary" : "")} />
-                  {item.label}
+                  <span className="truncate whitespace-nowrap min-w-0">{item.label}</span>
                 </button>
               );
             });
@@ -275,7 +275,7 @@ export function Sidebar({ currentPath, onNavigate, sidebarOpen, onClose }: Sideb
                           <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-primary rounded-r" />
                         )}
                         <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-hover:scale-110", isActive ? "text-primary" : "")} />
-                        {item.label}
+                        <span className="truncate whitespace-nowrap min-w-0">{item.label}</span>
                       </button>
                     );
                   })}

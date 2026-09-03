@@ -4,7 +4,7 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import path from "path";
 import crypto from "crypto";
 
-import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn, ensureSubdomainHostnameIdentity } from "./startup/migrations";
+import { ensureStrategyRoutingColumns, preSeedMigrations, isMigrationCompleted, ensureAnalyticsColumns, ensureAnalyticsIndexes, ensureTokenLimitColumns, ensureFunnelRoutingColumns, ensureProviderModelContextWindowColumn, ensureSubdomainHostnameIdentity, ensureExclusiveUserGroupMembership } from "./startup/migrations";
 import { seedAdminUser, seedBrandingSettings, seedDefaultApiKeyConcurrency, seedBuiltinPromptPolicies, syncManualModels, ensureDefaultGroup, seedModelDiscoverySettings, seedLoopGuardSettings } from "./startup/seed";
 import { refreshRoutingWeightSnapshot } from "./services/distillation/routingWeightsBridge";
 import { refreshLoopGuardConfigCache } from "./services/loopGuard";
@@ -121,6 +121,7 @@ export async function bootstrap() {
     await seedBuiltinPromptPolicies();
     await syncManualModels();
     await ensureDefaultGroup();
+    await ensureExclusiveUserGroupMembership();
     return;
   }
 
@@ -134,6 +135,7 @@ export async function bootstrap() {
 
   await ensureAnalyticsColumns();
   await ensureTokenLimitColumns();
+  await ensureExclusiveUserGroupMembership().catch(() => {});
   await preSeedMigrations();
 
   try {
@@ -214,4 +216,5 @@ export async function bootstrap() {
   await seedBuiltinPromptPolicies();
   await syncManualModels();
   await ensureDefaultGroup();
+  await ensureExclusiveUserGroupMembership();
 }

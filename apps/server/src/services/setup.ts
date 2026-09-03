@@ -27,6 +27,7 @@ import {
   ensureAnalyticsColumns,
   ensureAnalyticsIndexes,
   ensureSubdomainHostnameIdentity,
+  ensureExclusiveUserGroupMembership,
 } from "../startup/migrations";
 import { refreshLoopGuardConfigCache } from "./loopGuard";
 import { refreshRoutingWeightSnapshot } from "./distillation/routingWeightsBridge";
@@ -274,6 +275,7 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
     await ensureAnalyticsColumns();
     await ensureAnalyticsIndexes();
     await ensureSubdomainHostnameIdentity();
+    await ensureExclusiveUserGroupMembership();
   }
 
   // 4. Seed admin user (password hashed with bcrypt; never logged)
@@ -347,6 +349,7 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
   await seedBuiltinPromptPolicies();
   await syncManualModels();
   await ensureDefaultGroup();
+  await ensureExclusiveUserGroupMembership();
 
   // 7. Mark setup state
   setupCompletedInMemory = true;
