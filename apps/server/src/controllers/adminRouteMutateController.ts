@@ -47,6 +47,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     routingMode,
     ipWhitelist: rawIpWhitelist,
     timeoutEjectEnabled,
+    fallbackMatchTarget,
   } = body;
   const hostInput = rawHostInput ?? body.host;
   const resolvedRoutingMode = normalizeRoutingModeInput(routingMode);
@@ -154,6 +155,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     targets: JSON.stringify(resolvedTargets),
     routingMode: resolvedRoutingMode,
     retryCount: retryCount !== undefined ? retryCount : 3,
+    fallbackMatchTarget: !!fallbackMatchTarget,
     ipWhitelist,
     timeoutEjectEnabled: !!timeoutEjectEnabled,
     weight: 1,
@@ -219,6 +221,8 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
   const patchEnabled = body.enabled !== undefined ? body.enabled : route.enabled;
   const patchAllowClientModel = body.allowClientModel !== undefined ? body.allowClientModel : route.allowClientModel;
   const patchRetryCount = body.retryCount !== undefined ? body.retryCount : route.retryCount;
+  const patchFallbackMatchTarget =
+    body.fallbackMatchTarget !== undefined ? !!body.fallbackMatchTarget : route.fallbackMatchTarget;
 
   let patchIpWhitelist = route.ipWhitelist ?? null;
   if (body.ipWhitelist !== undefined) {
@@ -358,6 +362,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     allowClientModel: patchAllowClientModel,
     schedules: body.schedules !== undefined ? (body.schedules ? JSON.stringify(body.schedules) : null) : route.schedules,
     retryCount: patchRetryCount,
+    fallbackMatchTarget: patchFallbackMatchTarget,
     targets: JSON.stringify(resolvedTargets),
     routingMode: body.routingMode !== undefined
       ? normalizeRoutingModeInput(body.routingMode, resolveRouteRoutingMode(route))
