@@ -16,6 +16,15 @@ import {
 import { writeOpencodeAuthJson } from "./authJson";
 import { getOpencodeDownloadProxy } from "./settings";
 import { isOpencodeVersionOutdated } from "./protocol";
+import {
+  buildOpencodeChildEnv,
+  buildOpencodeServeArgs,
+  expectedSidecarLaunch,
+  parseSidecarLaunchMeta,
+  prepareSidecarFilesystem,
+  sidecarLaunchCompatible,
+  type SidecarLaunchMeta,
+} from "./sidecarSecurity";
 
 const logger = pino({ name: "opencode" });
 const execFileAsync = promisify(execFile);
@@ -36,11 +45,14 @@ export class OpencodeService {
   private cachedVersion: string | null = null;
   private startLock: Promise<void> = Promise.resolve();
   private readonly paths: OpencodePaths;
+  /** Tests must not fuser/kill listeners on the shared loopback port. */
+  private readonly skipExternalProcessReap: boolean;
   public readonly port = OPENCODE_LOOPBACK_PORT;
   public readonly host = OPENCODE_LOOPBACK_HOST;
 
-  private constructor(cwd = process.cwd()) {
+  private constructor(cwd = process.cwd(), skipExternalProcessReap = false) {
     this.paths = resolveOpencodePaths(cwd);
+    this.skipExternalProcessReap = skipExternalProcessReap;
   }
 
   public static getInstance(): OpencodeService {
@@ -60,7 +72,7 @@ export class OpencodeService {
 
   public static createForTests(cwd: string): OpencodeService {
     OpencodeService.resetInstanceForTests();
-    const service = new OpencodeService(cwd);
+    const service = new OpencodeService(cwd, true);
     OpencodeService.instance = service;
     return service;
   }
@@ -143,9 +155,20 @@ export class OpencodeService {
       throw new Error("OpenCode binary not found");
     }
 
+    const configHash = await prepareSidecarFilesystem(this.paths);
+    const expected = expectedSidecarLaunch(this.paths, configHash);
+
     if (await this.probeHealth()) {
-      this.lastError = null;
-      return;
+      const meta = await this.readLaunchMeta();
+      if (sidecarLaunchCompatible(meta, expected)) {
+        this.lastError = null;
+        return;
+      }
+      logger.warn(
+        { cwd: meta?.cwd ?? null, expectedCwd: expected.cwd },
+        "OpenCode sidecar healthy but launched with stale cwd/config; restarting",
+      );
+      await this.displaceIncompatibleSidecar(meta);
     }
 
     if (this.isRunning()) {
@@ -155,17 +178,11 @@ export class OpencodeService {
     const password = await this.ensureServerPassword();
     this.process = spawn(
       this.paths.binPath,
-      ["serve", "--port", String(this.port), "--hostname", this.host],
+      buildOpencodeServeArgs(this.port, this.host),
       {
+        cwd: this.paths.sandboxDir,
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          XDG_DATA_HOME: this.paths.dataHome,
-          XDG_CONFIG_HOME: this.paths.configHome,
-          XDG_STATE_HOME: this.paths.stateHome,
-          OPENCODE_SERVER_PASSWORD: password,
-          OPENCODE_SERVER_USERNAME: OPENCODE_SERVER_USERNAME,
-        },
+        env: buildOpencodeChildEnv(this.paths, password),
       },
     );
 
@@ -193,7 +210,57 @@ export class OpencodeService {
     }
     this.lastError = null;
     this.cachedVersion = await this.readHealthVersion();
-    logger.info({ port: this.port }, "OpenCode sidecar started");
+    await this.writeLaunchMeta({
+      ...expected,
+      pid: this.process?.pid,
+    });
+    logger.info({ port: this.port, cwd: this.paths.sandboxDir }, "OpenCode sidecar started");
+  }
+
+  private async readLaunchMeta(): Promise<SidecarLaunchMeta | null> {
+    try {
+      return parseSidecarLaunchMeta(JSON.parse(await readFile(this.paths.launchMetaPath, "utf8")));
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeLaunchMeta(meta: SidecarLaunchMeta): Promise<void> {
+    await mkdir(this.paths.stateHome, { recursive: true });
+    await writeFile(this.paths.launchMetaPath, `${JSON.stringify(meta)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  }
+
+  private async displaceIncompatibleSidecar(meta: SidecarLaunchMeta | null): Promise<void> {
+    this.stop();
+    if (this.skipExternalProcessReap) return;
+    if (typeof meta?.pid === "number" && meta.pid !== process.pid) {
+      try {
+        process.kill(meta.pid, "SIGTERM");
+      } catch {
+        // leftover already gone
+      }
+    }
+    await this.reapListenerOnPort(this.port);
+  }
+
+  private async reapListenerOnPort(port: number): Promise<void> {
+    try {
+      const { stdout } = await execFileAsync("fuser", [`${port}/tcp`], { timeout: 2000 });
+      for (const token of stdout.split(/\s+/)) {
+        const pid = Number(token);
+        if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // already gone
+        }
+      }
+    } catch {
+      // fuser missing or nothing listening
+    }
   }
 
   public stop(): void {

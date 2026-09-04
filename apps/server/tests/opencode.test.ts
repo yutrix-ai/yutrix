@@ -284,6 +284,11 @@ describe("auth.json + XDG paths", () => {
     const paths = resolveOpencodePaths(root);
     expect(paths.authPath).toBe(join(root, ".vendor/opencode/data/opencode/auth.json"));
     expect(paths.dataHome).toBe(join(root, ".vendor/opencode/data"));
+    expect(paths.sandboxDir).toBe(join(root, ".vendor/opencode/sandbox"));
+    expect(paths.configFilePath).toBe(join(root, ".vendor/opencode/config/opencode/opencode.json"));
+    expect(paths.homeDir).toBe(join(root, ".vendor/opencode/home"));
+    expect(paths.sandboxDir).not.toBe(root);
+    expect(paths.launchMetaPath).toBe(join(root, ".vendor/opencode/state/sidecar-launch.json"));
 
     await writeOpencodeAuthJson(paths.authPath, "openrouter", "sk-or-1");
     await writeOpencodeAuthJson(paths.authPath, "openrouter", "sk-or-2");

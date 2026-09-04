@@ -8,28 +8,48 @@ export function resolveOpencodeVendorDir(cwd = process.cwd()): string {
 export interface OpencodePaths {
   vendorDir: string;
   binPath: string;
+  /** Empty isolated cwd for `opencode serve`. Never the gateway checkout. */
+  sandboxDir: string;
+  /** HOME for the sidecar process — kept inside vendor, not the host user. */
+  homeDir: string;
+  cacheHome: string;
+  tmpDir: string;
   /** XDG_DATA_HOME — OpenCode writes `$XDG_DATA_HOME/opencode/auth.json`. */
   dataHome: string;
   configHome: string;
+  /** `$XDG_CONFIG_HOME/opencode` — managed deny-all `opencode.json`. */
+  configDir: string;
+  configFilePath: string;
   stateHome: string;
   authDir: string;
   authPath: string;
   passwordPath: string;
+  launchMetaPath: string;
 }
 
 export function resolveOpencodePaths(cwd = process.cwd()): OpencodePaths {
   const vendorDir = resolveOpencodeVendorDir(cwd);
   const dataHome = join(vendorDir, "data");
   const authDir = join(dataHome, "opencode");
+  const configHome = join(vendorDir, "config");
+  const configDir = join(configHome, "opencode");
+  const stateHome = join(vendorDir, "state");
   return {
     vendorDir,
     binPath: join(vendorDir, "bin", "opencode"),
+    sandboxDir: join(vendorDir, "sandbox"),
+    homeDir: join(vendorDir, "home"),
+    cacheHome: join(vendorDir, "cache"),
+    tmpDir: join(vendorDir, "tmp"),
     dataHome,
-    configHome: join(vendorDir, "config"),
-    stateHome: join(vendorDir, "state"),
+    configHome,
+    configDir,
+    configFilePath: join(configDir, "opencode.json"),
+    stateHome,
     authDir,
     authPath: join(authDir, "auth.json"),
-    passwordPath: join(vendorDir, "state", "server-password"),
+    passwordPath: join(stateHome, "server-password"),
+    launchMetaPath: join(stateHome, "sidecar-launch.json"),
   };
 }
 
