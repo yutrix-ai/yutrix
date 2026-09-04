@@ -158,25 +158,81 @@ export function sanitizeOpencodeAssistantText(text: string): string {
   return out;
 }
 
+function formatImageNote(opts: { url?: string; alt?: string; inline?: boolean }): string {
+  const bits: string[] = [];
+  const alt = opts.alt?.trim();
+  if (alt) bits.push(alt);
+  if (opts.url) {
+    if (/^data:/i.test(opts.url)) bits.push("inline data omitted");
+    else bits.push(opts.url);
+  } else if (opts.inline) {
+    bits.push("inline data omitted");
+  }
+  if (bits.length === 0) bits.push("image attached");
+  return `[image: ${bits.join("; ")}]`;
+}
+
+/** Best-effort text note for vision parts. Session API is text-only; never dump base64. */
+function describeImagePart(rec: Record<string, unknown>): string {
+  const type = String(rec.type || "").toLowerCase();
+  const imageUrlField = rec.image_url;
+  const source =
+    rec.source && typeof rec.source === "object" ? (rec.source as Record<string, unknown>) : null;
+
+  const looksImage =
+    type === "image_url" ||
+    type === "input_image" ||
+    type === "image" ||
+    imageUrlField != null ||
+    (source != null && (source.type === "base64" || source.type === "url" || typeof source.data === "string"));
+
+  if (!looksImage) return "";
+
+  let url: string | undefined;
+  let alt: string | undefined;
+  let inline = false;
+
+  if (typeof rec.alt === "string") alt = rec.alt;
+  if (typeof rec.caption === "string") alt = alt || rec.caption;
+
+  if (typeof imageUrlField === "string") {
+    url = imageUrlField;
+  } else if (imageUrlField && typeof imageUrlField === "object") {
+    const img = imageUrlField as Record<string, unknown>;
+    if (typeof img.url === "string") url = img.url;
+    if (typeof img.alt === "string") alt = alt || img.alt;
+    if (typeof img.caption === "string") alt = alt || img.caption;
+  }
+
+  if (typeof rec.url === "string" && !url) url = rec.url;
+
+  if (source) {
+    if (typeof source.url === "string") url = url || source.url;
+    if (source.type === "base64" || typeof source.data === "string") inline = true;
+  }
+
+  return formatImageNote({ url, alt, inline });
+}
+
+function extractContentPart(part: unknown): string {
+  if (typeof part === "string") return part;
+  if (!part || typeof part !== "object") return "";
+  const rec = part as Record<string, unknown>;
+  const bits: string[] = [];
+  if (typeof rec.text === "string" && rec.text) bits.push(rec.text);
+  else if (typeof rec.content === "string" && rec.content) bits.push(rec.content);
+  const image = describeImagePart(rec);
+  if (image) bits.push(image);
+  return bits.join("\n");
+}
+
 export function extractMessageText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object") {
-          const rec = part as Record<string, unknown>;
-          if (typeof rec.text === "string") return rec.text;
-          if (typeof rec.content === "string") return rec.content;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
+    return content.map(extractContentPart).filter(Boolean).join("\n");
   }
   if (content && typeof content === "object") {
-    const rec = content as Record<string, unknown>;
-    if (typeof rec.text === "string") return rec.text;
+    return extractContentPart(content);
   }
   return "";
 }

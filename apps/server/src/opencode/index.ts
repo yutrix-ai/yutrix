@@ -84,6 +84,7 @@ export const opencodeRoutes: FastifyPluginAsync = async (fastify) => {
 export { OpencodeService };
 export { executeOpencodeSessionApi } from "./opencodeClient";
 export {
+  extractMessageText,
   resolveOpencodeProviderSlug,
   sanitizeOpencodeAssistantText,
   shouldRouteViaOpencode,

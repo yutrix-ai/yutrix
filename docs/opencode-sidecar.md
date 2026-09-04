@@ -63,3 +63,12 @@ allow-all tool permissions. Session API request/response shapes are unchanged
 chat-only instruction, strips leftover tool-invoke markup from joined text,
 and retries once if the sanitized reply is empty. A second empty reply is a
 502 / `upstream_error` rather than raw tool fences.
+
+## Vision / multimodal limitation
+
+Proven Session `parts` are text-only (`{ type: "text", text }`). The gateway
+does **not** forward image bytes as OpenCode file/vision parts (unproven).
+OpenAI `image_url` / `input_image` and Anthropic `image` blocks are flattened
+into a short note such as `[image: alt; https://…]` or
+`[image: inline data omitted]`. The request is not rejected. Pixel-level
+vision is not available on this compat path.

@@ -6,6 +6,7 @@ import { tmpdir } from "os";
 import {
   assertNoSpoofHeaders,
   buildOpencodeUserText,
+  extractMessageText,
   extractOpencodeSessionId,
   joinOpencodeTextParts,
   mapOpencodeHttpError,
@@ -18,6 +19,17 @@ import {
   sanitizeOpencodeAssistantText,
   shouldRouteViaOpencode,
 } from "../src/opencode/protocol";
+
+const HOST_LEAK_RE = /\/opt\/promptgate|AGENTS\.md|<\|message_model\|>|<\|content_invoke_tool_json\|>|<\|end_message\|>/i;
+const TOOL_JUNK_RE = /message_model|content_invoke_tool_json|invoke_tool|<\|end_message\|>|<tool_call>/i;
+const WEBFETCH_SAMPLE =
+  '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch",...}<|end_message|>';
+
+function expectCleanClientText(text: string): void {
+  expect(text.trim().length).toBeGreaterThan(0);
+  expect(text).not.toMatch(HOST_LEAK_RE);
+  expect(text).not.toMatch(TOOL_JUNK_RE);
+}
 import { resolveOpencodePaths } from "../src/opencode/paths";
 import { writeOpencodeAuthJson } from "../src/opencode/authJson";
 import { buildUpstreamHeaders } from "../src/routes/gateway/upstream";
@@ -111,36 +123,93 @@ describe("OpenCode protocol helpers", () => {
     expect(text).toContain("user: follow up");
   });
 
-  it("strips OpenCode tool-invoke markup from assistant text", () => {
-    const sample =
-      '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch",...}<|end_message|>';
-    expect(sanitizeOpencodeAssistantText(sample)).toBe("");
+  it("strips the exact WebFetch tool-markup sample to empty (no tool junk)", () => {
+    const cleaned = sanitizeOpencodeAssistantText(WEBFETCH_SAMPLE);
+    expect(cleaned).toBe("");
+    expect(cleaned).not.toMatch(/WebFetch/);
+    expect(cleaned).not.toMatch(TOOL_JUNK_RE);
+  });
 
-    expect(
-      sanitizeOpencodeAssistantText(
-        '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}<|end_message|>',
-      ),
-    ).toBe("");
-
+  it("keeps mixed prose and drops the surrounding tool markup", () => {
     expect(
       sanitizeOpencodeAssistantText(
         'Here is a summary.\n<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}<|end_message|>',
       ),
     ).toBe("Here is a summary.");
-
-    expect(
-      sanitizeOpencodeAssistantText(
-        '<tool_call>\n{"name":"WebFetch","arguments":{"url":"https://example.com"}}\n</tool_call>',
-      ),
-    ).toBe("");
-
-    expect(sanitizeOpencodeAssistantText("The sky is blue.")).toBe("The sky is blue.");
-    expect(sanitizeOpencodeAssistantText("   \n")).toBe("");
     expect(
       sanitizeOpencodeAssistantText(
         '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}\nParis is the capital.',
       ),
     ).toBe("Paris is the capital.");
+    expect(
+      sanitizeOpencodeAssistantText(
+        '<tool_call>\n{"name":"WebFetch","arguments":{"url":"https://example.com"}}\n</tool_call>',
+      ),
+    ).toBe("");
+    expect(sanitizeOpencodeAssistantText("The sky is blue.")).toBe("The sky is blue.");
+    expect(sanitizeOpencodeAssistantText("我是语言模型，可以回答问题。")).toBe("我是语言模型，可以回答问题。");
+    expect(sanitizeOpencodeAssistantText("   \n")).toBe("");
+  });
+
+  it("flattens image_url / image parts into text notes without crashing or dumping base64", () => {
+    const huge = `data:image/png;base64,${"A".repeat(4000)}`;
+    expect(extractMessageText({ type: "image_url", image_url: "https://cdn.example/cat.png" })).toBe(
+      "[image: https://cdn.example/cat.png]",
+    );
+    expect(
+      extractMessageText({
+        type: "image_url",
+        image_url: { url: "https://cdn.example/cat.png", alt: "a tabby cat" },
+      }),
+    ).toBe("[image: a tabby cat; https://cdn.example/cat.png]");
+    const dataNote = extractMessageText({ type: "image_url", image_url: { url: huge } });
+    expect(dataNote).toBe("[image: inline data omitted]");
+    expect(dataNote).not.toContain("AAAA");
+    expect(dataNote).not.toContain(huge);
+
+    expect(
+      extractMessageText([
+        { type: "text", text: "这是什么" },
+        { type: "image_url", image_url: { url: "https://cdn.example/x.png", caption: "diagram" } },
+      ]),
+    ).toBe("这是什么\n[image: diagram; https://cdn.example/x.png]");
+
+    expect(
+      extractMessageText({
+        type: "image",
+        source: { type: "url", url: "https://cdn.example/a.png" },
+      }),
+    ).toBe("[image: https://cdn.example/a.png]");
+    expect(
+      extractMessageText({
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
+      }),
+    ).toBe("[image: inline data omitted]");
+    expect(extractMessageText([{ type: "input_image", image_url: huge }])).toBe("[image: inline data omitted]");
+  });
+
+  it("includes image notes in Session user text so vision requests are not dropped", () => {
+    const text = buildOpencodeUserText({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "描述这张图" },
+            { type: "image_url", image_url: { url: "https://cdn.example/cat.png", alt: "cat" } },
+          ],
+        },
+      ],
+    });
+    expect(text.startsWith(OPENCODE_CHAT_ONLY_INSTRUCTION)).toBe(true);
+    expect(text).toContain("user: 描述这张图");
+    expect(text).toContain("[image: cat; https://cdn.example/cat.png]");
+    expect(text).not.toMatch(HOST_LEAK_RE);
+
+    const imageOnly = buildOpencodeUserText({
+      messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://cdn.example/only.png" } }] }],
+    });
+    expect(imageOnly).toContain("user: [image: https://cdn.example/only.png]");
   });
 
   it("maps 429/auth so the gateway can sticky-rotate providerApiKeys", () => {
@@ -397,6 +466,134 @@ describe("OpenCode Session API adapter", () => {
     expect(result.status).toBe(502);
     expect(result.responseProtocol).toBe("anthropic");
     expect(result.data.error.type).toBe("upstream_error");
+  });
+
+  it("forwards 介绍自己 as plain chat and returns natural language", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_intro" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ parts: [{ type: "text", text: "我是语言模型助手，可以回答问题和协助写作。" }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(
+      { messages: [{ role: "user", content: "介绍自己" }] },
+      "openrouter",
+      "gpt-4o",
+      "k",
+      new AbortController(),
+    );
+    expect(result.status).toBe(200);
+    expectCleanClientText(result.data.choices[0].message.content);
+    expect(result.data.choices[0].message.content).toContain("语言模型");
+
+    const sent = JSON.parse(fetchMock.mock.calls[1][1].body).parts[0].text as string;
+    expect(sent.startsWith(OPENCODE_CHAT_ONLY_INSTRUCTION)).toBe(true);
+    expect(sent).toContain("user: 介绍自己");
+    expectCleanClientText(sent.replace(OPENCODE_CHAT_ONLY_INSTRUCTION, "ok"));
+    expect(sent).not.toMatch(/\/opt\/promptgate|AGENTS\.md/);
+  });
+
+  it("forwards 服务器时区是什么 as chat-only and strips timezone tool markup", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_tz" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          parts: [{
+            type: "text",
+            text: `${WEBFETCH_SAMPLE}\n我无法查看服务器时区，请在本机用 date 或 timedatectl 查询。`,
+          }],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(
+      { messages: [{ role: "user", content: "服务器时区是什么" }] },
+      "openrouter",
+      "gpt-4o",
+      "k",
+      new AbortController(),
+    );
+    expect(result.status).toBe(200);
+    expectCleanClientText(result.data.choices[0].message.content);
+    expect(result.data.choices[0].message.content).toContain("时区");
+    expect(result.data.choices[0].message.content).not.toMatch(/WebFetch|\/opt\/promptgate|AGENTS\.md/);
+
+    const sent = JSON.parse(fetchMock.mock.calls[1][1].body).parts[0].text as string;
+    expect(sent).toContain("user: 服务器时区是什么");
+    expect(sent).toContain(OPENCODE_CHAT_ONLY_INSTRUCTION);
+    expect(sent).not.toMatch(/\/opt\/promptgate|AGENTS\.md/);
+  });
+
+  it("sends 2–3 turn history through buildOpencodeUserText into the Session message", async () => {
+    const body = {
+      messages: [
+        { role: "user", content: "介绍自己" },
+        { role: "assistant", content: "我是助手。" },
+        { role: "user", content: "服务器时区是什么" },
+      ],
+    };
+    const flattened = buildOpencodeUserText(body);
+    expect(flattened.startsWith(OPENCODE_CHAT_ONLY_INSTRUCTION)).toBe(true);
+    expect(flattened).toContain("user: 介绍自己");
+    expect(flattened).toContain("assistant: 我是助手。");
+    expect(flattened).toContain("user: 服务器时区是什么");
+    expect(flattened).not.toMatch(HOST_LEAK_RE);
+
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_hist" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ parts: [{ type: "text", text: "我看不到宿主机时区，请在本机自行查询。" }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(body, "openrouter", "gpt-4o", "k", new AbortController());
+    expect(result.status).toBe(200);
+    expectCleanClientText(result.data.choices[0].message.content);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).parts[0].text).toBe(flattened);
+  });
+
+  it("forwards multimodal image parts as text notes and does not crash", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_img" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ parts: [{ type: "text", text: "图里是一只猫。我看不到像素，只能根据文字说明回答。" }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(
+      {
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "描述这张图" },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${"B".repeat(200)}`, alt: "cat" } },
+          ],
+        }],
+      },
+      "openrouter",
+      "gpt-4o",
+      "k",
+      new AbortController(),
+    );
+    expect(result.status).toBe(200);
+    expectCleanClientText(result.data.choices[0].message.content);
+
+    const sent = JSON.parse(fetchMock.mock.calls[1][1].body).parts[0].text as string;
+    expect(sent).toContain("user: 描述这张图");
+    expect(sent).toContain("[image: cat; inline data omitted]");
+    expect(sent).not.toContain("BBBB");
+    expect(sent).not.toMatch(TOOL_JUNK_RE);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).agent).toBeUndefined();
   });
 
   it("refuses to start when the binary is missing", async () => {

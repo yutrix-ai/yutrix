@@ -78,6 +78,8 @@ describe("OpenCode sidecar security helpers", () => {
       tools: Record<string, boolean>;
     };
     expect(config.permission["*"]).toBe("deny");
+    expect(OPENCODE_DENIED_TOOLS).toContain("webfetch");
+    expect(OPENCODE_DENIED_TOOLS).toContain("bash");
     for (const tool of OPENCODE_DENIED_TOOLS) {
       expect(config.permission[tool]).toBe("deny");
       expect(config.tools[tool]).toBe(false);
@@ -137,6 +139,11 @@ describe("OpenCode sidecar security helpers", () => {
     expect(written.permission["*"]).toBe("deny");
     expect(written.permission.bash).toBe("deny");
     expect(written.permission.read).toBe("deny");
+    expect(written.permission.webfetch).toBe("deny");
+    expect(written.permission.websearch).toBe("deny");
+    expect(written.tools.webfetch).toBe(false);
+    expect(written.tools.bash).toBe(false);
+    expect(JSON.stringify(written)).not.toMatch(/"allow"|"ask"/);
   });
 
   it("adopts only sidecars whose cwd and config hash match", () => {
