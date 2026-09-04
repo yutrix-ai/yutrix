@@ -69,6 +69,9 @@
       },
       "log": {
         "test": "测试日志 {{message}}"
+      },
+      "opencode": {
+        "compat_channel": "OpenCode 兼容通道 requestId={{requestId}} provider={{providerName}} model={{modelId}} path=sidecar sandbox=on"
       }
     },
     "title": "系统日志",

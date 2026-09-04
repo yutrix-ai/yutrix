@@ -69,6 +69,9 @@
       },
       "log": {
         "test": "Test log {{message}}"
+      },
+      "opencode": {
+        "compat_channel": "OpenCode compat channel requestId={{requestId}} provider={{providerName}} model={{modelId}} path=sidecar sandbox=on"
       }
     },
     "title": "Action Logs",

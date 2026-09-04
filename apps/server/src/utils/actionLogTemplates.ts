@@ -185,6 +185,10 @@ export function renderActionLogServerLine(
     return `${timestamp} ${event.level} Provider adapter selected requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} adapter=${event.adapterId} protocol=${event.effectiveProtocol} url=${event.effectiveBaseUrl}`;
   }
 
+  if (code === "opencode.compat_channel") {
+    return `${timestamp} ${event.level} OpenCode compat channel requestId=${event.requestId} provider=${event.providerName} model=${event.modelId} path=sidecar sandbox=on`;
+  }
+
   if (code === "request.provider_adapter.stream_error") {
     return `${timestamp} ${event.level} Provider adapter stream error requestId=${event.requestId} adapter=${event.adapterId} errorCode=${event.errorCode} errorType=${event.errorType} msg=${event.message}`;
   }

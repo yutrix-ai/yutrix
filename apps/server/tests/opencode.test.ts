@@ -291,6 +291,7 @@ describe("OpenCode Session API adapter", () => {
     expect(result.responseProtocol).toBe("openai");
     expect(result.data.choices[0].message.content).toBe("Hello from opencode!");
     expect(result.data.object).toBe("chat.completion");
+    expect(result.data.usage).toBeUndefined();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:23456/session");

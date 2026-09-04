@@ -290,6 +290,11 @@ export function joinOpencodeTextParts(payload: any): string {
     .join("");
 }
 
+/**
+ * Session API does not return tokens. Omit usage so detectProviderUsagePresence
+ * does not treat hardcoded zeros as provider-reported; resolveRoundUsage then
+ * estimates from request body + assistant text (tokenizer, else estimateTokensFallback).
+ */
 export function toOpenAICompletion(modelId: string, sessionId: string, text: string) {
   return {
     id: `chatcmpl-${sessionId}`,
@@ -303,11 +308,6 @@ export function toOpenAICompletion(modelId: string, sessionId: string, text: str
         finish_reason: "stop",
       },
     ],
-    usage: {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-    },
   };
 }
 
@@ -319,7 +319,60 @@ export function toAnthropicMessage(modelId: string, sessionId: string, text: str
     model: modelId,
     content: [{ type: "text", text }],
     stop_reason: "end_turn",
-    usage: { input_tokens: 0, output_tokens: 0 },
+  };
+}
+
+/** Same envelope as executeUpstreamFetch success: provider/baseLog/queueMs/latency. */
+export function attachOpencodeGatewayMeta<T extends Record<string, any>>(
+  result: T,
+  extras: {
+    provider: any;
+    baseLog?: any;
+    queueMs?: number;
+    latencyMs?: number;
+  },
+): T & {
+  provider: any;
+  baseLog?: any;
+  queueMs: number;
+  latencyMs: number;
+  rawProviderUsage: {
+    inputProvided: false;
+    outputProvided: false;
+    cacheReadProvided: false;
+    cacheWriteProvided: false;
+  };
+} {
+  return {
+    ...result,
+    provider: extras.provider,
+    baseLog: extras.baseLog,
+    queueMs: extras.queueMs ?? 0,
+    latencyMs: extras.latencyMs ?? 0,
+    rawProviderUsage: {
+      inputProvided: false,
+      outputProvided: false,
+      cacheReadProvided: false,
+      cacheWriteProvided: false,
+    },
+  };
+}
+
+export function buildOpencodeCompatChannelLog(input: {
+  baseActionLog?: Record<string, any>;
+  providerName?: string;
+  modelId?: string;
+  requestId?: string;
+}) {
+  return {
+    ...(input.baseActionLog || {}),
+    level: "INFO" as const,
+    code: "opencode.compat_channel",
+    providerName: input.providerName,
+    modelId: input.modelId,
+    requestId: input.requestId ?? input.baseActionLog?.requestId,
+    channel: "sidecar",
+    sandbox: true,
   };
 }
 

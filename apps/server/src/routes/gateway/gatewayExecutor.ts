@@ -14,7 +14,7 @@ import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { adaptRequestProtocol } from "./protocolAdapter";
 import { buildUpstreamHeaders, determineUpstreamPath, executeUpstreamFetch, createFakeStreamFromData } from "./upstream";
 import { executeOpencodeSessionApi } from "../../opencode/opencodeClient";
-import { resolveOpencodeProviderSlug, shouldRouteViaOpencode } from "../../opencode/protocol";
+import { attachOpencodeGatewayMeta, buildOpencodeCompatChannelLog, resolveOpencodeProviderSlug, shouldRouteViaOpencode } from "../../opencode/protocol";
 import { buildBaseLog, insertInitialRequestLog, finalizeStreamLog } from "./logging";
 import { getGlobalQueue, getApiKeyQueue, getProviderQueue } from "./concurrency";
 import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
@@ -1689,14 +1689,29 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
               try {
                 let result: any;
+                const attemptStartProcessingMs = Date.now();
                 if (shouldRouteViaOpencode(activeModelConfig)) {
-                  result = await executeOpencodeSessionApi(
-                    upstreamBody,
-                    resolveOpencodeProviderSlug(provider),
-                    currentAttempt.modelId,
-                    decryptedKey!,
-                    fetchController,
-                    incomingProtocol,
+                  logAction(buildOpencodeCompatChannelLog({
+                    baseActionLog,
+                    providerName: provider.name,
+                    modelId: currentAttempt.modelId,
+                    requestId: baseActionLog?.requestId,
+                  }));
+                  result = attachOpencodeGatewayMeta(
+                    await executeOpencodeSessionApi(
+                      upstreamBody,
+                      resolveOpencodeProviderSlug(provider),
+                      currentAttempt.modelId,
+                      decryptedKey!,
+                      fetchController,
+                      incomingProtocol,
+                    ),
+                    {
+                      provider,
+                      baseLog,
+                      queueMs,
+                      latencyMs: Date.now() - attemptStartProcessingMs,
+                    },
                   );
                 } else {
                   result = await executeUpstreamFetch({
@@ -1712,7 +1727,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                     holdUser,
                     holdGlobal,
                     queueMs,
-                    attemptStartProcessingMs: Date.now(),
+                    attemptStartProcessingMs,
                     baseLog,
                     timeoutId,
                     currentAttempt,
