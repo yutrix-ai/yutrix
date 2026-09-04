@@ -385,7 +385,9 @@
     "clickToCollapse": "Click to collapse",
     "clickToExpand": "Click to expand error message",
     "copy": "Copy",
+    "copied": "Copied to clipboard",
     "copySuccess": "Copied to clipboard",
+    "saving": "Saving...",
     "close": "Close",
     "enabled": "Enabled",
     "disabled": "Disabled",
@@ -695,8 +697,16 @@
       "description": "Available models for this provider, synced automatically. Context window drives long-context strategy routing; max output only clamps request max_tokens.",
       "refresh": "Refresh Models",
       "refreshing": "Refreshing...",
+      "total": "Total",
+      "unit": "models",
+      "loading": "Loading...",
       "enableAll": "Enable All",
       "disableAll": "Disable All",
+      "actions": {
+        "refresh": "Fetch available models",
+        "refreshing": "Fetching...",
+        "save": "Save changes"
+      },
       "opencodeWarning": "Compatible channel is on for some models, but the OpenCode sidecar is not ready. Open System Info to install it.",
       "opencodeWarningLink": "Go to System Info",
       "opencodeCompatWarn": {
@@ -715,8 +725,12 @@
       "refreshFailed": "Sync failed",
       "table": {
         "model": "Model ID",
+        "name": "Model Name / ID",
         "enabled": "Enabled",
+        "enable": "Enable",
         "opencode": "Compat. channel",
+        "alias": "Alias",
+        "tokenizer": "Tokenizer",
         "tokenizerRepo": "Tokenizer (HF Repo)",
         "contextWindow": "Context Window",
         "maxOutput": "Max Output Limit",
@@ -730,7 +744,8 @@
       },
       "placeholders": {
         "uncapped": "Uncapped",
-        "tokenizerRepo": "Auto/fallback"
+        "tokenizerRepo": "Auto/fallback",
+        "alias": "Leave blank to show original name"
       },
       "toasts": {
         "saveSuccess": "Model configurations saved successfully",
@@ -761,6 +776,13 @@
     "totalRequests": "Total Requests",
     "totalTokens": "Total Tokens",
     "tokenBreakdownShort": "In: {{input}} / Out: {{output}}",
+    "maxInputTokens": "Input Limit",
+    "maxInputTokensPlaceholder": "Leave blank to inherit the group limit; 0 means unlimited",
+    "maxInputTokensHint": "Leave blank to inherit the user group; 0 explicitly means unlimited; a value greater than 0 overrides all group limits.",
+    "inputLimitUnlimited": "Unlimited",
+    "inputLimitInherited": "Inherited",
+    "inputLimitOverride": "Override",
+    "editTitle": "Edit User",
     "lastLogin": "Last Login",
     "actions": "Actions",
     "neverLoggedIn": "Never logged in",
@@ -778,7 +800,9 @@
       "deleteSuccess": "User deleted",
       "deleteFailed": "Failed to delete",
       "resetSuccess": "Password reset successfully",
-      "resetFailed": "Failed to reset password"
+      "resetFailed": "Failed to reset password",
+      "updateSuccess": "User updated",
+      "updateFailed": "Failed to update"
     },
     "empty": {
       "title": "No Users",
@@ -1677,6 +1701,10 @@
     "description": "Description",
     "defaultBadge": "Default",
     "customBadge": "Custom",
+    "unlimited": "Unlimited",
+    "maxInputTokens": "Max Input Tokens",
+    "maxInputTokensHint": "Enter 0 for unlimited. Users inherit this value unless they have an override.",
+    "effectiveInputLimit": "Effective input limit",
     "manageMembers": "Manage Members",
     "membersTitle": "Manage Members",
     "membersDesc": "View and manage members (each user can belong to at most one group, adding moves them from their current group)",
@@ -1709,6 +1737,7 @@
       "name": "Name",
       "description": "Description",
       "members": "Members",
+      "maxInputTokens": "Input Limit",
       "type": "Type",
       "actions": "Actions"
     },
@@ -1757,12 +1786,26 @@
     },
     "actions": {
       "generate": "Generate API Key",
+      "delete": "Delete",
       "createSuccess": "Created successfully",
       "deleteSuccess": "Deleted successfully"
     },
     "status": {
       "active": "Active",
       "revoked": "Revoked"
+    },
+    "table": {
+      "name": "Name",
+      "key": "API Key",
+      "status": "Status",
+      "createdAt": "Created At",
+      "lastUsed": "Last Used",
+      "createdBy": "Created By",
+      "actions": "Actions"
+    },
+    "created": {
+      "title": "API Key Generated",
+      "description": "Please save this key now. For security reasons, it will only be shown once."
     },
     "delete": {
       "title": "Delete OpenAPI Key",
@@ -1777,7 +1820,10 @@
       "startTime": "Start Time",
       "endTime": "End Time",
       "runBtn": "Send Request (Run Test)",
-      "errorNoKey": "Please enter an API Key first"
+      "errorNoKey": "Please enter an API Key first",
+      "emptyResult": "No test results yet. Click the button on the left to send a request.",
+      "copy": "Copy",
+      "requestFailed": "Request failed"
     }
   },
   "responseCache": {

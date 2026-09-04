@@ -149,7 +149,7 @@ export default function AdminOpenAPI() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "Request failed");
+        throw new Error(data.error || t("openapi.doc.requestFailed", "请求失败"));
       }
       setTestResult(JSON.stringify(data, null, 2));
     } catch (error: any) {
@@ -190,14 +190,14 @@ export default function AdminOpenAPI() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("apiKeys.fields.name", "名称")}</TableHead>
-                <TableHead>{t("apiKeys.fields.key", "API 密钥")}</TableHead>
-                <TableHead>{t("apiKeys.fields.status", "状态")}</TableHead>
-                <TableHead>{t("apiKeys.fields.createdAt", "创建时间")}</TableHead>
-                <TableHead>{t("apiKeys.fields.lastUsed", "最后使用")}</TableHead>
-                <TableHead>{t("apiKeys.fields.createdBy", "创建人")}</TableHead>
+                <TableHead>{t("openapi.table.name", "名称")}</TableHead>
+                <TableHead>{t("openapi.table.key", "API 密钥")}</TableHead>
+                <TableHead>{t("openapi.table.status", "状态")}</TableHead>
+                <TableHead>{t("openapi.table.createdAt", "创建时间")}</TableHead>
+                <TableHead>{t("openapi.table.lastUsed", "最后使用")}</TableHead>
+                <TableHead>{t("openapi.table.createdBy", "创建人")}</TableHead>
                 <TableHead className="text-right">
-                  {t("common.actions", "操作")}
+                  {t("openapi.table.actions", "操作")}
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -280,7 +280,7 @@ export default function AdminOpenAPI() {
                             })
                           }
                         >
-                          {t("common.delete", "删除")}
+                          {t("openapi.actions.delete", "删除")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -379,7 +379,7 @@ export default function AdminOpenAPI() {
                 <p className="text-sm font-medium">{t("openapi.doc.testResult", "测试结果：")}</p>
                 {testResult && (
                   <Button variant="ghost" size="sm" onClick={() => handleCopy(testResult)} className="h-7 px-2 text-xs">
-                    <Copy className="h-3 w-3 mr-1" /> Copy
+                    <Copy className="h-3 w-3 mr-1" /> {t("openapi.doc.copy", "复制")}
                   </Button>
                 )}
               </div>
@@ -412,11 +412,11 @@ export default function AdminOpenAPI() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {t("apiKeys.created.title", "API 密钥已生成")}
+              {t("openapi.created.title", "API 密钥已生成")}
             </DialogTitle>
             <DialogDescription>
               {t(
-                "apiKeys.created.description",
+                "openapi.created.description",
                 "请妥善保存此密钥。出于安全考虑，它将只显示一次。",
               )}
             </DialogDescription>
@@ -444,7 +444,7 @@ export default function AdminOpenAPI() {
           { name: revokeConfirm.keyName },
         )}
         onConfirm={handleRevoke}
-        confirmLabel={t("common.delete", "删除")}
+        confirmLabel={t("openapi.actions.delete", "删除")}
         variant="destructive"
       />
     </div>

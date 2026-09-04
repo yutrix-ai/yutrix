@@ -383,7 +383,9 @@
     "clickToCollapse": "点击收起",
     "clickToExpand": "点击查看完整错误信息",
     "copy": "复制",
+    "copied": "已复制到剪贴板",
     "copySuccess": "已复制到剪贴板",
+    "saving": "保存中...",
     "close": "关闭",
     "enabled": "已启用",
     "disabled": "已禁用",
@@ -692,8 +694,16 @@
       "description": "该供应商下可用的模型，系统会自动与此数据同步。「最大上下文」用于长上下文策略路由；「最大输出/输出限额」仅裁剪请求中的 max_tokens。",
       "refresh": "刷新模型",
       "refreshing": "正在刷新...",
+      "total": "共计",
+      "unit": "个模型",
+      "loading": "加载中...",
       "enableAll": "一键启用",
       "disableAll": "一键关闭",
+      "actions": {
+        "refresh": "自动获取可用模型",
+        "refreshing": "获取中...",
+        "save": "保存修改"
+      },
       "opencodeWarning": "已为部分模型开启兼容通道，但 OpenCode sidecar 尚未就绪。请前往系统信息安装。",
       "opencodeWarningLink": "前往系统信息",
       "opencodeCompatWarn": {
@@ -712,8 +722,12 @@
       "refreshFailed": "刷新失败",
       "table": {
         "model": "模型 ID",
+        "name": "模型名称 / ID",
         "enabled": "启用",
+        "enable": "启用",
         "opencode": "兼容通道",
+        "alias": "别名",
+        "tokenizer": "分词器",
         "tokenizerRepo": "分词器词表 (HF 仓库)",
         "contextWindow": "最大上下文",
         "maxOutput": "输出限额",
@@ -727,7 +741,8 @@
       },
       "placeholders": {
         "uncapped": "不限",
-        "tokenizerRepo": "自动/通用规则"
+        "tokenizerRepo": "自动/通用规则",
+        "alias": "留空则显示原名"
       },
       "toasts": {
         "saveSuccess": "模型配置已保存",
@@ -758,6 +773,13 @@
     "totalRequests": "总请求数",
     "totalTokens": "总 Tokens",
     "tokenBreakdownShort": "入: {{input}} / 出: {{output}}",
+    "maxInputTokens": "输入限制",
+    "maxInputTokensPlaceholder": "留空表示继承用户组，0 表示不限制",
+    "maxInputTokensHint": "留空继承用户组；填 0 显式不限制；大于 0 时覆盖所有用户组限制。",
+    "inputLimitUnlimited": "不限制",
+    "inputLimitInherited": "继承",
+    "inputLimitOverride": "覆盖",
+    "editTitle": "编辑用户",
     "lastLogin": "最后登录",
     "actions": "操作",
     "neverLoggedIn": "从未登录",
@@ -775,7 +797,9 @@
       "deleteSuccess": "用户已删除",
       "deleteFailed": "删除失败",
       "resetSuccess": "密码已重置",
-      "resetFailed": "重置密码失败"
+      "resetFailed": "重置密码失败",
+      "updateSuccess": "用户已更新",
+      "updateFailed": "更新失败"
     },
     "empty": {
       "title": "暂无用户",
@@ -1674,6 +1698,10 @@
     "description": "描述",
     "defaultBadge": "默认组",
     "customBadge": "自定义",
+    "unlimited": "不限制",
+    "maxInputTokens": "最大输入 Token",
+    "maxInputTokensHint": "填 0 表示不限制。用户未单独覆盖时继承该值。",
+    "effectiveInputLimit": "有效输入限制",
     "manageMembers": "管理成员",
     "membersTitle": "管理成员",
     "membersDesc": "添加或移除该组的成员（用户最多属于一个组，添加时自动移出原所在组）",
@@ -1706,6 +1734,7 @@
       "name": "组名",
       "description": "描述",
       "members": "成员数",
+      "maxInputTokens": "输入限制",
       "type": "类型",
       "actions": "操作"
     },
@@ -1724,35 +1753,52 @@
     "all": "全部"
   },
   "openapi": {
-    "title": "开放接口 (OpenAPI)",
-    "description": "管理 OpenAPI 访问密钥，调用系统级统计数据与状态接口。",
+    "title": "开放接口",
+    "description": "管理开放接口访问密钥，调用系统级统计数据与状态接口。",
     "empty": {
-      "title": "暂无 OpenAPI 密钥",
-      "description": "生成一个密钥以通过 API 访问系统统计信息"
+      "title": "暂无开放接口密钥",
+      "description": "生成一个密钥以通过接口访问系统统计信息"
     },
     "actions": {
       "generate": "生成 API 密钥",
+      "delete": "删除",
       "createSuccess": "创建成功",
       "deleteSuccess": "删除成功"
     },
     "status": {
       "active": "启用中",
-      "revoked": "已作废"
+      "revoked": "已删除"
+    },
+    "table": {
+      "name": "名称",
+      "key": "API 密钥",
+      "status": "状态",
+      "createdAt": "创建时间",
+      "lastUsed": "最后使用",
+      "createdBy": "创建人",
+      "actions": "操作"
+    },
+    "created": {
+      "title": "API 密钥已生成",
+      "description": "请妥善保存此密钥。出于安全考虑，它将只显示一次。"
     },
     "delete": {
-      "title": "删除 OpenAPI 密钥",
-      "description": "您确定要删除此 OpenAPI 密钥吗？删除后相关的 API 访问将立即失效。"
+      "title": "删除开放接口密钥",
+      "description": "确定要删除此开放接口密钥吗？删除后相关接口访问将立即失效。"
     },
     "doc": {
-      "title": "接口文档与测试 (API Reference & Playground)",
-      "description": "通过 API 获取系统统计数据。你需要将生成的 API 密钥放在请求头的 Authorization 字段中。",
-      "testBtn": "免密测试获取最近24小时数据 (Admin Bypass)",
+      "title": "接口文档与测试",
+      "description": "通过接口获取系统统计数据。请将生成的 API 密钥放在请求头的 Authorization 字段中。",
+      "testBtn": "免密测试获取最近 24 小时数据",
       "testResult": "测试结果：",
-      "apiKey": "API 密钥 (API Key)",
+      "apiKey": "API 密钥",
       "startTime": "开始时间",
       "endTime": "结束时间",
-      "runBtn": "发送测试请求 (Run Test)",
-      "errorNoKey": "请先填写 API 密钥"
+      "runBtn": "发送请求",
+      "errorNoKey": "请先填写 API 密钥",
+      "emptyResult": "暂无测试结果，请点击左侧按钮发送请求",
+      "copy": "复制",
+      "requestFailed": "请求失败"
     }
   },
   "responseCache": {
