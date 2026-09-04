@@ -31,6 +31,133 @@ export function shouldRouteViaOpencode(
   return modelConfig?.useOpencodeProxy === true;
 }
 
+/** Prepended on every gateway Session turn so the sidecar stays chat-shaped. */
+export const OPENCODE_CHAT_ONLY_INSTRUCTION =
+  "This turn is plain chat. Answer the user in natural language only. Do not call tools and do not emit tool markup.";
+
+/** Stronger nudge used for a single retry when the first reply is tool markup only. */
+export const OPENCODE_CHAT_ONLY_RETRY_NUDGE =
+  "Reply in plain text only. Do not call tools and do not emit tool markup.";
+
+const OPENCODE_TOOL_FENCE_RE =
+  /<\|(?:message_model|content_invoke_tool_json|end_message|invoke_tool|tool_calls?|start_tool|end_tool)(?:\|[^|\n]{0,80})?\|>/gi;
+
+const OPENCODE_GENERIC_FENCE_RE = /<\|[A-Za-z][\w.]{0,78}\|>/g;
+
+const TOOL_XML_BLOCK_RE =
+  /<(tool_calls?|function_calls?|invoke|tool_use|tool_result)\b[^>]*>[\s\S]*?<\/\1>/gi;
+
+const TOOL_XML_TAG_RE =
+  /<\/?(?:tool_calls?|function_calls?|invoke|tool_use|tool_result)(?:\s[^>]*)?\/?>/gi;
+
+function looksLikeToolJson(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") || !/"name"\s*:/.test(trimmed)) return false;
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    if (!parsed || typeof parsed.name !== "string") return false;
+    return (
+      parsed.arguments !== undefined ||
+      parsed.parameters !== undefined ||
+      parsed.input !== undefined ||
+      parsed.url !== undefined ||
+      parsed.query !== undefined
+    );
+  } catch {
+    return /"name"\s*:\s*"[^"]+"/.test(trimmed) && /\.\.\.|arguments|parameters|input|"url"/.test(trimmed);
+  }
+}
+
+function findMatchingBrace(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function stripToolJsonObjects(text: string): string {
+  let i = 0;
+  let out = "";
+  while (i < text.length) {
+    if (text[i] === "{") {
+      const end = findMatchingBrace(text, i);
+      if (end !== -1) {
+        const slice = text.slice(i, end + 1);
+        if (looksLikeToolJson(slice)) {
+          i = end + 1;
+          continue;
+        }
+      } else if (looksLikeToolJson(text.slice(i))) {
+        break;
+      }
+    }
+    out += text[i];
+    i++;
+  }
+  return out;
+}
+
+function hadToolMarkup(text: string): boolean {
+  return (
+    /<\|(?:message_model|content_invoke_tool_json|end_message|invoke_tool|tool_calls?)/i.test(text) ||
+    /<\/?(?:tool_calls?|function_calls?|invoke|tool_use)\b/i.test(text)
+  );
+}
+
+/**
+ * Strip OpenCode / tool-invoke markup from joined assistant text.
+ * Tool-only replies become empty; surrounding prose is kept.
+ */
+export function sanitizeOpencodeAssistantText(text: string): string {
+  if (!text) return "";
+  const original = text;
+  let out = text;
+
+  // Complete OpenCode envelopes only — do not consume trailing prose when
+  // <|end_message|> is missing.
+  out = out.replace(/<\|message_model\|>[\s\S]*?<\|end_message\|>/gi, "");
+  out = out.replace(
+    /<\|message_model\|>\s*[A-Za-z][\w.]{0,63}\s*(?=<\|content_invoke_tool_json\|>)/gi,
+    "",
+  );
+  out = out.replace(/<\|content_invoke_tool_json\|>/gi, "");
+  out = out.replace(OPENCODE_TOOL_FENCE_RE, "");
+  out = out.replace(OPENCODE_GENERIC_FENCE_RE, "");
+  out = out.replace(TOOL_XML_BLOCK_RE, "");
+  out = out.replace(TOOL_XML_TAG_RE, "");
+  out = stripToolJsonObjects(out);
+  out = out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+
+  if (hadToolMarkup(original) && /^[A-Za-z][\w.]{0,63}$/.test(out)) {
+    return "";
+  }
+  return out;
+}
+
 export function extractMessageText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -54,9 +181,15 @@ export function extractMessageText(content: unknown): string {
   return "";
 }
 
+function prependChatOnlyInstruction(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return OPENCODE_CHAT_ONLY_INSTRUCTION;
+  return `${OPENCODE_CHAT_ONLY_INSTRUCTION}\n\n${trimmed}`;
+}
+
 export function buildOpencodeUserText(body: any): string {
   if (typeof body?.prompt === "string" && body.prompt.trim()) {
-    return body.prompt;
+    return prependChatOnlyInstruction(body.prompt);
   }
 
   const lines: string[] = [];
@@ -83,7 +216,7 @@ export function buildOpencodeUserText(body: any): string {
     }
   }
 
-  return lines.join("\n\n");
+  return prependChatOnlyInstruction(lines.join("\n\n"));
 }
 
 export function extractOpencodeSessionId(payload: any): string | null {

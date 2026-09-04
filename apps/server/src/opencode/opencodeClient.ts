@@ -6,6 +6,8 @@ import {
   extractOpencodeSessionId,
   joinOpencodeTextParts,
   mapOpencodeHttpError,
+  OPENCODE_CHAT_ONLY_RETRY_NUDGE,
+  sanitizeOpencodeAssistantText,
   toAnthropicMessage,
   toOpenAICompletion,
 } from "./protocol";
@@ -129,29 +131,75 @@ export async function executeOpencodeSessionApi(
   }
 
   const userText = buildOpencodeUserText(body);
-  const msgReqBody = {
-    model: {
-      providerID: providerId,
-      modelID: modelId,
-    },
-    parts: [{ type: "text", text: userText }],
-  };
-
-  const msgRes = await fetch(service.sidecarUrl(`/session/${sessionId}/message`), {
-    method: "POST",
+  const first = await postSessionMessage({
+    service,
+    sessionId,
+    providerId,
+    modelId,
+    text: userText,
     headers,
-    body: JSON.stringify(msgReqBody),
     signal,
   });
-
-  if (!msgRes.ok) {
-    const text = await readErrorText(msgRes);
-    logger.warn({ status: msgRes.status, text, sessionId }, "OpenCode message failed");
-    return errorResult(msgRes.status, text, incomingProtocol);
+  if (!first.ok) {
+    logger.warn({ status: first.status, text: first.text, sessionId }, "OpenCode message failed");
+    return errorResult(first.status, first.text, incomingProtocol);
   }
 
-  const msgData = await msgRes.json();
-  const responseText = joinOpencodeTextParts(msgData);
+  let responseText = sanitizeOpencodeAssistantText(joinOpencodeTextParts(first.data));
+  if (responseText) {
+    return successResult(modelId, sessionId, responseText, incomingProtocol);
+  }
 
-  return successResult(modelId, sessionId, responseText, incomingProtocol);
+  const retry = await postSessionMessage({
+    service,
+    sessionId,
+    providerId,
+    modelId,
+    text: `${OPENCODE_CHAT_ONLY_RETRY_NUDGE}\n\n${userText}`,
+    headers,
+    signal,
+  });
+  if (!retry.ok) {
+    logger.warn({ status: retry.status, text: retry.text, sessionId }, "OpenCode chat-only retry failed");
+    return errorResult(retry.status, retry.text, incomingProtocol);
+  }
+
+  responseText = sanitizeOpencodeAssistantText(joinOpencodeTextParts(retry.data));
+  if (responseText) {
+    return successResult(modelId, sessionId, responseText, incomingProtocol);
+  }
+
+  logger.warn({ sessionId }, "OpenCode reply was tool markup only after retry");
+  return errorResult(
+    502,
+    "OpenCode returned no plain-text reply (tool markup only)",
+    incomingProtocol,
+  );
+}
+
+async function postSessionMessage(opts: {
+  service: OpencodeService;
+  sessionId: string;
+  providerId: string;
+  modelId: string;
+  text: string;
+  headers: Record<string, string>;
+  signal: AbortSignal;
+}): Promise<{ ok: true; data: any } | { ok: false; status: number; text: string }> {
+  const msgRes = await fetch(opts.service.sidecarUrl(`/session/${opts.sessionId}/message`), {
+    method: "POST",
+    headers: opts.headers,
+    body: JSON.stringify({
+      model: {
+        providerID: opts.providerId,
+        modelID: opts.modelId,
+      },
+      parts: [{ type: "text", text: opts.text }],
+    }),
+    signal: opts.signal,
+  });
+  if (!msgRes.ok) {
+    return { ok: false, status: msgRes.status, text: await readErrorText(msgRes) };
+  }
+  return { ok: true, data: await msgRes.json() };
 }

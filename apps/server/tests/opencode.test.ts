@@ -11,8 +11,11 @@ import {
   mapOpencodeHttpError,
   isOpencodeVersionOutdated,
   normalizeDownloadProxyUrl,
+  OPENCODE_CHAT_ONLY_INSTRUCTION,
+  OPENCODE_CHAT_ONLY_RETRY_NUDGE,
   parseOpencodeAutoUpdate,
   resolveOpencodeProviderSlug,
+  sanitizeOpencodeAssistantText,
   shouldRouteViaOpencode,
 } from "../src/opencode/protocol";
 import { resolveOpencodePaths } from "../src/opencode/paths";
@@ -101,10 +104,43 @@ describe("OpenCode protocol helpers", () => {
         { role: "user", content: [{ type: "text", text: "follow up" }] },
       ],
     });
+    expect(text.startsWith(OPENCODE_CHAT_ONLY_INSTRUCTION)).toBe(true);
     expect(text).toContain("system: be brief");
     expect(text).toContain("user: hi");
     expect(text).toContain("assistant: hello");
     expect(text).toContain("user: follow up");
+  });
+
+  it("strips OpenCode tool-invoke markup from assistant text", () => {
+    const sample =
+      '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch",...}<|end_message|>';
+    expect(sanitizeOpencodeAssistantText(sample)).toBe("");
+
+    expect(
+      sanitizeOpencodeAssistantText(
+        '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}<|end_message|>',
+      ),
+    ).toBe("");
+
+    expect(
+      sanitizeOpencodeAssistantText(
+        'Here is a summary.\n<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}<|end_message|>',
+      ),
+    ).toBe("Here is a summary.");
+
+    expect(
+      sanitizeOpencodeAssistantText(
+        '<tool_call>\n{"name":"WebFetch","arguments":{"url":"https://example.com"}}\n</tool_call>',
+      ),
+    ).toBe("");
+
+    expect(sanitizeOpencodeAssistantText("The sky is blue.")).toBe("The sky is blue.");
+    expect(sanitizeOpencodeAssistantText("   \n")).toBe("");
+    expect(
+      sanitizeOpencodeAssistantText(
+        '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}\nParis is the capital.',
+      ),
+    ).toBe("Paris is the capital.");
   });
 
   it("maps 429/auth so the gateway can sticky-rotate providerApiKeys", () => {
@@ -194,13 +230,42 @@ describe("OpenCode Session API adapter", () => {
     const msgBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(msgBody.model.providerID).toBe("openrouter");
     expect(msgBody.model.modelID).toBe("gpt-4o");
-    expect(msgBody.parts[0].text).toBe("user: Hi");
+    expect(msgBody.parts[0].text).toBe(`${OPENCODE_CHAT_ONLY_INSTRUCTION}\n\nuser: Hi`);
+    expect(msgBody.agent).toBeUndefined();
+    expect(Object.keys(msgBody).sort()).toEqual(["model", "parts"]);
 
     const sentHeaders = fetchMock.mock.calls[0][1].headers as Record<string, string>;
     expect(sentHeaders["HTTP-Referer"]).toBeUndefined();
     expect(sentHeaders["Referer"]).toBeUndefined();
     expect(sentHeaders["X-Title"]).toBeUndefined();
     expect(sentHeaders.Authorization).toMatch(/^Basic /);
+  });
+
+  it("returns sanitized prose without retry when markup is mixed with an answer", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_mix" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          parts: [{
+            type: "text",
+            text: 'Here is a summary.\n<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch","arguments":{"url":"https://example.com"}}<|end_message|>',
+          }],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(
+      { messages: [{ role: "user", content: "Hi" }] },
+      "openrouter",
+      "gpt-4o",
+      "k",
+      new AbortController(),
+    );
+    expect(result.status).toBe(200);
+    expect(result.data.choices[0].message.content).toBe("Here is a summary.");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("returns Anthropic-shaped JSON when the incoming client is Anthropic", async () => {
@@ -257,6 +322,81 @@ describe("OpenCode Session API adapter", () => {
     );
     expect(result.status).toBe(401);
     expect(result.data.error.type).toBe("auth_error");
+  });
+
+  it("sanitizes tool markup and retries once when the first reply is empty", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const toolOnly =
+      '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch",...}<|end_message|>';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_retry" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ parts: [{ type: "text", text: toolOnly }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ parts: [{ type: "text", text: "Paris is the capital of France." }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(
+      { messages: [{ role: "user", content: "Capital of France?" }] },
+      "openrouter",
+      "gpt-4o",
+      "k",
+      new AbortController(),
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.data.choices[0].message.content).toBe("Paris is the capital of France.");
+    expect(result.data.choices[0].message.content).not.toMatch(/message_model|invoke_tool/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const retryBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(retryBody.parts[0].text.startsWith(OPENCODE_CHAT_ONLY_RETRY_NUDGE)).toBe(true);
+    expect(retryBody.parts[0].text).toContain(OPENCODE_CHAT_ONLY_INSTRUCTION);
+    expect(retryBody.agent).toBeUndefined();
+  });
+
+  it("returns 502 upstream when sanitize is still empty after one retry", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const toolOnly =
+      '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch",...}<|end_message|>';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_empty" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ parts: [{ type: "text", text: toolOnly }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ parts: [{ type: "text", text: toolOnly }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeOpencodeSessionApi(
+      { messages: [{ role: "user", content: "Hi" }] },
+      "openrouter",
+      "gpt-4o",
+      "k",
+      new AbortController(),
+    );
+
+    expect(result.status).toBe(502);
+    expect(result.data.error.type).toBe("upstream_error");
+    expect(result.data.error.message).toMatch(/plain-text|tool markup/i);
+    expect(JSON.stringify(result.data)).not.toMatch(/message_model|WebFetch/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns Anthropic-shaped 502 when retry stays empty for an Anthropic client", async () => {
+    const { executeOpencodeSessionApi } = await import("../src/opencode/opencodeClient");
+    const toolOnly =
+      '<|message_model|>WebFetch<|content_invoke_tool_json|>{"name":"WebFetch",...}<|end_message|>';
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "ses_a2" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ parts: [{ type: "text", text: toolOnly }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ parts: [{ type: "text", text: "   " }] }) }));
+
+    const result = await executeOpencodeSessionApi(
+      { messages: [{ role: "user", content: "Hi" }] },
+      "openrouter",
+      "claude",
+      "k",
+      new AbortController(),
+      "anthropic",
+    );
+    expect(result.status).toBe(502);
+    expect(result.responseProtocol).toBe("anthropic");
+    expect(result.data.error.type).toBe("upstream_error");
   });
 
   it("refuses to start when the binary is missing", async () => {

@@ -58,4 +58,8 @@ Yutrix therefore:
   not be adopted forever.
 
 Do not run `opencode serve` against the gateway checkout or with default
-allow-all tool permissions. Session API request/response shapes are unchanged.
+allow-all tool permissions. Session API request/response shapes are unchanged
+(`model` + `parts`; no guessed `agent` field). The gateway prepends a short
+chat-only instruction, strips leftover tool-invoke markup from joined text,
+and retries once if the sanitized reply is empty. A second empty reply is a
+502 / `upstream_error` rather than raw tool fences.

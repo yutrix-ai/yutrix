@@ -85,5 +85,6 @@ export { OpencodeService };
 export { executeOpencodeSessionApi } from "./opencodeClient";
 export {
   resolveOpencodeProviderSlug,
+  sanitizeOpencodeAssistantText,
   shouldRouteViaOpencode,
 } from "./protocol";
