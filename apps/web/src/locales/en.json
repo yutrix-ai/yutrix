@@ -696,6 +696,16 @@
       "disableAll": "Disable All",
       "opencodeWarning": "Compatible channel is on for some models, but the OpenCode sidecar is not ready. Open System Info to install it.",
       "opencodeWarningLink": "Go to System Info",
+      "opencodeCompatWarn": {
+        "title": "Confirm before enabling the compatible channel",
+        "execPath": "Enabling this changes how the model is executed on the gateway (managed sidecar path).",
+        "behavior": "Behavior, latency, and streaming may differ from a direct upstream call.",
+        "sandbox": "The sidecar runs in an isolated sandbox with tools denied; still review which models you expose publicly.",
+        "sidecarReady": "Requires the OpenCode sidecar to be ready (System Info). If it is not ready, the existing not-ready banner remains.",
+        "confirmHint": "Confirm to proceed.",
+        "dontShowAgain": "Don't show this warning again",
+        "confirm": "Enable"
+      },
       "toggleAll": "Enable/Disable All",
       "empty": "No model data, click Refresh",
       "refreshSuccess": "Sync complete. Added {{count}} models",

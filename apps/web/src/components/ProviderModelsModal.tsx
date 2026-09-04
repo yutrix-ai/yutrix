@@ -12,7 +12,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -24,6 +26,24 @@ import {
 } from "@/components/ui/table";
 import { RefreshCw, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
+export const OPENCODE_COMPAT_WARN_DISMISSED_KEY = "yutrix.opencodeCompat.warnDismissed";
+
+function isOpencodeCompatWarnDismissed(): boolean {
+  try {
+    return localStorage.getItem(OPENCODE_COMPAT_WARN_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistOpencodeCompatWarnDismissed(): void {
+  try {
+    localStorage.setItem(OPENCODE_COMPAT_WARN_DISMISSED_KEY, "1");
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
+
 interface ProviderModelsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -31,7 +51,15 @@ interface ProviderModelsModalProps {
   onRefreshSuccess: () => void;
 }
 
-function ModelRow({ model, onChange }: { model: any; onChange: (field: string, value: any) => void }) {
+function ModelRow({
+  model,
+  onChange,
+  onOpencodeProxyChange,
+}: {
+  model: any;
+  onChange: (field: string, value: any) => void;
+  onOpencodeProxyChange: (checked: boolean) => void;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -50,8 +78,8 @@ function ModelRow({ model, onChange }: { model: any; onChange: (field: string, v
       </TableCell>
       <TableCell className="py-3.5">
         <Switch
-          checked={model.useOpencodeProxy}
-          onCheckedChange={(checked) => onChange("useOpencodeProxy", checked)}
+          checked={Boolean(model.useOpencodeProxy)}
+          onCheckedChange={onOpencodeProxyChange}
         />
       </TableCell>
       <TableCell className="py-3.5">
@@ -162,10 +190,18 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [savingModels, setSavingModels] = useState(false);
   const [opencodeStatus, setOpencodeStatus] = useState<{ready: boolean, running: boolean} | null>(null);
+  const [compatWarn, setCompatWarn] = useState<{ open: boolean; modelKey: string | null }>({
+    open: false,
+    modelKey: null,
+  });
+  const [dontShowCompatWarnAgain, setDontShowCompatWarnAgain] = useState(false);
 
   useEffect(() => {
     if (open) {
       fetchApi("/admin/opencode/status").then(res => setOpencodeStatus(res)).catch(() => {});
+    } else {
+      setCompatWarn({ open: false, modelKey: null });
+      setDontShowCompatWarnAgain(false);
     }
   }, [open]);
 
@@ -215,6 +251,34 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
     );
   };
 
+  const handleOpencodeProxyChange = (modelKey: string, checked: boolean) => {
+    if (!checked) {
+      handleModelFieldChange(modelKey, "useOpencodeProxy", false);
+      return;
+    }
+    if (isOpencodeCompatWarnDismissed()) {
+      handleModelFieldChange(modelKey, "useOpencodeProxy", true);
+      return;
+    }
+    setDontShowCompatWarnAgain(false);
+    setCompatWarn({ open: true, modelKey });
+  };
+
+  const closeCompatWarn = () => {
+    setCompatWarn({ open: false, modelKey: null });
+    setDontShowCompatWarnAgain(false);
+  };
+
+  const handleCompatWarnConfirm = () => {
+    if (compatWarn.modelKey) {
+      handleModelFieldChange(compatWarn.modelKey, "useOpencodeProxy", true);
+    }
+    if (dontShowCompatWarnAgain) {
+      persistOpencodeCompatWarnDismissed();
+    }
+    closeCompatWarn();
+  };
+
   const handleToggleAllModels = (enabled: boolean) => {
     setProviderModels(prev => prev.map(m => ({ ...m, enabled })));
   };
@@ -251,7 +315,14 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && compatWarn.open) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-[1180px] h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="px-6 py-4 border-b shrink-0 bg-muted/30">
           <DialogTitle>{t("providers.modelList.title", "配置供应商模型")} - {provider?.name}</DialogTitle>
@@ -350,6 +421,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
                       key={m.id || m.modelId}
                       model={m}
                       onChange={(field, value) => handleModelFieldChange(m.id || m.modelId, field, value)}
+                      onOpencodeProxyChange={(checked) => handleOpencodeProxyChange(m.id || m.modelId, checked)}
                     />
                   ))
                 )}
@@ -368,5 +440,51 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog
+      open={compatWarn.open}
+      onOpenChange={(next) => {
+        if (!next) closeCompatWarn();
+      }}
+    >
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {t("providers.modelList.opencodeCompatWarn.title", "开启兼容通道前请确认")}
+          </DialogTitle>
+          <DialogDescription>
+            {t("providers.modelList.opencodeCompatWarn.confirmHint", "确认后才会开启。")}
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+          <li>{t("providers.modelList.opencodeCompatWarn.execPath", "开启后，该模型将改为经网关托管的 sidecar 路径执行。")}</li>
+          <li>{t("providers.modelList.opencodeCompatWarn.behavior", "行为、延迟与流式输出可能与直连上游不同。")}</li>
+          <li>{t("providers.modelList.opencodeCompatWarn.sandbox", "sidecar 在隔离沙箱中运行，且工具调用被拒绝；仍请审慎选择对外暴露的模型。")}</li>
+          <li>{t("providers.modelList.opencodeCompatWarn.sidecarReady", "需要 OpenCode sidecar 已就绪（系统信息）。若未就绪，现有未就绪提示仍会显示。")}</li>
+        </ul>
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="opencode-compat-warn-dismiss"
+            checked={dontShowCompatWarnAgain}
+            onCheckedChange={(checked: boolean | "indeterminate") => setDontShowCompatWarnAgain(checked === true)}
+          />
+          <Label
+            htmlFor="opencode-compat-warn-dismiss"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+          >
+            {t("providers.modelList.opencodeCompatWarn.dontShowAgain", "不再显示此警告")}
+          </Label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={closeCompatWarn}>
+            {t("common.cancel", "取消")}
+          </Button>
+          <Button onClick={handleCompatWarnConfirm}>
+            {t("providers.modelList.opencodeCompatWarn.confirm", "确认开启")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -349,6 +349,7 @@ describe("admin UI persists useOpencodeProxy (static)", () => {
       : join(process.cwd(), "../web/src/components/ProviderModelsModal.tsx");
     const src = readFileSync(modalPath, "utf8");
     expect(src).toMatch(/useOpencodeProxy:\s*Boolean\(m\.useOpencodeProxy\)/);
-    expect(src).toMatch(/onChange\(\"useOpencodeProxy\"/);
+    expect(src).toMatch(/onOpencodeProxyChange/);
+    expect(src).toMatch(/yutrix\.opencodeCompat\.warnDismissed/);
   });
 });

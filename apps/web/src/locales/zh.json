@@ -693,6 +693,16 @@
       "disableAll": "一键关闭",
       "opencodeWarning": "已为部分模型开启兼容通道，但 OpenCode sidecar 尚未就绪。请前往系统信息安装。",
       "opencodeWarningLink": "前往系统信息",
+      "opencodeCompatWarn": {
+        "title": "开启兼容通道前请确认",
+        "execPath": "开启后，该模型将改为经网关托管的 sidecar 路径执行。",
+        "behavior": "行为、延迟与流式输出可能与直连上游不同。",
+        "sandbox": "sidecar 在隔离沙箱中运行，且工具调用被拒绝；仍请审慎选择对外暴露的模型。",
+        "sidecarReady": "需要 OpenCode sidecar 已就绪（系统信息）。若未就绪，现有未就绪提示仍会显示。",
+        "confirmHint": "确认后才会开启。",
+        "dontShowAgain": "不再显示此警告",
+        "confirm": "确认开启"
+      },
       "toggleAll": "一键启用/关闭所有",
       "empty": "暂无模型数据，请点击刷新",
       "refreshSuccess": "刷新成功，已入库 {{count}} 个模型",
