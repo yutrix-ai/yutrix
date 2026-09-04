@@ -842,7 +842,9 @@
       "target": "服务配置",
       "fallback": "单级降级 (Fallback)",
       "runtime": "运行时配置",
-      "routingTarget": "请求路由转发目标 (漏斗模型)"
+      "routingTarget": "请求路由转发目标 (漏斗模型)",
+      "access": "访问与安全",
+      "accessDesc": "超时摘流、来源限制与授权访问。"
     },
     "fields": {
       "name": "规则名称 *",
