@@ -14,8 +14,10 @@ COPY apps ./apps
 COPY packages ./packages
 COPY scripts ./scripts
 
+# Buildx sets TARGETARCH to amd64 / arm64. Pass it through so bootstrap
+# installs opencode-linux-x64 vs opencode-linux-arm64 — never amd64-only.
 ARG TARGETARCH
-RUN ./scripts/bootstrap-opencode.sh
+RUN TARGETARCH="${TARGETARCH}" ./scripts/bootstrap-opencode.sh
 
 COPY ecosystem.config.cjs ./
 

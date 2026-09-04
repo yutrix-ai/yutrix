@@ -114,6 +114,7 @@ export async function ensureSqliteUpgraded(): Promise<void> {
     ensureStrategyRoutingColumns,
     ensureTokenLimitColumns,
     ensureProviderModelContextWindowColumn,
+    ensureUseOpencodeProxyColumn,
     ensureAnalyticsIndexes,
     ensureHotPathIndexes,
     ensureSubdomainHostnameIdentity,
@@ -124,6 +125,7 @@ export async function ensureSqliteUpgraded(): Promise<void> {
   await ensureStrategyRoutingColumns().catch(() => {});
   await ensureTokenLimitColumns().catch(() => {});
   await ensureProviderModelContextWindowColumn().catch(() => {});
+  await ensureUseOpencodeProxyColumn().catch(() => {});
   await ensureAnalyticsIndexes().catch(() => {});
   await ensureHotPathIndexes().catch(() => {});
   await ensureSubdomainHostnameIdentity().catch(() => {});

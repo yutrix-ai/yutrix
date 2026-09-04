@@ -373,6 +373,29 @@ export async function ensureProviderModelContextWindowColumn() {
   );
 }
 
+/** Additive P0 column: route selected models through the managed OpenCode sidecar. */
+export async function ensureUseOpencodeProxyColumn() {
+  if (!(await tableExists("provider_models"))) return;
+  const driver = getDbDriver();
+  if (driver === "postgres") {
+    try {
+      await (client as any).query(
+        `ALTER TABLE "provider_models" ADD COLUMN IF NOT EXISTS "useOpencodeProxy" boolean DEFAULT false NOT NULL`,
+      );
+    } catch (err: any) {
+      if (!String(err?.message || "").includes("already exists")) {
+        throw err;
+      }
+    }
+    return;
+  }
+  await addColumnIfMissing(
+    "provider_models",
+    "useOpencodeProxy",
+    "ALTER TABLE provider_models ADD COLUMN useOpencodeProxy integer DEFAULT 0 NOT NULL",
+  );
+}
+
 export async function ensureFunnelRoutingColumns() {
   await addColumnIfMissing("provider_models", "alias", "ALTER TABLE provider_models ADD COLUMN alias text");
   await addColumnIfMissing("endpoint_routes", "targets", "ALTER TABLE endpoint_routes ADD COLUMN targets text");

@@ -1,15 +1,27 @@
-import { OpencodeService } from "./opencodeService";
 import pino from "pino";
+import { OpencodeService } from "./opencodeService";
+import {
+  assertNoSpoofHeaders,
+  buildOpencodeUserText,
+  extractOpencodeSessionId,
+  joinOpencodeTextParts,
+  mapOpencodeHttpError,
+  toAnthropicMessage,
+  toOpenAICompletion,
+} from "./protocol";
 
 const logger = pino({ name: "opencode-client" });
 
 let opencodeMutex = Promise.resolve();
-async function withOpencodeMutex<T>(fn: () => Promise<T>): Promise<T> {
+
+export async function withOpencodeMutex<T>(fn: () => Promise<T>): Promise<T> {
   let release!: () => void;
-  const wait = new Promise<void>(r => release = r);
-  const old = opencodeMutex;
-  opencodeMutex = opencodeMutex.then(() => wait);
-  await old;
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const previous = opencodeMutex;
+  opencodeMutex = previous.then(() => wait);
+  await previous;
   try {
     return await fn();
   } finally {
@@ -17,130 +29,129 @@ async function withOpencodeMutex<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+export interface OpencodeSessionResult {
+  status: number;
+  data: any;
+  isStream: false;
+  responseProtocol: "openai" | "anthropic";
+  errorDetail?: string;
+  /** Session API is JSON-complete; gateway wraps streaming clients as fake SSE. */
+  sidecarNonStream: true;
+}
+
+function sidecarFetchHeaders(service: OpencodeService): Record<string, string> {
+  const headers = service.sidecarHeaders({ "Content-Type": "application/json" });
+  assertNoSpoofHeaders(headers);
+  return headers;
+}
+
+async function readErrorText(res: Response): Promise<string> {
+  try {
+    return (await res.text()).slice(0, 2000);
+  } catch {
+    return res.statusText || "";
+  }
+}
+
+function errorResult(
+  status: number,
+  bodyText: string,
+  incomingProtocol: string,
+): OpencodeSessionResult {
+  const mapped = mapOpencodeHttpError(status, bodyText);
+  return {
+    status: mapped.status,
+    data: mapped.data,
+    isStream: false,
+    responseProtocol: incomingProtocol === "anthropic" ? "anthropic" : "openai",
+    errorDetail: mapped.data.error.message,
+    sidecarNonStream: true,
+  };
+}
+
+function successResult(
+  modelId: string,
+  sessionId: string,
+  text: string,
+  incomingProtocol: string,
+): OpencodeSessionResult {
+  const anthropic = incomingProtocol === "anthropic";
+  return {
+    status: 200,
+    data: anthropic
+      ? toAnthropicMessage(modelId, sessionId, text)
+      : toOpenAICompletion(modelId, sessionId, text),
+    isStream: false,
+    responseProtocol: anthropic ? "anthropic" : "openai",
+    sidecarNonStream: true,
+  };
+}
+
 export async function executeOpencodeSessionApi(
   body: any,
-  providerId: string, // now the mapped provider slug like "openrouter"
+  providerId: string,
   modelId: string,
   apiKey: string,
-  controller: AbortController
-) {
+  controller: AbortController,
+  incomingProtocol: string = "openai",
+): Promise<OpencodeSessionResult> {
   const service = OpencodeService.getInstance();
   if (!service.isReady()) {
     throw new Error("OpenCode sidecar binary not installed");
   }
-  if (!service.isRunning()) {
-    await service.start();
-  }
-  const port = service.port;
-  
-  // 1. Sync key with mutex
-  await withOpencodeMutex(async () => {
-    await service.syncCredential(providerId, apiKey);
-  });
+
+  await service.start();
+
+  // Sticky rotate: gateway hops 429/401 to the next providerApiKeys row, then
+  // re-enters here. Mutex serializes auth.json so concurrent calls cannot clobber.
+  await withOpencodeMutex(() => service.syncCredential(providerId, apiKey));
 
   const signal = controller.signal;
+  const headers = sidecarFetchHeaders(service);
 
-  // 2. Create session
-  const sessionReqBody = {
-    title: "gateway request"
-  };
-
-  const createRes = await fetch(`http://127.0.0.1:${port}/session`, {
+  const createRes = await fetch(service.sidecarUrl("/session"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(sessionReqBody),
+    headers,
+    body: JSON.stringify({ title: "gateway request" }),
     signal,
   });
 
   if (!createRes.ok) {
-    if (createRes.status === 429) {
-       return { status: 429, error: await createRes.text(), isStream: false };
-    }
-    throw new Error(`OpenCode create session failed: ${createRes.status} ${await createRes.text()}`);
+    const text = await readErrorText(createRes);
+    logger.warn({ status: createRes.status, text }, "OpenCode create session failed");
+    return errorResult(createRes.status, text, incomingProtocol);
   }
 
   const sessionData = await createRes.json();
-  const sessionId = sessionData?.id || sessionData?.data?.id;
+  const sessionId = extractOpencodeSessionId(sessionData);
   if (!sessionId) {
     throw new Error("OpenCode create session missing id");
   }
 
-  // 3. Send message
-  let text = "";
-  if (Array.isArray(body.messages)) {
-    const lastMsg = body.messages[body.messages.length - 1];
-    text = typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content);
-  } else if (typeof body.prompt === 'string') {
-    text = body.prompt;
-  }
-
+  const userText = buildOpencodeUserText(body);
   const msgReqBody = {
     model: {
       providerID: providerId,
       modelID: modelId,
     },
-    parts: [
-      {
-        type: "text",
-        text: text
-      }
-    ]
+    parts: [{ type: "text", text: userText }],
   };
 
-  const msgRes = await fetch(`http://127.0.0.1:${port}/session/${sessionId}/message`, {
+  const msgRes = await fetch(service.sidecarUrl(`/session/${sessionId}/message`), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(msgReqBody),
     signal,
   });
 
   if (!msgRes.ok) {
-    if (msgRes.status === 429) {
-       return { status: 429, error: await msgRes.text(), isStream: false };
-    }
-    throw new Error(`OpenCode message failed: ${msgRes.status} ${await msgRes.text()}`);
+    const text = await readErrorText(msgRes);
+    logger.warn({ status: msgRes.status, text, sessionId }, "OpenCode message failed");
+    return errorResult(msgRes.status, text, incomingProtocol);
   }
 
   const msgData = await msgRes.json();
-  
-  let responseText = "";
-  if (Array.isArray(msgData?.parts)) {
-    responseText = msgData.parts.filter((p: any) => p.type === "text").map((p: any) => p.text).join('');
-  } else if (typeof msgData?.text === 'string') {
-    responseText = msgData.text;
-  } else if (typeof msgData?.data === 'string') {
-    responseText = msgData.data;
-  } else {
-    responseText = JSON.stringify(msgData);
-  }
+  const responseText = joinOpencodeTextParts(msgData);
 
-  const openaiResponse = {
-    id: "chatcmpl-" + sessionId,
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1000),
-    model: modelId,
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: "assistant",
-          content: responseText,
-        },
-        finish_reason: "stop"
-      }
-    ],
-    usage: {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-    }
-  };
-
-  return {
-    status: 200,
-    headers: msgRes.headers,
-    responseData: openaiResponse,
-    isStream: false,
-    costContext: null,
-  };
+  return successResult(modelId, sessionId, responseText, incomingProtocol);
 }

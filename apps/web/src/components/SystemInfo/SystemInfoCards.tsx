@@ -393,9 +393,18 @@ export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProx
 
   const handleSaveProxy = async () => {
     setSavingProxy(true);
-    await onSaveProxy(proxy);
-    setSavingProxy(false);
+    try {
+      await onSaveProxy(proxy);
+    } finally {
+      setSavingProxy(false);
+    }
   };
+
+  const statusLabel = !opencodeStatus?.ready
+    ? t("settings.sections.systemInfo.opencodeNotInstalled", "未安装")
+    : opencodeStatus.running
+      ? t("settings.sections.systemInfo.opencodeRunning", "运行中")
+      : t("settings.sections.systemInfo.opencodeReadyIdle", "已就绪（空闲）");
 
   return (
     <Card className="shadow-sm flex flex-col h-[310px]">
@@ -405,40 +414,39 @@ export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProx
             <Box className="h-4 w-4 text-orange-500" />
             {t("settings.sections.systemInfo.opencode", "OpenCode Sidecar")}
           </span>
-          {opencodeStatus?.ready ? (
-            <Badge variant="outline" className="text-emerald-600 border-emerald-200">
-              {opencodeStatus.running ? "Running" : "Installed (Idle)"}
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="text-muted-foreground">
-              Not Installed
-            </Badge>
-          )}
+          <Badge variant="outline" className={opencodeStatus?.ready ? "text-emerald-600 border-emerald-200" : "text-muted-foreground"}>
+            {statusLabel}
+          </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-4 flex-1 flex flex-col">
-        <div className="flex-1">
-          <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-            {t("settings.sections.systemInfo.opencodeDesc", "OpenCode is an open-source coding agent engine. Yutrix uses a loopback sidecar to route requests natively without modifying client applications.")}
+      <CardContent className="pt-4 flex-1 flex flex-col min-h-0">
+        <div className="flex-1 min-h-0">
+          <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+            {t("settings.sections.systemInfo.opencodeDesc", "Yutrix 管理一个 loopback OpenCode sidecar，用于兼容通道；API 客户端不会看到 OpenCode。")}
           </p>
-          <div className="text-xs text-muted-foreground mb-4 space-y-1">
-            <div>Version: {opencodeStatus?.version || "N/A"} ({opencodeStatus?.arch || "N/A"})</div>
+          <div className="text-xs text-muted-foreground mb-2 space-y-0.5">
+            <div>{t("settings.sections.systemInfo.opencodeVersion", "版本")}: {opencodeStatus?.version || "N/A"} ({opencodeStatus?.arch || "N/A"})</div>
           </div>
-          <div className="flex items-center gap-2 mb-4">
-            <Input 
-              value={proxy} 
-              onChange={e => setProxy(e.target.value)} 
-              placeholder="HTTP Proxy (Optional)" 
+          {opencodeStatus?.lastError && (
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 mb-2 line-clamp-2" title={opencodeStatus.lastError}>
+              {t("settings.sections.systemInfo.opencodeLastError", "最近错误")}: {opencodeStatus.lastError}
+            </p>
+          )}
+          <div className="flex items-center gap-2 mb-3">
+            <Input
+              value={proxy}
+              onChange={(e) => setProxy(e.target.value)}
+              placeholder={t("settings.sections.systemInfo.opencodeProxyPlaceholder", "下载 HTTP 代理（可选）")}
               className="text-xs h-8"
             />
             <Button size="sm" variant="outline" onClick={handleSaveProxy} disabled={savingProxy} className="h-8">
-              {savingProxy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save Proxy"}
+              {savingProxy ? <Loader2 className="h-3 w-3 animate-spin" /> : t("settings.sections.systemInfo.opencodeSaveProxy", "保存代理")}
             </Button>
           </div>
         </div>
         <Button onClick={onInstall} disabled={installing} className="w-full shrink-0">
           {installing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          {opencodeStatus?.ready ? t("settings.sections.systemInfo.updateOpencode", "Reinstall / Update") : t("settings.sections.systemInfo.installOpencode", "Install Sidecar")}
+          {opencodeStatus?.ready ? t("settings.sections.systemInfo.updateOpencode", "更新/重装 Sidecar") : t("settings.sections.systemInfo.installOpencode", "安装 Sidecar")}
         </Button>
       </CardContent>
     </Card>

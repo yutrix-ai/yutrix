@@ -1340,6 +1340,13 @@ export const CATALOG: Record<string, CatalogTable> = {
         notNull: true,
         default: true,
       },
+      "useOpencodeProxy": {
+        name: "useOpencodeProxy",
+        propName: "useOpencodeProxy",
+        logicalType: "bool",
+        notNull: true,
+        default: false,
+      },
       "createdAt": {
         name: "createdAt",
         propName: "createdAt",

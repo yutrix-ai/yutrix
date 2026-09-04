@@ -14,6 +14,7 @@ import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { adaptRequestProtocol } from "./protocolAdapter";
 import { buildUpstreamHeaders, determineUpstreamPath, executeUpstreamFetch, createFakeStreamFromData } from "./upstream";
 import { executeOpencodeSessionApi } from "../../opencode/opencodeClient";
+import { resolveOpencodeProviderSlug, shouldRouteViaOpencode } from "../../opencode/protocol";
 import { buildBaseLog, insertInitialRequestLog, finalizeStreamLog } from "./logging";
 import { getGlobalQueue, getApiKeyQueue, getProviderQueue } from "./concurrency";
 import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
@@ -1688,16 +1689,14 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
               try {
                 let result: any;
-                if (activeModelConfig?.useOpencodeProxy) {
-                  const mappedProviderId = provider.openaiBaseUrl?.includes("openrouter") ? "openrouter" :
-                                           provider.openaiBaseUrl?.includes("openai") ? "openai" :
-                                           provider.protocol === "anthropic" ? "anthropic" : "openrouter";
+                if (shouldRouteViaOpencode(activeModelConfig)) {
                   result = await executeOpencodeSessionApi(
                     upstreamBody,
-                    mappedProviderId,
+                    resolveOpencodeProviderSlug(provider),
                     currentAttempt.modelId,
                     decryptedKey!,
-                    fetchController
+                    fetchController,
+                    incomingProtocol,
                   );
                 } else {
                   result = await executeUpstreamFetch({

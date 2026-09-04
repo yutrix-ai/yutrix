@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { fetchApi } from "../lib/api";
 import { CpuCard, MemoryCard, DiskCard, NetworkCard, SoftwareEnvCard, DatabaseCard, OpenCodeCard } from "@/components/SystemInfo/SystemInfoCards";
 import { API_BASE } from "../lib/api";
@@ -24,7 +25,7 @@ export default function SystemInfo() {
 
   const fetchOpencodeStatus = async () => {
     try {
-      const res = await fetchApi("/api/admin/opencode/status");
+      const res = await fetchApi("/admin/opencode/status");
       setOpencodeStatus(res);
     } catch (e) {
       console.error(e);
@@ -34,10 +35,11 @@ export default function SystemInfo() {
   const handleInstallOpencode = async () => {
     try {
       setInstallingOpencode(true);
-      await fetchApi("/api/admin/opencode/download", { method: "POST" });
+      await fetchApi("/admin/opencode/download", { method: "POST" });
       await fetchOpencodeStatus();
-    } catch (e) {
-      console.error(e);
+      toast.success(t("settings.sections.systemInfo.opencodeInstallSuccess", "OpenCode sidecar 已安装/更新"));
+    } catch (e: any) {
+      toast.error((e?.message as string) || t("settings.sections.systemInfo.opencodeInstallFailed", "安装 OpenCode sidecar 失败"));
     } finally {
       setInstallingOpencode(false);
     }
@@ -45,13 +47,15 @@ export default function SystemInfo() {
 
   const handleSaveOpencodeProxy = async (proxyUrl: string) => {
     try {
-      await fetchApi("/api/admin/opencode/settings", { 
+      await fetchApi("/admin/opencode/settings", {
         method: "POST",
-        body: JSON.stringify({ proxyUrl }) 
+        body: JSON.stringify({ proxyUrl }),
       });
       await fetchOpencodeStatus();
-    } catch (e) {
-      console.error(e);
+      toast.success(t("settings.sections.systemInfo.opencodeProxySaved", "下载代理已保存"));
+    } catch (e: any) {
+      toast.error((e?.message as string) || t("settings.sections.systemInfo.opencodeProxySaveFailed", "保存下载代理失败"));
+      throw e;
     }
   };
   const [selectedInterface, setSelectedInterface] = useState<string>("");

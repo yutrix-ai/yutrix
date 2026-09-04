@@ -23,6 +23,7 @@ import {
   ensureFunnelRoutingColumns,
   ensureStrategyRoutingColumns,
   ensureProviderModelContextWindowColumn,
+  ensureUseOpencodeProxyColumn,
   ensureTokenLimitColumns,
   ensureAnalyticsColumns,
   ensureAnalyticsIndexes,
@@ -267,6 +268,7 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
 
   if (params.driver === "postgres") {
     await migratePg(db as PgDb);
+    await ensureUseOpencodeProxyColumn();
     await ensureAnalyticsIndexes();
     await ensureHotPathIndexes();
   } else {
@@ -274,6 +276,7 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
     await ensureFunnelRoutingColumns();
     await ensureStrategyRoutingColumns();
     await ensureProviderModelContextWindowColumn();
+    await ensureUseOpencodeProxyColumn();
     await ensureTokenLimitColumns();
     await ensureAnalyticsColumns();
     await ensureAnalyticsIndexes();

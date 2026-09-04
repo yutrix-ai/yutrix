@@ -14,6 +14,7 @@ import {
   ensureTokenLimitColumns,
   ensureFunnelRoutingColumns,
   ensureProviderModelContextWindowColumn,
+  ensureUseOpencodeProxyColumn,
   ensureSubdomainHostnameIdentity,
   ensureExclusiveUserGroupMembership,
 } from "./startup/migrations";
@@ -194,6 +195,7 @@ export async function bootstrap() {
     await syncManualModels();
     await ensureDefaultGroup();
     await ensureExclusiveUserGroupMembership();
+    await ensureUseOpencodeProxyColumn();
     return;
   }
 
@@ -298,6 +300,7 @@ export async function bootstrap() {
   await ensureStrategyRoutingColumns();
   await ensureTokenLimitColumns();
   await ensureProviderModelContextWindowColumn();
+  await ensureUseOpencodeProxyColumn();
   await ensureAnalyticsIndexes();
   await ensureHotPathIndexes();
   await ensureSubdomainHostnameIdentity();

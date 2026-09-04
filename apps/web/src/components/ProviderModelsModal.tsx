@@ -165,7 +165,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
 
   useEffect(() => {
     if (open) {
-      fetchApi("/api/admin/opencode/status").then(res => setOpencodeStatus(res)).catch(() => {});
+      fetchApi("/admin/opencode/status").then(res => setOpencodeStatus(res)).catch(() => {});
     }
   }, [open]);
 
@@ -302,10 +302,10 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
 
           {providerModels.some(m => m.useOpencodeProxy) && opencodeStatus && !opencodeStatus.ready && (
              <div className="mx-6 mt-4 p-3 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 rounded text-sm font-medium">
-               ⚠️ {t("providers.modelList.opencodeWarning", "You have enabled OpenCode proxy for some models, but the sidecar is not installed. Please go to System Info to install it.")}
+               ⚠️ {t("providers.modelList.opencodeWarning", "已为部分模型开启兼容通道，但 sidecar 尚未就绪。请前往系统信息安装。")}
                {" "}
                <Link to="/system-info" className="underline font-bold" onClick={() => onOpenChange(false)}>
-                 Go to System Info
+                 {t("providers.modelList.opencodeWarningLink", "前往系统信息")}
                </Link>
              </div>
           )}
@@ -316,7 +316,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
                 <TableRow className="border-b-0 hover:bg-transparent">
                   <TableHead className="font-semibold">{t("providers.modelList.table.name", "模型名称 / ID")}</TableHead>
                   <TableHead className="w-24 font-semibold">{t("providers.modelList.table.enable", "启用")}</TableHead>
-                  <TableHead className="w-24 font-semibold">{t("providers.modelList.table.opencode", "OpenCode")}</TableHead>
+                  <TableHead className="w-24 font-semibold">{t("providers.modelList.table.opencode", "兼容通道")}</TableHead>
                   <TableHead className="w-40 font-semibold">{t("providers.modelList.table.alias", "别名")}</TableHead>
                   <TableHead className="w-36 font-semibold">{t("providers.modelList.table.tokenizer", "分词器")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.contextWindow", "最大上下文")}</TableHead>
@@ -328,7 +328,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
               <TableBody>
                 {loadingModels ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-64 text-center">
+                    <TableCell colSpan={9} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center text-muted-foreground gap-3">
                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         <span className="text-sm">{t("providers.modelList.loading", "加载中...")}</span>
@@ -337,7 +337,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
                   </TableRow>
                 ) : providerModels.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-64 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-64 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <p>{t("providers.modelList.empty", "暂无模型，请点击获取列表。")}</p>
                       </div>
