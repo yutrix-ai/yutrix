@@ -320,3 +320,14 @@ describe("gateway OpenCode flag + no OpenRouter spoof", () => {
     expect(keys).not.toContain("x-title");
   });
 });
+
+describe("admin UI persists useOpencodeProxy (static)", () => {
+  it("ProviderModelsModal save payload includes useOpencodeProxy", () => {
+    const modalPath = existsSync(join(process.cwd(), "apps/web/src/components/ProviderModelsModal.tsx"))
+      ? join(process.cwd(), "apps/web/src/components/ProviderModelsModal.tsx")
+      : join(process.cwd(), "../web/src/components/ProviderModelsModal.tsx");
+    const src = readFileSync(modalPath, "utf8");
+    expect(src).toMatch(/useOpencodeProxy:\s*Boolean\(m\.useOpencodeProxy\)/);
+    expect(src).toMatch(/onChange\(\"useOpencodeProxy\"/);
+  });
+});

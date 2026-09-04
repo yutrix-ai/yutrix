@@ -236,6 +236,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
             inputTokenPricePerM: m.inputTokenPricePerM,
             outputTokenPricePerM: m.outputTokenPricePerM,
             tokenizerRepo: m.tokenizerRepo,
+            useOpencodeProxy: Boolean(m.useOpencodeProxy),
             alias: m.alias,
           }))
         ),
