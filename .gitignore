@@ -45,3 +45,6 @@ pnpm-debug.log*
 .pm2/
 *.log
 apps/server/*.log
+
+# Vendored binaries (OpenCode sidecar; never commit)
+.vendor/

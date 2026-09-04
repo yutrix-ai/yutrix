@@ -285,6 +285,7 @@ import openapiRoutes from "./routes/openapi";
 import chatLogsRoutes from "./routes/chatLogs";
 import cacheRoutes from "./routes/cache";
 import distillationRoutes from "./routes/distillation";
+import { opencodeRoutes } from "./opencode";
 import fastifyStatic from "@fastify/static";
 
 fastify.get("/api/health", async () => {
@@ -298,6 +299,7 @@ fastify.register(subdomainRoutes);
 fastify.register(endpointRoutes);
 fastify.register(policyRoutes);
 fastify.register(gatewayRoutes);
+fastify.register(opencodeRoutes);
 fastify.register(usageRoutes);
 fastify.register(settingsRoutes);
 fastify.register(userRoutes);

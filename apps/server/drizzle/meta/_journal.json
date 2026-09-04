@@ -260,6 +260,13 @@
       "when": 1788000000000,
       "tag": "0037_distillation_flywheel",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1788494433779,
+      "tag": "0038_daily_randall",
+      "breakpoints": true
     }
   ]
 }

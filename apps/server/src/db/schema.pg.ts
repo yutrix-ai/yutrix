@@ -431,6 +431,7 @@ export const providerModels = pgTable(
     tokenizerRepo: text("tokenizerRepo"),
     alias: text("alias"),
     active: boolean("active").notNull().default(true),
+    useOpencodeProxy: boolean("useOpencodeProxy").notNull().default(false),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   },
   (t) => ({

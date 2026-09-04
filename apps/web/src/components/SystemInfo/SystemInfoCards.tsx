@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,7 +7,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -374,6 +375,71 @@ export function DatabaseCard({ dbInfo, backupPassword, setBackupPassword, downlo
             )}
           </div>
         ) : <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">{t("settings.sections.systemInfo.dbUnavailable", "数据库信息不可用")}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProxy }: any) {
+  const { t } = useTranslation();
+  const [proxy, setProxy] = useState(opencodeStatus?.proxyUrl || "");
+  const [savingProxy, setSavingProxy] = useState(false);
+
+  useEffect(() => {
+    if (opencodeStatus?.proxyUrl !== undefined) {
+      setProxy(opencodeStatus.proxyUrl);
+    }
+  }, [opencodeStatus?.proxyUrl]);
+
+  const handleSaveProxy = async () => {
+    setSavingProxy(true);
+    await onSaveProxy(proxy);
+    setSavingProxy(false);
+  };
+
+  return (
+    <Card className="shadow-sm flex flex-col h-[310px]">
+      <CardHeader className="pb-1.5 pt-4 border-b border-border/50">
+        <CardTitle className="flex items-center justify-between text-base">
+          <span className="flex items-center gap-1.5">
+            <Box className="h-4 w-4 text-orange-500" />
+            {t("settings.sections.systemInfo.opencode", "OpenCode Sidecar")}
+          </span>
+          {opencodeStatus?.ready ? (
+            <Badge variant="outline" className="text-emerald-600 border-emerald-200">
+              {opencodeStatus.running ? "Running" : "Installed (Idle)"}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">
+              Not Installed
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-4 flex-1 flex flex-col">
+        <div className="flex-1">
+          <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+            {t("settings.sections.systemInfo.opencodeDesc", "OpenCode is an open-source coding agent engine. Yutrix uses a loopback sidecar to route requests natively without modifying client applications.")}
+          </p>
+          <div className="text-xs text-muted-foreground mb-4 space-y-1">
+            <div>Version: {opencodeStatus?.version || "N/A"} ({opencodeStatus?.arch || "N/A"})</div>
+          </div>
+          <div className="flex items-center gap-2 mb-4">
+            <Input 
+              value={proxy} 
+              onChange={e => setProxy(e.target.value)} 
+              placeholder="HTTP Proxy (Optional)" 
+              className="text-xs h-8"
+            />
+            <Button size="sm" variant="outline" onClick={handleSaveProxy} disabled={savingProxy} className="h-8">
+              {savingProxy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save Proxy"}
+            </Button>
+          </div>
+        </div>
+        <Button onClick={onInstall} disabled={installing} className="w-full shrink-0">
+          {installing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          {opencodeStatus?.ready ? t("settings.sections.systemInfo.updateOpencode", "Reinstall / Update") : t("settings.sections.systemInfo.installOpencode", "Install Sidecar")}
+        </Button>
       </CardContent>
     </Card>
   );

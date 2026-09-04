@@ -130,6 +130,7 @@ export const providerModels = sqliteTable(
     tokenizerRepo: text("tokenizerRepo"),
     alias: text("alias"),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
+    useOpencodeProxy: integer("useOpencodeProxy", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
   },
   (t) => ({

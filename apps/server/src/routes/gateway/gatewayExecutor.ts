@@ -13,6 +13,7 @@ import { transformRequestBody, applyPromptPolicy, resolvePromptPolicyPlan } from
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { adaptRequestProtocol } from "./protocolAdapter";
 import { buildUpstreamHeaders, determineUpstreamPath, executeUpstreamFetch, createFakeStreamFromData } from "./upstream";
+import { executeOpencodeSessionApi } from "../../opencode/opencodeClient";
 import { buildBaseLog, insertInitialRequestLog, finalizeStreamLog } from "./logging";
 import { getGlobalQueue, getApiKeyQueue, getProviderQueue } from "./concurrency";
 import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
@@ -1686,32 +1687,46 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
 
               try {
-                const result = await executeUpstreamFetch({
-                  baseUrl: upstreamBaseUrl,
-                  upstreamPath,
-                  upstreamHeaders,
-                  finalBody: upstreamBody,
-                  controller: fetchController,
-                  provider,
-                  isStreaming,
-                  modelId: currentAttempt.modelId,
-                  holdProv,
-                  holdUser,
-                  holdGlobal,
-                  queueMs,
-                  attemptStartProcessingMs: Date.now(),
-                  baseLog,
-                  timeoutId,
-                  currentAttempt,
-                  incomingProtocol,
-                  isAnthropicUpstream,
-                  isGoogleNativeUpstream: !!googleNativeRequest,
-                  adapter,
-                  adapterContext: adapterCtx,
-                  adapterState: ctx.activeProviderAdapterState,
-                  roundId: currentRoundId,
-                  attemptTimeoutMs,
-                 });
+                let result: any;
+                if (activeModelConfig?.useOpencodeProxy) {
+                  const mappedProviderId = provider.openaiBaseUrl?.includes("openrouter") ? "openrouter" :
+                                           provider.openaiBaseUrl?.includes("openai") ? "openai" :
+                                           provider.protocol === "anthropic" ? "anthropic" : "openrouter";
+                  result = await executeOpencodeSessionApi(
+                    upstreamBody,
+                    mappedProviderId,
+                    currentAttempt.modelId,
+                    decryptedKey!,
+                    fetchController
+                  );
+                } else {
+                  result = await executeUpstreamFetch({
+                    baseUrl: upstreamBaseUrl,
+                    upstreamPath,
+                    upstreamHeaders,
+                    finalBody: upstreamBody,
+                    controller: fetchController,
+                    provider,
+                    isStreaming,
+                    modelId: currentAttempt.modelId,
+                    holdProv,
+                    holdUser,
+                    holdGlobal,
+                    queueMs,
+                    attemptStartProcessingMs: Date.now(),
+                    baseLog,
+                    timeoutId,
+                    currentAttempt,
+                    incomingProtocol,
+                    isAnthropicUpstream,
+                    isGoogleNativeUpstream: !!googleNativeRequest,
+                    adapter,
+                    adapterContext: adapterCtx,
+                    adapterState: ctx.activeProviderAdapterState,
+                    roundId: currentRoundId,
+                    attemptTimeoutMs,
+                   });
+                }
                 if (!result.isStream && result.status >= 400) {
                   const omitPayload = [429, 500, 502, 503, 504, 529].includes(result.status);
                   logAction({

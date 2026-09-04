@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/api";
@@ -45,6 +46,12 @@ function ModelRow({ model, onChange }: { model: any; onChange: (field: string, v
         <Switch
           checked={model.enabled}
           onCheckedChange={(checked) => onChange("enabled", checked)}
+        />
+      </TableCell>
+      <TableCell className="py-3.5">
+        <Switch
+          checked={model.useOpencodeProxy}
+          onCheckedChange={(checked) => onChange("useOpencodeProxy", checked)}
         />
       </TableCell>
       <TableCell className="py-3.5">
@@ -154,6 +161,13 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
   const [loadingModels, setLoadingModels] = useState(false);
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [savingModels, setSavingModels] = useState(false);
+  const [opencodeStatus, setOpencodeStatus] = useState<{ready: boolean, running: boolean} | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      fetchApi("/api/admin/opencode/status").then(res => setOpencodeStatus(res)).catch(() => {});
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open && provider) {
@@ -249,18 +263,18 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
         </DialogHeader>
 
         <div className="flex-1 min-h-0 flex flex-col px-6">
-          <div className="flex justify-between items-center py-4 shrink-0 border-b">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/20 shrink-0">
+            <div className="flex gap-2">
               <Button
-                variant="outline"
+                variant="default"
+                size="sm"
                 onClick={handleRefreshModels}
-                disabled={loadingModels || refreshingModels}
-                className="gap-2"
+                disabled={refreshingModels}
+                className="gap-2 shadow-sm font-medium"
               >
                 <RefreshCw className={`h-4 w-4 ${refreshingModels ? 'animate-spin' : ''}`} />
-                {refreshingModels ? t("providers.modelList.refreshing", "正在从上游获取并同步...") : t("providers.modelList.refresh", "从上游获取/更新列表")}
+                {refreshingModels ? t("providers.modelList.actions.refreshing", "获取中...") : t("providers.modelList.actions.refresh", "自动获取可用模型")}
               </Button>
-              <div className="h-4 w-px bg-border mx-1" />
               <Button
                 variant="outline"
                 size="sm"
@@ -286,12 +300,23 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar -mx-6 px-6">
+          {providerModels.some(m => m.useOpencodeProxy) && opencodeStatus && !opencodeStatus.ready && (
+             <div className="mx-6 mt-4 p-3 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 rounded text-sm font-medium">
+               ⚠️ {t("providers.modelList.opencodeWarning", "You have enabled OpenCode proxy for some models, but the sidecar is not installed. Please go to System Info to install it.")}
+               {" "}
+               <Link to="/system-info" className="underline font-bold" onClick={() => onOpenChange(false)}>
+                 Go to System Info
+               </Link>
+             </div>
+          )}
+
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar -mx-6 px-6 mt-4">
             <Table>
               <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10 shadow-sm">
                 <TableRow className="border-b-0 hover:bg-transparent">
                   <TableHead className="font-semibold">{t("providers.modelList.table.name", "模型名称 / ID")}</TableHead>
                   <TableHead className="w-24 font-semibold">{t("providers.modelList.table.enable", "启用")}</TableHead>
+                  <TableHead className="w-24 font-semibold">{t("providers.modelList.table.opencode", "OpenCode")}</TableHead>
                   <TableHead className="w-40 font-semibold">{t("providers.modelList.table.alias", "别名")}</TableHead>
                   <TableHead className="w-36 font-semibold">{t("providers.modelList.table.tokenizer", "分词器")}</TableHead>
                   <TableHead className="w-32 font-semibold">{t("providers.modelList.table.contextWindow", "最大上下文")}</TableHead>

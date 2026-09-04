@@ -13,6 +13,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps ./apps
 COPY packages ./packages
 COPY scripts ./scripts
+
+ARG TARGETARCH
+RUN ./scripts/bootstrap-opencode.sh
+
 COPY ecosystem.config.cjs ./
 
 ENV PNPM_IGNORE_BUILD_SCRIPTS=false

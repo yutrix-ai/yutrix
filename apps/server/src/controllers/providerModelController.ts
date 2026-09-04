@@ -37,6 +37,7 @@ export const updateModelConfig = async (request: FastifyRequest, reply: FastifyR
         outputTokenPricePerM: z.number().nonnegative().nullable().optional(),
         tokenizerRepo: z.string().nullable().optional(),
         alias: z.string().nullable().optional(),
+        useOpencodeProxy: z.boolean().optional(),
       });
 
       const parsed = updateModelSchema.safeParse(request.body);
@@ -47,6 +48,7 @@ export const updateModelConfig = async (request: FastifyRequest, reply: FastifyR
       const data = parsed.data;
       const updateData: any = {};
       if (data.enabled !== undefined) updateData.enabled = data.enabled;
+      if (data.useOpencodeProxy !== undefined) updateData.useOpencodeProxy = data.useOpencodeProxy;
       if (data.contextWindowTokens !== undefined) updateData.contextWindowTokens = data.contextWindowTokens;
       if (data.maxOutputTokens !== undefined) updateData.maxOutputTokens = data.maxOutputTokens;
       if (data.inputTokenPricePerM !== undefined) updateData.inputTokenPricePerM = data.inputTokenPricePerM;
@@ -83,6 +85,7 @@ export const bulkUpdateModels = async (request: FastifyRequest, reply: FastifyRe
           outputTokenPricePerM: z.number().nonnegative().nullable().optional(),
           tokenizerRepo: z.string().nullable().optional(),
           alias: z.string().nullable().optional(),
+          useOpencodeProxy: z.boolean().optional(),
         })
       );
 
@@ -103,6 +106,7 @@ export const bulkUpdateModels = async (request: FastifyRequest, reply: FastifyRe
           if (item.outputTokenPricePerM !== undefined) updateData.outputTokenPricePerM = item.outputTokenPricePerM;
           if (item.tokenizerRepo !== undefined) updateData.tokenizerRepo = item.tokenizerRepo;
           if (item.alias !== undefined) updateData.alias = item.alias;
+          if (item.useOpencodeProxy !== undefined) updateData.useOpencodeProxy = item.useOpencodeProxy;
 
           await tx
             .update(providerModels)

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchApi } from "../lib/api";
-import { CpuCard, MemoryCard, DiskCard, NetworkCard, SoftwareEnvCard, DatabaseCard } from "@/components/SystemInfo/SystemInfoCards";
+import { CpuCard, MemoryCard, DiskCard, NetworkCard, SoftwareEnvCard, DatabaseCard, OpenCodeCard } from "@/components/SystemInfo/SystemInfoCards";
 import { API_BASE } from "../lib/api";
 
 interface HistoryPoint {
@@ -19,6 +19,41 @@ export default function SystemInfo() {
   const [dbInfo, setDbInfo] = useState<{ path: string; size: number; sizeFormatted: string; isBackupPasswordSet: boolean } | null>(null);
   const [systemInfo, setSystemInfo] = useState<any>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [opencodeStatus, setOpencodeStatus] = useState<any>(null);
+  const [installingOpencode, setInstallingOpencode] = useState(false);
+
+  const fetchOpencodeStatus = async () => {
+    try {
+      const res = await fetchApi("/api/admin/opencode/status");
+      setOpencodeStatus(res);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleInstallOpencode = async () => {
+    try {
+      setInstallingOpencode(true);
+      await fetchApi("/api/admin/opencode/download", { method: "POST" });
+      await fetchOpencodeStatus();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setInstallingOpencode(false);
+    }
+  };
+
+  const handleSaveOpencodeProxy = async (proxyUrl: string) => {
+    try {
+      await fetchApi("/api/admin/opencode/settings", { 
+        method: "POST",
+        body: JSON.stringify({ proxyUrl }) 
+      });
+      await fetchOpencodeStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const [selectedInterface, setSelectedInterface] = useState<string>("");
   const [backupPassword, setBackupPassword] = useState("");
   const [downloading, setDownloading] = useState(false);
@@ -111,6 +146,7 @@ export default function SystemInfo() {
 
   useEffect(() => {
     loadData(true);
+    fetchOpencodeStatus();
     const interval = setInterval(() => {
       loadData(false);
     }, 3000);
@@ -160,6 +196,7 @@ export default function SystemInfo() {
           formatSpeed={formatSpeed} 
         />
         <SoftwareEnvCard systemInfo={systemInfo} />
+        <OpenCodeCard opencodeStatus={opencodeStatus} onInstall={handleInstallOpencode} installing={installingOpencode} onSaveProxy={handleSaveOpencodeProxy} />
         <DatabaseCard 
           dbInfo={dbInfo} 
           backupPassword={backupPassword} 
