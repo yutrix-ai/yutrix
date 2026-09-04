@@ -187,7 +187,9 @@
         "title": "基础设置",
         "desc": "配置域名和网络相关的基础参数",
         "mainDomain": "主域名",
-        "mainDomainHint": "用于生成二级域名的基础域名",
+        "mainDomainHint": "DNS 区域父域，用作子域后缀与 CORS 同站父域（例如 brtel.link）。这不是控制台/登录主机。",
+        "adminHost": "控制台主机 (adminHost)",
+        "adminHostHint": "控制台/登录完整域名（例如 token.brtel.link）。留空为零配置：凡未登记为 API 路由主机的 Host 均可打开控制台。",
         "queueTimeout": "默认队列超时时间 (ms)",
         "queueTimeoutHint": "请求在队列中等待的最大时间"
       },
@@ -1589,7 +1591,7 @@
       "enabled": "创建后立即启用"
     },
     "hints": {
-      "prefix": "完整域名将由前缀 + 系统设置中的「主域名 (mainDomain)」自动拼接"
+      "prefix": "完整主机名由前缀 + DNS 区域父域（mainDomain）拼接，例如 code + brtel.link → code.brtel.link。"
     },
     "placeholders": {
       "prefix": "例如: code",
@@ -1814,5 +1816,13 @@
     "concurrency": "并发度",
     "cronEnabled": "每日定时增量",
     "saveSettings": "保存设置"
+  },
+  "setup": {
+    "mainDomain": "系统主域名 (Main Domain)",
+    "mainDomainHint": "DNS 区域父域，用作子域后缀与 CORS 同站父域（例如 brtel.link）。不要填控制台主机 token.*。",
+    "adminHost": "控制台主机 (Admin Host)",
+    "adminHostHint": "可选。控制台/登录完整域名。留空为零配置：未登记为 API 路由主机的 Host 均可打开控制台。",
+    "adminHostEmpty": "（空 / 零配置）",
+    "descDomain": "配置 DNS 区域父域（子域后缀 / CORS 父域）。控制台主机可另填或留空（零配置）。"
   }
 }

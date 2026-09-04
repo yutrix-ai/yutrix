@@ -21,6 +21,17 @@ import {
   AlertCircle
 } from "lucide-react";
 
+/** DNS zone parent for prefix→FQDN concat. token.brtel.link → brtel.link; localhost stays localhost. */
+function inferDnsZoneParent(host: string): string {
+  const hostname = host.split(":")[0].toLowerCase();
+  if (!hostname || hostname === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return hostname || "localhost";
+  }
+  const parts = hostname.split(".");
+  if (parts.length >= 3) return parts.slice(1).join(".");
+  return hostname;
+}
+
 export default function Setup() {
   const { t, i18n } = useTranslation();
   const [step, setStep] = useState(1);
@@ -32,9 +43,11 @@ export default function Setup() {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [mainDomain, setMainDomain] = useState(
-    typeof window !== "undefined" ? window.location.host : "localhost:3000"
-  );
+  const [mainDomain, setMainDomain] = useState(() => {
+    if (typeof window === "undefined") return "localhost";
+    return inferDnsZoneParent(window.location.host);
+  });
+  const [adminHost, setAdminHost] = useState("");
   const [secret, setSecret] = useState("");
   const [driver, setDriver] = useState<"sqlite" | "postgres">("sqlite");
   const [sqliteFile, setSqliteFile] = useState("data/promptgate.sqlite");
@@ -151,6 +164,7 @@ export default function Setup() {
         username: username.trim(),
         password,
         mainDomain: mainDomain.trim(),
+        adminHost: adminHost.trim(),
         secret: secret.trim(),
         driver,
         sqliteFile: driver === "sqlite" ? sqliteFile.trim() : undefined,
@@ -232,7 +246,7 @@ export default function Setup() {
             <CardDescription>
               {step === 1 && t("setup.descLang", "选择您首选的控制台显示语言。")}
               {step === 2 && t("setup.descAdmin", "设置系统最高权限管理员账号及登录密码。")}
-              {step === 3 && t("setup.descDomain", "配置网关主域名，用于路由鉴权与 CORS 跨域安全配置。")}
+              {step === 3 && t("setup.descDomain", "配置 DNS 区域父域（子域后缀 / CORS 父域）。控制台主机可另填或留空（零配置）。")}
               {step === 4 && t("setup.descSecret", "设置主加密密钥 PROMPTGATE_SECRET，用于机密配置加密保护。")}
               {step === 5 && t("setup.descDatabase", "选择数据库引擎：嵌入式 SQLite 快速开箱即用，或 PostgreSQL 高并发部署。")}
               {step === 6 && t("setup.descConfirm", "确认所有配置参数，点击立即完成数据库初始化与系统引导。")}
@@ -311,10 +325,28 @@ export default function Setup() {
                     id="main-domain"
                     value={mainDomain}
                     onChange={(e) => setMainDomain(e.target.value)}
-                    placeholder="e.g. pg.example.com or localhost:3000"
+                    placeholder="brtel.link"
                   />
                   <p className="text-xs text-muted-foreground">
-                    {t("setup.mainDomainHint", "用于生成子域名路由与跨域访问校验，例如 gateway.yourdomain.com")}
+                    {t(
+                      "setup.mainDomainHint",
+                      "DNS 区域父域，用作子域后缀与 CORS 同站父域（例如 brtel.link）。不要填控制台主机 token.*。",
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-host">{t("setup.adminHost", "控制台主机 (Admin Host)")}</Label>
+                  <Input
+                    id="admin-host"
+                    value={adminHost}
+                    onChange={(e) => setAdminHost(e.target.value)}
+                    placeholder="token.brtel.link"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "setup.adminHostHint",
+                      "可选。控制台/登录完整域名。留空为零配置：未登记为 API 路由主机的 Host 均可打开控制台。",
+                    )}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -458,6 +490,12 @@ export default function Setup() {
                   <div className="flex justify-between border-b pb-2">
                     <span className="text-muted-foreground">{t("setup.mainDomain", "主域名")}:</span>
                     <span className="font-medium">{mainDomain}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-muted-foreground">{t("setup.adminHost", "控制台主机")}:</span>
+                    <span className="font-medium">
+                      {adminHost.trim() || t("setup.adminHostEmpty", "（空 / 零配置）")}
+                    </span>
                   </div>
                   <div className="flex justify-between border-b pb-2">
                     <span className="text-muted-foreground">{t("setup.dbEngine", "数据库类型")}:</span>

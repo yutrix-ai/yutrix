@@ -204,6 +204,12 @@ describe("Slice P0-4: Setup Wizard & Unattended Env", () => {
     expect(domainSetting.length).toBe(1);
     expect(domainSetting[0].value).toBe("gateway.example.com");
 
+    const adminHostSetting = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, "adminHost"));
+    expect(adminHostSetting.length).toBe(0);
+
     // Subsequent call fails with 409 Conflict
     await expect(
       completeSetup({
@@ -379,7 +385,36 @@ describe("Slice P0-4: Setup Wizard & Unattended Env", () => {
     }
   });
 
-  it("10. completeSetup enforces password minimum length of 8", async () => {
+  it("10. completeSetup persists optional adminHost when provided", async () => {
+    const configTargetPath = getDbConfigPath();
+    if (fs.existsSync(configTargetPath)) {
+      fs.unlinkSync(configTargetPath);
+    }
+
+    const result = await completeSetup({
+      username: "admin_host_setup",
+      password: "MySecureAdminPass123!",
+      mainDomain: "brtel.link",
+      adminHost: "token.brtel.link",
+      secret: "0123456789abcdef0123456789abcdef",
+      driver: "sqlite",
+      sqliteFile: testDbFile,
+    });
+    expect(result.ok).toBe(true);
+
+    const adminHostSetting = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, "adminHost"));
+    expect(adminHostSetting.length).toBe(1);
+    expect(adminHostSetting[0].value).toBe("token.brtel.link");
+
+    if (fs.existsSync(configTargetPath)) {
+      fs.unlinkSync(configTargetPath);
+    }
+  });
+
+  it("11. completeSetup enforces password minimum length of 8", async () => {
     // 7 characters must fail
     await expect(
       completeSetup({

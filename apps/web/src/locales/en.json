@@ -187,7 +187,9 @@
         "title": "Basic Settings",
         "desc": "Configure domain and network-related basic parameters",
         "mainDomain": "Main Domain",
-        "mainDomainHint": "Base domain used to generate subdomains",
+        "mainDomainHint": "DNS zone parent used as the subdomain suffix and CORS same-site parent (e.g. brtel.link). This is not the console / login host.",
+        "adminHost": "Admin Host",
+        "adminHostHint": "Console / login FQDN (e.g. token.brtel.link). Leave empty for zero-config: any host that is not a configured API route host may serve the admin UI.",
         "queueTimeout": "Default Queue Timeout (ms)",
         "queueTimeoutHint": "Maximum time a request waits in the queue"
       },
@@ -1592,7 +1594,7 @@
       "enabled": "Enable Immediately"
     },
     "hints": {
-      "prefix": "The full domain will be automatically concatenated as prefix + mainDomain."
+      "prefix": "The full hostname is prefix + the DNS zone parent (mainDomain), e.g. code + brtel.link → code.brtel.link."
     },
     "placeholders": {
       "prefix": "e.g., code",
@@ -1839,5 +1841,13 @@
     "concurrency": "Concurrency",
     "cronEnabled": "Daily Scheduled Incremental",
     "saveSettings": "Save Settings"
+  },
+  "setup": {
+    "mainDomain": "Main Domain",
+    "mainDomainHint": "DNS zone parent used as the subdomain suffix and CORS same-site parent (e.g. brtel.link). Do not enter the console host token.*.",
+    "adminHost": "Admin Host",
+    "adminHostHint": "Optional. Console / login FQDN. Leave empty for zero-config: any host that is not a configured API route host may serve the admin UI.",
+    "adminHostEmpty": "(empty / zero-config)",
+    "descDomain": "Set the DNS zone parent (subdomain suffix / CORS parent). Admin host is optional and may be left empty for zero-config."
   }
 }

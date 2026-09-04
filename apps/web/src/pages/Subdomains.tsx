@@ -172,7 +172,7 @@ export default function Subdomains() {
                 <FormField
                   label={t("subdomains.fields.prefix", "子域名前缀")}
                   required
-                  hint={t("subdomains.hints.prefix", "完整域名将由前缀 + 系统设置中的「主域名 (mainDomain)」自动拼接")}
+                  hint={t("subdomains.hints.prefix", "完整主机名由前缀 + DNS 区域父域（mainDomain）拼接，例如 code + brtel.link → code.brtel.link。")}
                 >
                   <Input
                     placeholder={t("subdomains.placeholders.prefix", "例如: code")}

@@ -198,6 +198,7 @@ export default async function (fastify: FastifyInstance) {
       for (const [key, value] of Object.entries(LOOP_GUARD_SETTING_STRING_DEFAULTS)) {
         if (!present.has(key)) payload.push({ key, value });
       }
+      if (!present.has("adminHost")) payload.push({ key: "adminHost", value: "" });
       return payload;
     },
   );

@@ -176,6 +176,7 @@ export interface CompleteSetupParams {
   username: string;
   password: string;
   mainDomain: string;
+  adminHost?: string;
   secret: string;
   driver: DbDriver;
   sqliteFile?: string;
@@ -329,6 +330,23 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
       target: systemSettings.key,
       set: { value: mainDomain, updatedAt: new Date() },
     });
+
+  const adminHost = params.adminHost?.trim() ?? "";
+  if (adminHost) {
+    await (db as any)
+      .insert(systemSettings)
+      .values({
+        key: "adminHost",
+        value: adminHost,
+        description: "Admin console / login FQDN",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: adminHost, updatedAt: new Date() },
+      });
+  }
 
   if (params.siteTitle) {
     await (db as any)

@@ -5,7 +5,6 @@ import jwt from "@fastify/jwt";
 import { bootstrap, isMigrationCompleted } from "./bootstrap";
 import dotenv from "dotenv";
 import crypto from "crypto";
-import path from "path";
 import "./services/chatLogService";
 import { scheduleDingTalkJobs } from "./services/dingtalk";
 import { scheduleDistillationJobs } from "./services/distillation/scheduler";
@@ -287,7 +286,7 @@ import chatLogsRoutes from "./routes/chatLogs";
 import cacheRoutes from "./routes/cache";
 import distillationRoutes from "./routes/distillation";
 import { opencodeRoutes } from "./opencode";
-import fastifyStatic from "@fastify/static";
+import { registerAdminSpaServing } from "./utils/adminSpaServing";
 
 fastify.get("/api/health", async () => {
   return { status: "ok" };
@@ -317,21 +316,7 @@ fastify.register(groupsRoutes);
 fastify.register(openapiRoutes);
 fastify.register(setupRoutes);
 
-// Serve frontend in production
-fastify.register(fastifyStatic, {
-  root: path.join(
-    process.cwd(),
-    process.cwd().endsWith("server") ? "../web/dist" : "apps/web/dist",
-  ),
-});
-
-fastify.setNotFoundHandler(async (request, reply) => {
-  // If request doesn't match API, return index.html for React Router
-  if (!request.url.startsWith("/api/") && !request.url.startsWith("/v1/")) {
-    return reply.sendFile("index.html");
-  }
-  return reply.code(404).send({ error: "Not found" });
-});
+registerAdminSpaServing(fastify);
 
 const start = async () => {
   try {
