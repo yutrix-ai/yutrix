@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/api";
@@ -304,7 +304,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
              <div className="mx-6 mt-4 p-3 bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 rounded text-sm font-medium">
                ⚠️ {t("providers.modelList.opencodeWarning", "已为部分模型开启兼容通道，但 sidecar 尚未就绪。请前往系统信息安装。")}
                {" "}
-               <Link to="/system-info" className="underline font-bold" onClick={() => onOpenChange(false)}>
+               <Link href="/system-info" className="underline font-bold" onClick={() => onOpenChange(false)}>
                  {t("providers.modelList.opencodeWarningLink", "前往系统信息")}
                </Link>
              </div>
