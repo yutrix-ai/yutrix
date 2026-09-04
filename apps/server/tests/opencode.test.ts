@@ -9,7 +9,9 @@ import {
   extractOpencodeSessionId,
   joinOpencodeTextParts,
   mapOpencodeHttpError,
+  isOpencodeVersionOutdated,
   normalizeDownloadProxyUrl,
+  parseOpencodeAutoUpdate,
   resolveOpencodeProviderSlug,
   shouldRouteViaOpencode,
 } from "../src/opencode/protocol";
@@ -112,6 +114,20 @@ describe("OpenCode protocol helpers", () => {
     expect(mapOpencodeHttpError(401, "invalid api key").authFailed).toBe(true);
     expect(mapOpencodeHttpError(403, "forbidden").authFailed).toBe(true);
     expect(mapOpencodeHttpError(500, "boom").status).toBe(500);
+  });
+
+  it("defaults auto-update on when the setting is missing or empty", () => {
+    expect(parseOpencodeAutoUpdate(undefined)).toBe(true);
+    expect(parseOpencodeAutoUpdate(null)).toBe(true);
+    expect(parseOpencodeAutoUpdate("")).toBe(true);
+    expect(parseOpencodeAutoUpdate("true")).toBe(true);
+    expect(parseOpencodeAutoUpdate("false")).toBe(false);
+  });
+
+  it("treats a different published version as outdated", () => {
+    expect(isOpencodeVersionOutdated("1.18.2", "1.19.0")).toBe(true);
+    expect(isOpencodeVersionOutdated("v1.18.2", "1.18.2")).toBe(false);
+    expect(isOpencodeVersionOutdated(null, "1.19.0")).toBe(false);
   });
 
   it("accepts empty or http(s) download proxies and rejects junk", () => {

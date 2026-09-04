@@ -1,6 +1,7 @@
 import { spawn, execFile, ChildProcess } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
+import { join } from "path";
 import { promisify } from "util";
 import { randomBytes } from "crypto";
 import pino from "pino";
@@ -14,6 +15,7 @@ import {
 } from "./paths";
 import { writeOpencodeAuthJson } from "./authJson";
 import { getOpencodeDownloadProxy } from "./settings";
+import { isOpencodeVersionOutdated } from "./protocol";
 
 const logger = pino({ name: "opencode" });
 const execFileAsync = promisify(execFile);
@@ -206,17 +208,28 @@ export class OpencodeService {
     }
   }
 
-  public async download(): Promise<void> {
-    const proxyUrl = await getOpencodeDownloadProxy();
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    if (proxyUrl) {
-      env.HTTP_PROXY = proxyUrl;
-      env.HTTPS_PROXY = proxyUrl;
-      env.npm_config_proxy = proxyUrl;
-      env.npm_config_https_proxy = proxyUrl;
+  public async maybeAutoUpdate(): Promise<void> {
+    if (!this.isReady()) return;
+    try {
+      const current = (await this.readInstalledPackageVersion()) || (await this.readBinaryVersion());
+      const latest = await this.fetchLatestPublishedVersion();
+      if (!isOpencodeVersionOutdated(current, latest)) return;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.lastError = `OpenCode auto-update check failed: ${message}`;
+      logger.error({ err: e }, "OpenCode auto-update check failed");
+      return;
     }
+    try {
+      await this.download();
+    } catch {
+      // download() already records lastError
+    }
+  }
 
-    logger.info({ proxy: Boolean(proxyUrl) }, "Downloading OpenCode");
+  public async download(): Promise<void> {
+    const env = await this.downloadEnv();
+    logger.info({ proxy: Boolean(env.HTTP_PROXY || env.HTTPS_PROXY) }, "Downloading OpenCode");
     try {
       const { stdout, stderr } = await execFileAsync("bash", ["./scripts/bootstrap-opencode.sh"], {
         cwd: process.cwd(),
@@ -237,6 +250,47 @@ export class OpencodeService {
   public async syncCredential(provider: string, apiKey: string): Promise<void> {
     await writeOpencodeAuthJson(this.paths.authPath, provider, apiKey);
     logger.info({ provider }, "Synced credential into OpenCode auth.json");
+  }
+
+  public async readInstalledPackageVersion(): Promise<string | null> {
+    try {
+      const pkg = await this.resolveNpmPackageName();
+      const pkgJson = join(this.paths.vendorDir, "node_modules", pkg, "package.json");
+      const raw = await readFile(pkgJson, "utf8");
+      const version = JSON.parse(raw)?.version;
+      return typeof version === "string" && version.trim() ? version.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async fetchLatestPublishedVersion(): Promise<string | null> {
+    const pkg = await this.resolveNpmPackageName();
+    const env = await this.downloadEnv();
+    const { stdout } = await execFileAsync("npm", ["view", pkg, "version"], {
+      timeout: 30_000,
+      env,
+    });
+    const version = stdout.toString().trim();
+    return version || null;
+  }
+
+  private async downloadEnv(): Promise<NodeJS.ProcessEnv> {
+    const proxyUrl = await getOpencodeDownloadProxy();
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (proxyUrl) {
+      env.HTTP_PROXY = proxyUrl;
+      env.HTTPS_PROXY = proxyUrl;
+      env.npm_config_proxy = proxyUrl;
+      env.npm_config_https_proxy = proxyUrl;
+    }
+    return env;
+  }
+
+  private async resolveNpmPackageName(): Promise<string> {
+    const script = join(process.cwd(), "scripts/bootstrap-opencode.sh");
+    const { stdout } = await execFileAsync("bash", [script, "--print-pkg"], { timeout: 5000 });
+    return stdout.toString().trim();
   }
 
   public async readBinaryVersion(): Promise<string | null> {

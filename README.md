@@ -6,35 +6,16 @@
   <img src="./apps/web/public/favicon.svg" width="120" alt="Yutrix Logo" />
 </p>
 
-**Yutrix (formerly PromptGate) is a lightweight LLM protocol gateway and admin console for OpenAI-compatible and Anthropic-style APIs.**
+**One self-hosted gateway for OpenAI-compatible and Anthropic-style clients.** Point Claude Code, Cursor, or any compatible SDK at a single URL: Yutrix handles routing, API keys, audit logs, failover, and the admin UI. Clients keep talking the APIs they already know.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.16-339933.svg)](./package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-f69220.svg)](https://pnpm.io/)
 
-[中文文档 / Chinese documentation](./README.zh-CN.md) | [Caddy deployment guide](./docs/deployment-caddy.md) | [Docker Compose (PostgreSQL) Example](./docker-compose.postgres.example.yml)
+[中文文档](./README.zh-CN.md) · [Caddy deployment](./docs/deployment-caddy.md) · [Docker Compose (PostgreSQL)](./docker-compose.postgres.example.yml) · [OpenCode sidecar](./docs/opencode-sidecar.md)
 
-Yutrix focuses on the gateway layer of LLM applications: one entry point, one authentication layer, one routing system, one logging surface, and one fallback path. It is not trying to reinvent a full model platform.
-
-It gives you a deployable control plane for:
-
-- routing requests by `Host`, path, and protocol;
-- restricting each route by client source IP (single address, CIDR, or a comma-separated list; empty or `0.0.0.0/0` means no restriction);
-- validating Yutrix API keys;
-- replacing upstream provider API keys;
-- rewriting the request `model` field from route configuration;
-- forwarding OpenAI-compatible and Anthropic-style requests;
-- adapting Anthropic requests to OpenAI-compatible upstreams when needed;
-- enforcing global, provider, and API-key concurrency limits;
-- applying prompt injection policies;
-- enforcing per-user and per-group maximum input token policies;
-- collecting token, latency, user, route, provider, and model logs;
-- seamlessly auto-stitching responses that hit max token limits via the **Response Continuity Engine**;
-- returning a configurable model discovery list via `/v1/models` for third-party client compatibility;
-- failing over when an upstream is rate-limited, overloaded, or unavailable.
-
-Yutrix is a **protocol gateway**, not a model-type gateway.
+Yutrix is a **protocol gateway**, not a model platform and not a model-type switch. One entry, one auth layer, one routing table, one log surface, one failover path.
 
 ```text
 API Key        -> user identity
@@ -46,19 +27,7 @@ modelId        -> the string written into the request body
 
 ## Why Yutrix?
 
-LLM applications often start with a simple proxy and quickly run into operational needs:
-
-- multiple upstream providers;
-- separate public hostnames for different clients;
-- API-key ownership and revocation;
-- route-specific models;
-- Claude Code / Anthropic-style request compatibility;
-- transparently handling large code-generation tasks that hit physical `max_tokens` limits (Response Continuity);
-- failover when a popular backend returns 429 Too Many Requests;
-- request logs that are readable by humans;
-- a UI for configuration instead of hand-editing runtime files.
-
-Yutrix keeps the small-proxy mental model, but turns it into a configurable, observable, and production-deployable gateway.
+A raw reverse proxy gets you through the first week. Then you need keys you can revoke, hostnames per team, Anthropic-shaped requests, a 429 that should hop instead of fail, and logs a human can read. Yutrix keeps that small-proxy mental model and makes it something you can actually run.
 
 ### Logo Philosophy
 
@@ -66,36 +35,15 @@ The Yutrix logo features a modern arch or gateway with a central glowing code sp
 
 ## Features
 
-### Recent Updates
-- **Route-level source IP restriction**: Each routing rule can allow only specific client IPs. Leave the field empty or set `0.0.0.0/0` (or `::/0`) for no restriction. A configured list accepts single IPv4/IPv6 addresses, CIDR subnets (`192.168.1.0/24`), and comma-separated mixes (`192.168.1.0/24, 10.0.0.1, 203.0.113.195`). Clients outside the list are rejected with `403` before the request reaches upstream, fallback, or token accounting. Allowed requests still follow the existing funnel / EmptyOutput / 429 hop path. Action logs include the client IP so `/logs` can filter by it.
-- **Client Override (user route model mode)**: When a route has **Allow Client Model Override** enabled, authorized users can choose **Client Override** in Select Custom Model. The gateway then matches the client request’s model name (`body.model`) against that route’s **L0** configuration (strategy rule models + L0 base). A hit uses the matched L0 model; if nothing matches, resolution falls through to **General**. This mode is mutually exclusive with a page-specified fixed model (and with custom strategy mapping for the same user+route override).
-- **Provider models batch enable/disable**: In the provider model configuration modal, admins can enable or disable all listed models in one action (toolbar buttons + header switch). Changes still apply only after save, matching the existing per-row toggle workflow.
-- **Route-based `/v1/models` when discovery is disabled**: With **Model Discovery** on (default), `/v1/models` still returns the admin-configured OpenAI/Anthropic discovery lists (independent of provider models). When discovery is **off**, the list is built from the requesting host’s enabled **L0** routes: prefers `virtualModelAlias` when set, otherwise L0 `targets[0].modelId` / route `modelId`; if no routes apply, returns a single `default` placeholder.
-- **Advanced Target Matrix & Cascading Funnel Routing**: Replaced the single fallback provider logic with an advanced target matrix (grid) per route. Administrators can now configure true multi-layered cascading failover (e.g., Layer 1 -> Layer 2 -> Layer 3) when upstream providers experience rate limits (429) or unavailability (503).
-- **"Best Effort" Model Matching**: Added a new "Best Effort" mode for fallback targets. Instead of hard-locking to a pre-configured model, the gateway intelligently scans the fallback provider for a model sharing the same name as the originally requested model, preserving user intent across provider transitions.
-- **Provider Model Aliases**: Models can now be assigned a display alias. This alias gracefully appears in the Admin UI, LLM Audit Logs, and automated DingTalk usage reports, while the gateway continues to use the actual model ID (e.g., `gpt-4o`) for strict protocol adherence with upstreams.
-- **Model Discovery List**: The `/v1/models` endpoint now returns a fully configurable model list that is **completely independent** of the system's actual provider models. This ensures maximum compatibility with third-party clients (Claude Desktop, opencode, Codex CLI, etc.) by advertising well-known official model IDs. Admins configure separate OpenAI and Anthropic model lists via a dialog in the Routes page. Enabled by default with sensible defaults (`gpt-4.1`, `o3`, `claude-opus-4-20250918`, etc.).
-- **Tool-loop circuit breaker**: The gateway hard-stops runaway agent tool continuations that repeat the same error (default 5) or ping-pong between two errors (default 8 half-cycles), plus last-resort caps of 400 continuations or 2 hours since the last real user message. It returns HTTP 200 with `finish_reason: stop` / Anthropic `end_turn` (never 429, never a mid-loop model hop). Admins can enable/disable it and tune the four numeric thresholds under **Settings → Session & Gateway Settings**. `0` on the turn ceiling or max-age field turns that signal off. Invalid values fall back to factory defaults; a settings-read failure fail-opens (does not hard-stop).
-- **Continuation-Aware Model Locking**: Strategy Routing now distinguishes real user input from tool results, system-reminders, and auto-continuations. The model is decided once on each genuine user message (text or image upload) and stays locked until the next user message arrives — no mid-task model switching during tool-call loops, agentic workflows, or background requests.
-- **User / Group Input Token Limits**: Admins can now configure a default maximum input token limit on user groups and override it per user. `0` means unlimited. When a request exceeds the effective limit, Yutrix applies a conservative sliding-window truncation strategy before calling the upstream model, preserving system/developer messages and recent tool-call context whenever possible.
-- **Strategy Routing**: Routes can now use deterministic task-type routing instead of LLM-driven handoff. Yutrix classifies the current user input locally into `vision`, `debug`, `code`, `long_context`, `writing`, or `general`, then forwards the request to the model configured for that task type with no extra LLM call, cache lookup, or preflight delay.
-- **Route Scheduling (路由计划)**: Allows administrators to configure recurring weekly time-based overrides for route configurations. During active periods, the gateway automatically switches to scheduled models, fallback providers, and Best Effort options. The interface automatically calculates next-day cross-midnight indicators and includes a detailed tooltipped instruction manual.
-- **AI Client Detection**: Automatically identifies the AI coding client (e.g., Claude Code, Cursor, OpenCode, Xcode, Augment Code) via heuristic analysis of request headers, paths, and prompt signatures. Detected clients are displayed as color-coded brand badges in the Audit Logs UI. Legacy data or unrecognized clients gracefully degrade by showing no badge.
-- **Response Cache** — A response caching mechanism that lets administrators pin specific user inputs to pre-defined responses:
-  - In the LLM Audit Logs, admins can click a cache button on any conversation turn to cache the user's input and the model's full response (including reasoning)
-  - When any subsequent request matches a cached user input (matched by the normalized user input text, not the full agent context), the gateway returns the cached response instantly — zero tokens, zero latency, zero upstream API calls
-  - Works across all clients (curl, Claude Code, Cursor, etc.) because matching is based on the extracted user input, not the full request body
-  - Cache management page to view all entries, hit counts, last hit time, and delete entries
-  - Cached responses are marked with a "Cache Hit" badge in audit logs and follow the normal session merging behavior
-- **System Information & Database Management**: Added a comprehensive system information panel to the Settings page, displaying application, memory, and host machine details. Also introduced the ability to view database status (SQLite or PostgreSQL), download SQLite backups directly from the admin console, and seamlessly migrate from SQLite to PostgreSQL.
-- **Audit Logs UI Redesign & Markdown Support**: Redesigned the LLM Audit Logs interface with a new interactive minimap, persistent auto-scroll toggles, and lightweight markdown rendering for assistant outputs, making it much easier to review long conversations.
-- **Thinking Models Compatibility**: Added gateway-level support for OpenAI-compatible "Thinking" models (e.g., DeepSeek-R1, Qwen). Yutrix now automatically strips `reasoning_content` from both stream and non-stream responses before sending them to the client, preventing naive LLM clients from crashing while still preserving the content for internal audit logs.
-- **LLM Audit Logs & Smart Session Merging**: Intelligently merges multi-turn and tool-call loops (e.g., from Claude Code, Cursor, Augment Code) into cohesive sessions using a robust 4-priority fallback system. Also includes an **Audit Exemption** feature to completely bypass logging for specific privileged users.
-- **Admin UI & Sidebar Improvements**: Refactored the admin sidebar with persistent expanded states, logical grouping, and a new quick access section for the Dashboard.
-- **User Groups & Route Authorization**: Added user group management with a default group. Routes can now be authorized for specific users and groups, with automatic backward-compatible migration for existing deployments.
-- **Global Analytics Timeframe UI**: Introduced a sleek, fully internationalized top-bar dropdown for global time range filtering, along with customizable analytics boundaries (start of day/week) in settings.
-- **Webhook / IM Notifications (e.g., DingTalk)**: Send automated daily usage reports to IM groups, with support for custom Cron schedules, excluded users, and internationalized (i18n) push languages.
-- **Login Security & i18n**: Fully internationalized login page featuring a modern "Keep me logged in" option.
+What you actually operate day to day:
+
+- **Protocol-aware routing** by Host, path, and OpenAI / Anthropic shape — plus per-route source IP allowlists
+- **Cascading funnel failover** with Best Effort model matching when a layer is rate-limited or down
+- **Strategy routing** (vision / debug / code / long_context / writing / general) with continuation-aware model lock
+- **Response Continuity** so long generations that hit `max_tokens` are stitched instead of truncated
+- **Compatibility channel (OpenCode sidecar)** for harness-gated models — clients never see OpenCode
+- **Response cache**, prompt policies, user/group input token limits, and tool-loop circuit breaker
+- **Admin UI**: keys, providers, routes, audit logs, system info, SQLite or PostgreSQL
 
 ### Protocol-aware routing
 
@@ -143,6 +91,17 @@ Model: qwen3.6-plus
 | OpenAI-compatible | Anthropic base URL only | Not adapted |
 
 The model name itself does not decide the protocol. The route protocol and provider exit capability do.
+
+### Compatibility channel (OpenCode sidecar)
+
+Some upstreams (for example certain OpenRouter free / agentic models) only accept traffic from a recognized harness. Yutrix can send those models through a **managed loopback OpenCode sidecar** without changing the public API.
+
+- Admins enable **兼容通道 / useOpencodeProxy** per provider model.
+- API clients stay on normal OpenAI-compatible or Anthropic-style endpoints. They never see OpenCode, and Yutrix does not spoof `Referer` / `X-Title`.
+- Keys stay in Yutrix `providerApiKeys` and are mirrored into the sidecar `auth.json` immediately before a call.
+- **System Info** installs or updates the sidecar, optional download HTTP proxy (empty means unused), and **auto-update (default ON)** — startup plus a daily check; failures set `lastError` and do not take the gateway down.
+
+Operator notes: [docs/opencode-sidecar.md](./docs/opencode-sidecar.md).
 
 ### API key management
 
@@ -209,7 +168,7 @@ Fallback can be triggered when:
 - the upstream returns `503`;
 - the upstream returns `529`.
 
-Fallback is intentionally single-level. If the fallback provider is also busy, the request waits in the fallback provider queue instead of cascading through more providers.
+Routes use a **cascading funnel** (L0 → L1 → …). A layer hop can be triggered by rate limits, unavailability, or empty output. **Best Effort** matching can look up the originally requested model name on the next provider instead of locking to one hardcoded fallback id.
 
 ### Strategy Routing
 

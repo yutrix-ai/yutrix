@@ -5,6 +5,8 @@ import cookie from "@fastify/cookie";
 
 const getProxy = vi.fn(async () => "http://proxy.local:8080");
 const setProxy = vi.fn(async (value: string) => value);
+const getAutoUpdate = vi.fn(async () => true);
+const setAutoUpdate = vi.fn(async (value: boolean) => value);
 const getStatus = vi.fn(async () => ({
   ready: true,
   running: false,
@@ -17,6 +19,8 @@ const getStatus = vi.fn(async () => ({
 vi.mock("../src/opencode/settings", () => ({
   getOpencodeDownloadProxy: (...args: unknown[]) => getProxy(...args),
   setOpencodeDownloadProxy: (...args: unknown[]) => setProxy(...args),
+  getOpencodeAutoUpdate: (...args: unknown[]) => getAutoUpdate(...args),
+  setOpencodeAutoUpdate: (...args: unknown[]) => setAutoUpdate(...args),
 }));
 
 vi.mock("../src/opencode/opencodeService", () => ({
@@ -75,6 +79,7 @@ describe("admin OpenCode routes require admin auth + richer status", () => {
     expect(body.arch).toBe("x64");
     expect(body.lastError).toBeNull();
     expect(body.proxyUrl).toBe("http://proxy.local:8080");
+    expect(body.autoUpdate).toBe(true);
     expect(body).not.toHaveProperty("url");
     expect(body).not.toHaveProperty("serveUrl");
   });
@@ -88,5 +93,44 @@ describe("admin OpenCode routes require admin auth + richer status", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(setProxy).toHaveBeenCalledWith("https://proxy.example:3128");
+  });
+
+  it("clears download proxy when saved empty", async () => {
+    setProxy.mockClear();
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/api/admin/opencode/settings",
+      headers: { authorization: `Bearer ${adminToken}`, "content-type": "application/json" },
+      payload: { proxyUrl: "" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(setProxy).toHaveBeenCalledWith("");
+  });
+
+  it("returns empty proxyUrl when no saved proxy exists", async () => {
+    getProxy.mockResolvedValueOnce("");
+    const res = await fastify.inject({
+      method: "GET",
+      url: "/api/admin/opencode/status",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().proxyUrl).toBe("");
+  });
+
+  it("persists auto-update without clearing proxy", async () => {
+    setProxy.mockClear();
+    setAutoUpdate.mockClear();
+    getAutoUpdate.mockResolvedValueOnce(false);
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/api/admin/opencode/settings",
+      headers: { authorization: `Bearer ${adminToken}`, "content-type": "application/json" },
+      payload: { autoUpdate: false },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(setAutoUpdate).toHaveBeenCalledWith(false);
+    expect(setProxy).not.toHaveBeenCalled();
+    expect(res.json().autoUpdate).toBe(false);
   });
 });

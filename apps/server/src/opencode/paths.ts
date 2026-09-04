@@ -37,6 +37,7 @@ export const OPENCODE_LOOPBACK_HOST = "127.0.0.1";
 export const OPENCODE_LOOPBACK_PORT = 23456;
 export const OPENCODE_SERVER_USERNAME = "opencode";
 export const OPENCODE_DOWNLOAD_PROXY_KEY = "opencode_download_proxy";
+export const OPENCODE_AUTO_UPDATE_KEY = "opencode_auto_update";
 
 /**
  * OpenCode 1.18 Session API (`POST /session/:id/message`) returns a completed

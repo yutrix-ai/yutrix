@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { HardDrive, Cpu, MemoryStick, Box, Database, Network } from "lucide-react";
+import { HardDrive, Cpu, MemoryStick, Box, Network } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Download, Loader2 } from "lucide-react";
-import { API_BASE } from "@/lib/api";
-import { toast } from "sonner";
 
 export function CpuCard({ systemInfo, history }: any) {
   const { t } = useTranslation();
@@ -306,97 +306,38 @@ export function SoftwareEnvCard({ systemInfo }: any) {
   );
 }
 
-export function DatabaseCard({ dbInfo, backupPassword, setBackupPassword, downloading, setDownloading }: any) {
-  const { t } = useTranslation();
-  return (
-    <Card className="shadow-sm flex flex-col h-[310px]">
-      <CardHeader className="pb-1.5 pt-4 border-b border-border/50">
-        <CardTitle className="flex items-center gap-1.5 text-base">
-          <Database className="h-4 w-4 text-blue-500" />
-          {t("settings.sections.systemInfo.dbInfo", "数据库信息 (Database Info)")}
-        </CardTitle>
-        <CardDescription className="text-xs mt-0.5">
-          {t("settings.sections.systemInfo.dbInfoDesc", "本地 SQLite 数据库状态")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-3 pb-3 flex-1 flex flex-col justify-between min-h-0 text-sm">
-        {dbInfo ? (
-          <div className="flex flex-col h-full justify-between">
-            <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 p-2 rounded border border-slate-100 dark:border-slate-800/60">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{t("settings.sections.systemInfo.dbSize", "数据库容量")}</p>
-                <p className="text-2xl font-black text-slate-800 dark:text-slate-100 leading-none">{dbInfo.sizeFormatted}</p>
-              </div>
-              <Badge className="bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900/50 py-0.5 px-1.5 text-xs font-semibold" variant="outline">SQLite 3</Badge>
-            </div>
-            <div className="space-y-1 mt-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">{t("settings.sections.systemInfo.dbPath", "物理存储路径")}</span>
-              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 p-2 rounded border border-slate-100 dark:border-slate-800/60">
-                <div className="relative flex h-1.5 w-1.5 shrink-0"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span></div>
-                <p className="text-xs font-mono truncate text-slate-600 dark:text-slate-300 flex-1" title={dbInfo.path}>{dbInfo.path}</p>
-              </div>
-            </div>
-            {dbInfo.isBackupPasswordSet ? (
-              <div className="pt-2 space-y-1.5">
-                <Input type="password" placeholder={t("settings.sections.systemInfo.dbBackupPasswordPlaceholder", "输入验证密码以激活下载")} value={backupPassword} onChange={(e) => setBackupPassword(e.target.value)} className="h-8 text-xs bg-slate-50/50 dark:bg-slate-900/20 border-slate-200/80 dark:border-slate-800/80 focus-visible:ring-1 focus-visible:ring-blue-500" />
-                <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-8 font-medium text-xs" disabled={downloading || !backupPassword.trim()} onClick={async () => {
-                  try {
-                    setDownloading(true);
-                    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-                    const res = await fetch(`${API_BASE}/admin/database/download`, { headers: { Authorization: `Bearer ${token}`, "x-backup-password": backupPassword } });
-                    if (!res.ok) {
-                      if (res.status === 401) throw new Error(t("settings.sections.systemInfo.dbBackupPasswordInvalid", "密码验证失败，请重新输入"));
-                      let errMsg = `HTTP error! status: ${res.status}`;
-                      try { const errJson = await res.json(); if (errJson && errJson.error) errMsg = errJson.error; } catch (e) {}
-                      throw new Error(errMsg);
-                    }
-                    const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url; a.download = "promptgate.sqlite";
-                    document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
-                    toast.success(t("settings.sections.database.downloadSuccess", "数据库文件下载成功"));
-                  } catch(e: any) { toast.error(t("settings.sections.database.downloadFailed", "下载失败") + ": " + e.message); } finally { setDownloading(false); }
-                }}>
-                  <Download className="h-3.5 w-3.5 mr-1" />
-                  {downloading ? t("settings.sections.systemInfo.downloading", "正在下载...") : t("settings.sections.systemInfo.downloadBackup", "下载数据库备份")}
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-2 bg-amber-50/60 dark:bg-amber-950/20 p-2 rounded border border-amber-200/50 dark:border-amber-900/40 flex flex-col justify-center flex-1">
-                <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-0.5 flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
-                  {t("settings.sections.systemInfo.dbBackupDisabled", "数据库备份下载已禁用。")}
-                </p>
-                <p className="text-[11px] leading-relaxed text-amber-700/95 dark:text-amber-500/90 font-medium">
-                  {t("settings.sections.systemInfo.dbBackupDisabledDesc", "若要启用数据库备份下载，请设置 DB_BACKUP_PASSWORD 环境变量。")}
-                </p>
-              </div>
-            )}
-          </div>
-        ) : <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">{t("settings.sections.systemInfo.dbUnavailable", "数据库信息不可用")}</div>}
-      </CardContent>
-    </Card>
-  );
+function savedOpencodeProxy(proxyUrl: unknown): string {
+  return typeof proxyUrl === "string" ? proxyUrl.trim() : "";
 }
 
-export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProxy }: any) {
+export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProxy, onSaveAutoUpdate }: any) {
   const { t } = useTranslation();
-  const [proxy, setProxy] = useState(opencodeStatus?.proxyUrl || "");
+  const [proxy, setProxy] = useState(() => savedOpencodeProxy(opencodeStatus?.proxyUrl));
   const [savingProxy, setSavingProxy] = useState(false);
+  const [savingAutoUpdate, setSavingAutoUpdate] = useState(false);
+  const autoUpdate = opencodeStatus?.autoUpdate !== false;
 
   useEffect(() => {
-    if (opencodeStatus?.proxyUrl !== undefined) {
-      setProxy(opencodeStatus.proxyUrl);
-    }
+    setProxy(savedOpencodeProxy(opencodeStatus?.proxyUrl));
   }, [opencodeStatus?.proxyUrl]);
 
-  const handleSaveProxy = async () => {
+  const handleSaveProxy = async (event?: FormEvent) => {
+    event?.preventDefault();
     setSavingProxy(true);
     try {
-      await onSaveProxy(proxy);
+      await onSaveProxy(proxy.trim());
     } finally {
       setSavingProxy(false);
+    }
+  };
+
+  const handleAutoUpdateChange = async (enabled: boolean) => {
+    if (!onSaveAutoUpdate) return;
+    setSavingAutoUpdate(true);
+    try {
+      await onSaveAutoUpdate(enabled);
+    } finally {
+      setSavingAutoUpdate(false);
     }
   };
 
@@ -407,7 +348,7 @@ export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProx
       : t("settings.sections.systemInfo.opencodeReadyIdle", "已就绪（空闲）");
 
   return (
-    <Card className="shadow-sm flex flex-col h-[310px]">
+    <Card className="shadow-sm flex flex-col min-h-[310px]">
       <CardHeader className="pb-1.5 pt-4 border-b border-border/50">
         <CardTitle className="flex items-center justify-between text-base">
           <span className="flex items-center gap-1.5">
@@ -427,22 +368,45 @@ export function OpenCodeCard({ opencodeStatus, onInstall, installing, onSaveProx
           <div className="text-xs text-muted-foreground mb-2 space-y-0.5">
             <div>{t("settings.sections.systemInfo.opencodeVersion", "版本")}: {opencodeStatus?.version || "N/A"} ({opencodeStatus?.arch || "N/A"})</div>
           </div>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="min-w-0">
+              <Label htmlFor="opencode-auto-update" className="text-xs">
+                {t("settings.sections.systemInfo.opencodeAutoUpdate", "自动更新 Sidecar")}
+              </Label>
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                {t("settings.sections.systemInfo.opencodeAutoUpdateDesc", "默认开启；关闭后仅手动安装/更新")}
+              </p>
+            </div>
+            <Switch
+              id="opencode-auto-update"
+              checked={autoUpdate}
+              disabled={savingAutoUpdate}
+              onCheckedChange={handleAutoUpdateChange}
+            />
+          </div>
           {opencodeStatus?.lastError && (
             <p className="text-[11px] text-rose-600 dark:text-rose-400 mb-2 line-clamp-2" title={opencodeStatus.lastError}>
               {t("settings.sections.systemInfo.opencodeLastError", "最近错误")}: {opencodeStatus.lastError}
             </p>
           )}
-          <div className="flex items-center gap-2 mb-3">
+          <form
+            className="flex items-center gap-2 mb-3"
+            autoComplete="off"
+            onSubmit={handleSaveProxy}
+          >
             <Input
+              type="url"
+              name="opencode-download-proxy"
+              autoComplete="off"
               value={proxy}
               onChange={(e) => setProxy(e.target.value)}
               placeholder={t("settings.sections.systemInfo.opencodeProxyPlaceholder", "下载 HTTP 代理（可选）")}
               className="text-xs h-8"
             />
-            <Button size="sm" variant="outline" onClick={handleSaveProxy} disabled={savingProxy} className="h-8">
+            <Button type="submit" size="sm" variant="outline" disabled={savingProxy} className="h-8">
               {savingProxy ? <Loader2 className="h-3 w-3 animate-spin" /> : t("settings.sections.systemInfo.opencodeSaveProxy", "保存代理")}
             </Button>
-          </div>
+          </form>
         </div>
         <Button onClick={onInstall} disabled={installing} className="w-full shrink-0">
           {installing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}

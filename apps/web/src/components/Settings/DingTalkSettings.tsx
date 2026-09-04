@@ -119,24 +119,30 @@ export function DingTalkSettings({ settings, updateSetting, updateBoolean, users
 
           <FormField label={t("settings.sections.dingtalk.webhook", "Webhook 地址")}>
             <Input
-              type="password"
+              type="text"
+              name="dingtalk-webhook"
               value={settings.dingTalkWebhook || ""}
               onChange={(e) => updateSetting("dingTalkWebhook", e.target.value)}
               placeholder={t("settings.sections.dingtalk.webhookPlaceholder", "https://oapi.dingtalk.com/robot/send?access_token=...")}
-              autoComplete="new-password"
-              data-1p-ignore
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              className="[-webkit-text-security:disc]"
             />
           </FormField>
         </div>
         
         <FormField label={t("settings.sections.dingtalk.secret", "安全设置 Secret")}>
           <Input
-            type="password"
+            type="text"
+            name="dingtalk-secret"
             value={settings.dingTalkSecret || ""}
             onChange={(e) => updateSetting("dingTalkSecret", e.target.value)}
             placeholder={t("settings.sections.dingtalk.secretPlaceholder", "SEC...")}
-            autoComplete="new-password"
-            data-1p-ignore
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            className="[-webkit-text-security:disc]"
           />
         </FormField>
 

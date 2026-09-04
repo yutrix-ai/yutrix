@@ -327,6 +327,10 @@ export function DatabaseSettings() {
             <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
               <Input
                 type="password"
+                name="db-backup-password"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 placeholder={t("settings.database.backupPasswordPlaceholder", "输入 DB_BACKUP_PASSWORD")}
                 value={backupPassword}
                 onChange={(e) => setBackupPassword(e.target.value)}

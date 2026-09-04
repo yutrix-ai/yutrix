@@ -9,6 +9,7 @@ import path from "path";
 import "./services/chatLogService";
 import { scheduleDingTalkJobs } from "./services/dingtalk";
 import { scheduleDistillationJobs } from "./services/distillation/scheduler";
+import { scheduleOpencodeAutoUpdate } from "./opencode/autoUpdate";
 import { logAction } from "./utils/actionLogger";
 
 const envPath = process.cwd().endsWith("server") ? "../../.env" : ".env";
@@ -394,6 +395,7 @@ const start = async () => {
 
       await scheduleDingTalkJobs();
       await scheduleDistillationJobs();
+      await scheduleOpencodeAutoUpdate();
     }
   } catch (err) {
     fastify.log.error(err);

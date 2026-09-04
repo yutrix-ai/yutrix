@@ -2,10 +2,16 @@ import { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { requireAdmin } from "../middleware/auth";
 import { OpencodeService } from "./opencodeService";
-import { getOpencodeDownloadProxy, setOpencodeDownloadProxy } from "./settings";
+import {
+  getOpencodeAutoUpdate,
+  getOpencodeDownloadProxy,
+  setOpencodeAutoUpdate,
+  setOpencodeDownloadProxy,
+} from "./settings";
 
 const settingsSchema = z.object({
   proxyUrl: z.string().optional(),
+  autoUpdate: z.boolean().optional(),
 });
 
 export const opencodeRoutes: FastifyPluginAsync = async (fastify) => {
@@ -13,7 +19,10 @@ export const opencodeRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/admin/opencode/status", { onRequest: [requireAdmin] }, async () => {
     const status = await service.getStatus();
-    const proxyUrl = await getOpencodeDownloadProxy();
+    const [proxyUrl, autoUpdate] = await Promise.all([
+      getOpencodeDownloadProxy(),
+      getOpencodeAutoUpdate(),
+    ]);
     return {
       ready: status.ready,
       running: status.running,
@@ -21,6 +30,7 @@ export const opencodeRoutes: FastifyPluginAsync = async (fastify) => {
       arch: status.arch,
       lastError: status.lastError,
       proxyUrl,
+      autoUpdate,
       streaming: status.streaming,
     };
   });
@@ -31,8 +41,17 @@ export const opencodeRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "参数错误", details: parsed.error.issues });
     }
     try {
-      const proxyUrl = await setOpencodeDownloadProxy(parsed.data.proxyUrl ?? "");
-      return { success: true, proxyUrl };
+      if (parsed.data.proxyUrl !== undefined) {
+        await setOpencodeDownloadProxy(parsed.data.proxyUrl);
+      }
+      if (parsed.data.autoUpdate !== undefined) {
+        await setOpencodeAutoUpdate(parsed.data.autoUpdate);
+      }
+      const [proxyUrl, autoUpdate] = await Promise.all([
+        getOpencodeDownloadProxy(),
+        getOpencodeAutoUpdate(),
+      ]);
+      return { success: true, proxyUrl, autoUpdate };
     } catch (e: any) {
       return reply.code(400).send({ error: e.message });
     }

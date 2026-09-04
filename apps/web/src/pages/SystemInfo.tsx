@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { fetchApi } from "../lib/api";
-import { CpuCard, MemoryCard, DiskCard, NetworkCard, SoftwareEnvCard, DatabaseCard, OpenCodeCard } from "@/components/SystemInfo/SystemInfoCards";
-import { API_BASE } from "../lib/api";
+import { CpuCard, MemoryCard, DiskCard, NetworkCard, SoftwareEnvCard, OpenCodeCard } from "@/components/SystemInfo/SystemInfoCards";
 
 interface HistoryPoint {
   time: string;
@@ -17,7 +16,6 @@ interface HistoryPoint {
 export default function SystemInfo() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
-  const [dbInfo, setDbInfo] = useState<{ path: string; size: number; sizeFormatted: string; isBackupPasswordSet: boolean } | null>(null);
   const [systemInfo, setSystemInfo] = useState<any>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [opencodeStatus, setOpencodeStatus] = useState<any>(null);
@@ -58,21 +56,30 @@ export default function SystemInfo() {
       throw e;
     }
   };
+
+  const handleSaveOpencodeAutoUpdate = async (autoUpdate: boolean) => {
+    try {
+      await fetchApi("/admin/opencode/settings", {
+        method: "POST",
+        body: JSON.stringify({ autoUpdate }),
+      });
+      await fetchOpencodeStatus();
+      toast.success(
+        autoUpdate
+          ? t("settings.sections.systemInfo.opencodeAutoUpdateEnabled", "已开启自动更新")
+          : t("settings.sections.systemInfo.opencodeAutoUpdateDisabled", "已关闭自动更新"),
+      );
+    } catch (e: any) {
+      toast.error((e?.message as string) || t("settings.sections.systemInfo.opencodeAutoUpdateSaveFailed", "保存自动更新失败"));
+      throw e;
+    }
+  };
   const [selectedInterface, setSelectedInterface] = useState<string>("");
-  const [backupPassword, setBackupPassword] = useState("");
-  const [downloading, setDownloading] = useState(false);
 
   const loadData = async (isFirst = false) => {
     try {
       if (isFirst) setLoading(true);
-      const [dbInfoRes, sysInfoRes] = await Promise.all([
-        fetchApi("/admin/database/info").catch(() => null),
-        fetchApi("/admin/database/system-info").catch(() => null)
-      ]);
-      
-      if (dbInfoRes) {
-        setDbInfo(dbInfoRes);
-      }
+      const sysInfoRes = await fetchApi("/admin/database/system-info").catch(() => null);
       if (sysInfoRes) {
         setSystemInfo(sysInfoRes);
         
@@ -200,13 +207,12 @@ export default function SystemInfo() {
           formatSpeed={formatSpeed} 
         />
         <SoftwareEnvCard systemInfo={systemInfo} />
-        <OpenCodeCard opencodeStatus={opencodeStatus} onInstall={handleInstallOpencode} installing={installingOpencode} onSaveProxy={handleSaveOpencodeProxy} />
-        <DatabaseCard 
-          dbInfo={dbInfo} 
-          backupPassword={backupPassword} 
-          setBackupPassword={setBackupPassword} 
-          downloading={downloading} 
-          setDownloading={setDownloading} 
+        <OpenCodeCard
+          opencodeStatus={opencodeStatus}
+          onInstall={handleInstallOpencode}
+          installing={installingOpencode}
+          onSaveProxy={handleSaveOpencodeProxy}
+          onSaveAutoUpdate={handleSaveOpencodeAutoUpdate}
         />
       </div>
     </div>

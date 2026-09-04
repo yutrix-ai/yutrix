@@ -184,6 +184,28 @@ export function assertNoSpoofHeaders(headers: Record<string, string>): void {
   }
 }
 
+/** Missing / empty key means auto-update is ON for existing installs. */
+export function parseOpencodeAutoUpdate(value: unknown): boolean {
+  if (value == null) return true;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized !== "false";
+}
+
+export function normalizeOpencodeVersion(value: string | null | undefined): string {
+  return String(value || "").trim().replace(/^v/i, "");
+}
+
+export function isOpencodeVersionOutdated(
+  current: string | null | undefined,
+  latest: string | null | undefined,
+): boolean {
+  const installed = normalizeOpencodeVersion(current);
+  const published = normalizeOpencodeVersion(latest);
+  if (!installed || !published) return false;
+  return installed !== published;
+}
+
 export function normalizeDownloadProxyUrl(raw: unknown): string {
   if (raw === undefined || raw === null) return "";
   const value = String(raw).trim();

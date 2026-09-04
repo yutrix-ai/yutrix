@@ -109,7 +109,7 @@ export default function Settings() {
 
   return (
     <div className="min-w-0 space-y-6">
-      <form onSubmit={handleSave} className="min-w-0 space-y-6">
+      <form onSubmit={handleSave} className="min-w-0 space-y-6" autoComplete="off">
         <BrandingSettings settings={settings} updateSetting={updateSetting} updateBoolean={updateBoolean} />
         <AppearanceSettings settings={settings} updateSetting={updateSetting} />
         <BasicSettings settings={settings} updateSetting={updateSetting} />
@@ -118,7 +118,6 @@ export default function Settings() {
         <LoggingSettings settings={settings} updateSetting={updateSetting} updateBoolean={updateBoolean} routes={routes} users={users} />
         <SecuritySettings settings={settings} updateSetting={updateSetting} updateBoolean={updateBoolean} />
         <DingTalkSettings settings={settings} updateSetting={updateSetting} updateBoolean={updateBoolean} users={users} />
-        <DatabaseSettings />
 
         <div className="sticky bottom-0 z-10 -mx-4 md:-mx-8 -mb-4 md:-mb-8 flex justify-end border-t bg-background/95 px-4 md:px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <Button type="submit" size="lg" disabled={saving}>
@@ -127,6 +126,7 @@ export default function Settings() {
           </Button>
         </div>
       </form>
+      <DatabaseSettings />
     </div>
   );
 }

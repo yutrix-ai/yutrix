@@ -3,6 +3,7 @@ import { systemSettings } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { stopDingTalkJobs, scheduleDingTalkJobs } from "./dingtalk";
 import { stopDistillationJobs, scheduleDistillationJobs } from "./distillation/scheduler";
+import { scheduleOpencodeAutoUpdate, stopOpencodeAutoUpdate } from "../opencode/autoUpdate";
 
 let isMaintenanceActive = false;
 let inFlightRequests = 0;
@@ -52,6 +53,7 @@ export async function setMaintenanceMode(active: boolean, options: { drain?: boo
     try {
       stopDingTalkJobs();
       stopDistillationJobs();
+      stopOpencodeAutoUpdate();
     } catch (err) {
       console.warn("[Maintenance] Error stopping background jobs:", err);
     }
@@ -98,6 +100,7 @@ export async function setMaintenanceMode(active: boolean, options: { drain?: boo
       try {
         await scheduleDingTalkJobs();
         await scheduleDistillationJobs();
+        await scheduleOpencodeAutoUpdate();
       } catch (err) {
         console.warn("[Maintenance] Error resuming background jobs:", err);
       }
