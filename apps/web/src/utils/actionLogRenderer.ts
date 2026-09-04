@@ -12,7 +12,7 @@ export function renderActionLogLine(entry: any, showServerRaw: boolean = false):
   
   if (entry.code) {
     const key = `logs.code.${entry.code}`;
-    const result = replaceUninterpolatedI18nParams(i18next.t(key, entry.params || {}));
+    const result = replaceUninterpolatedI18nParams(String(i18next.t(key, entry.params || {})));
     // If it translated to something different, format it with level/timestamp
     if (result !== key && result !== undefined) {
       let levelText = entry.level;
