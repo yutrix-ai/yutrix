@@ -1,7 +1,10 @@
+import { needsGeminiSchemaSanitize, sanitizeGeminiToolsInBody } from "./providerCompatibility";
+
 export interface AnthropicOutboundSurface {
   hostname?: string;
   pathname?: string;
   rawBaseUrl?: string;
+  providerName?: string;
 }
 
 function hostFromSurface(surface?: AnthropicOutboundSurface | null): string {
@@ -115,6 +118,18 @@ function normalizeCompatibleTool(tool: any): any {
   return next;
 }
 
+function sanitizeGeminiToolSchemas(body: any, surface?: AnthropicOutboundSurface | null): void {
+  if (
+    !needsGeminiSchemaSanitize({
+      providerName: surface?.providerName,
+      baseUrl: surface?.rawBaseUrl,
+    })
+  ) {
+    return;
+  }
+  sanitizeGeminiToolsInBody(body);
+}
+
 /**
  * Reduce a Claude Code dialect body to the portable Anthropic-compatible subset
  * unofficial /v1/messages proxies typically accept.
@@ -177,5 +192,6 @@ export function applyAnthropicCompatibleOutbound(
   }
   const next = normalizeCompatibleAnthropicBody(body);
   if (modelId) next.model = modelId;
+  sanitizeGeminiToolSchemas(next, surface);
   return next;
 }

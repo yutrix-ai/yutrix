@@ -1405,6 +1405,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 hostname: urlNorm?.hostname,
                 pathname: urlNorm?.pathname,
                 rawBaseUrl: baseUrl,
+                providerName: provider.name,
               },
             );
 
@@ -1455,16 +1456,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
             }
 
-            let compatibilitySummary = undefined;
-            if (adapter?.id === "google") {
-              compatibilitySummary = applyProviderCompatibility(finalBody, {
-                providerName: provider.name,
-                baseUrl,
-                providerProtocol: currentAttempt.providerProtocol,
-                modelId: currentAttempt.modelId,
-                // logAction omitted to defer logging until response status is known
-              });
-            }
+            // Gemini/Antigravity schema sanitize is gated inside applyProviderCompatibility
+            // (name + baseUrl), including Anthropic-protocol Antigravity proxies.
+            const compatibilitySummary = applyProviderCompatibility(finalBody, {
+              providerName: provider.name,
+              baseUrl,
+              providerProtocol: currentAttempt.providerProtocol,
+              modelId: currentAttempt.modelId,
+              // logAction omitted to defer logging until response status is known
+            });
 
             // Re-apply learned constraint rewrites for this provider:model (error-driven recovery).
             applyConstraintMutators(finalBody, targetState.constraintMutators);

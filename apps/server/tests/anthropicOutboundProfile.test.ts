@@ -216,6 +216,76 @@ describe("adaptRequestProtocol Anthropic outbound profiles", () => {
     expect(tiered.finalBody.model).toBe("gemini-3.6-flash-tiered");
   });
 
+  it("coerces nested boolean enums on Antigravity Anthropic outbound", () => {
+    const body = claudeCodeBody("gemini-3.8-flash-high");
+    body.tools = [
+      {
+        name: "nested_flag",
+        description: "nested",
+        input_schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            rows: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  enabled: { type: "boolean", enum: [true, false] },
+                },
+              },
+            },
+          },
+        },
+        cache_control: { type: "ephemeral" },
+      },
+    ];
+
+    const { finalBody } = adaptAnthropicToAnthropic(
+      body,
+      {
+        hostname: "10.9.0.3",
+        pathname: "/antigravity/v1/messages",
+        rawBaseUrl: "http://10.9.0.3:7862/antigravity/v1/messages",
+        providerName: "Antigravity_US2",
+      },
+      "gemini-3.8-flash-high",
+    );
+
+    expect(finalBody.tools[0].input_schema.properties.rows.items.properties.enabled.enum).toEqual([
+      "true",
+      "false",
+    ]);
+    expect(finalBody.tools[0].input_schema.additionalProperties).toBeUndefined();
+  });
+
+  it("does not coerce enums for first-party Anthropic outbound", () => {
+    const body = claudeCodeBody();
+    body.tools = [
+      {
+        name: "toggle",
+        description: "Flip",
+        input_schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            enabled: { type: "boolean", enum: [true, false] },
+          },
+        },
+        cache_control: { type: "ephemeral" },
+      },
+    ];
+
+    const { finalBody } = adaptAnthropicToAnthropic(
+      body,
+      { hostname: "api.anthropic.com", rawBaseUrl: "https://api.anthropic.com/v1" },
+    );
+
+    expect(finalBody.tools[0].input_schema.properties.enabled.enum).toEqual([true, false]);
+    expect(finalBody.tools[0].input_schema.additionalProperties).toBe(false);
+    expect(finalBody.tools[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+
   it("does not rewrite generic OpenAI model ids on the OpenAI adapt path", () => {
     const { finalBody } = adaptRequestProtocol(
       {

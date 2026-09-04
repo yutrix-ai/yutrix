@@ -32,17 +32,38 @@ const GEMINI_SCHEMA_KEYS = new Set([
   "items",
 ]);
 
-export function isGoogleOpenAICompatibleProvider(options: CompatibilityOptions): boolean {
-  if (options.providerProtocol && options.providerProtocol !== "openai") return false;
+function matchesGeminiOrAntigravitySurface(options: CompatibilityOptions): boolean {
   const providerName = String(options.providerName || "").toLowerCase();
   const baseUrl = String(options.baseUrl || "").toLowerCase();
   return (
     providerName.includes("google") ||
     providerName.includes("gemini") ||
     providerName.includes("ai studio") ||
+    providerName.includes("antigravity") ||
+    baseUrl.includes("antigravity") ||
     baseUrl.includes("generativelanguage.googleapis.com") ||
-    baseUrl.includes("googleapis.com")
+    baseUrl.includes("googleapis.com") ||
+    baseUrl.includes("gemini")
   );
+}
+
+/** OpenAI-compat Google/Gemini/Antigravity (max_tokens clamp, stream_options). */
+export function isGoogleOpenAICompatibleProvider(options: CompatibilityOptions): boolean {
+  if (options.providerProtocol && options.providerProtocol !== "openai") return false;
+  return matchesGeminiOrAntigravitySurface(options);
+}
+
+/**
+ * Gemini / Antigravity / Google tool-schema sanitize, including Anthropic
+ * protocol upstreams. Does not match first-party Anthropic (anthropic.com).
+ */
+export function needsGeminiSchemaSanitize(options: CompatibilityOptions): boolean {
+  return matchesGeminiOrAntigravitySurface(options);
+}
+
+function coerceGeminiEnumValue(value: unknown): unknown {
+  if (value === null || typeof value === "string") return value;
+  return String(value);
 }
 
 function normalizeSchemaType(value: any, out: Record<string, any>): void {
@@ -81,6 +102,11 @@ export function sanitizeGeminiSchema(schema: any): any {
       continue;
     }
 
+    if (key === "enum" && Array.isArray(value)) {
+      out.enum = value.map(coerceGeminiEnumValue);
+      continue;
+    }
+
     out[key] = value;
   }
 
@@ -88,28 +114,45 @@ export function sanitizeGeminiSchema(schema: any): any {
   return out;
 }
 
-function sanitizeGoogleTools(body: any): boolean {
+function sanitizeSchemaField(original: any): { next: any; changed: boolean } {
+  const next = sanitizeGeminiSchema(original);
+  return { next, changed: JSON.stringify(original) !== JSON.stringify(next) };
+}
+
+/** Sanitize OpenAI function.parameters and Anthropic input_schema in place. */
+export function sanitizeGeminiToolsInBody(body: any): boolean {
   if (!Array.isArray(body?.tools)) return false;
   let changed = false;
 
   body.tools = body.tools.map((tool: any) => {
-    if (tool?.type !== "function" || !tool.function) return tool;
+    if (!tool || typeof tool !== "object") return tool;
 
-    const nextFunction: Record<string, any> = {
-      name: tool.function.name,
-    };
-    if (tool.function.description !== undefined) {
-      nextFunction.description = tool.function.description;
-    }
-    if (tool.function.parameters !== undefined) {
-      const before = JSON.stringify(tool.function.parameters);
-      nextFunction.parameters = sanitizeGeminiSchema(tool.function.parameters);
-      changed = changed || before !== JSON.stringify(nextFunction.parameters);
+    if (tool.type === "function" && tool.function) {
+      const nextFunction: Record<string, any> = {
+        name: tool.function.name,
+      };
+      if (tool.function.description !== undefined) {
+        nextFunction.description = tool.function.description;
+      }
+      if (tool.function.parameters !== undefined) {
+        const result = sanitizeSchemaField(tool.function.parameters);
+        nextFunction.parameters = result.next;
+        changed = changed || result.changed;
+      }
+
+      const nextTool = { type: "function", function: nextFunction };
+      changed = changed || JSON.stringify(tool) !== JSON.stringify(nextTool);
+      return nextTool;
     }
 
-    const nextTool = { type: "function", function: nextFunction };
-    changed = changed || JSON.stringify(tool) !== JSON.stringify(nextTool);
-    return nextTool;
+    if (tool.input_schema !== undefined) {
+      const result = sanitizeSchemaField(tool.input_schema);
+      if (!result.changed) return tool;
+      changed = true;
+      return { ...tool, input_schema: result.next };
+    }
+
+    return tool;
   });
 
   return changed;
@@ -160,20 +203,25 @@ function removeGoogleStreamOptions(body: any): CompatibilityLog | null {
 
 export function applyProviderCompatibility(body: any, options: CompatibilityOptions): string | null {
   if (!body || typeof body !== "object") return null;
-  if (!isGoogleOpenAICompatibleProvider(options)) return null;
+
+  const googleOpenAI = isGoogleOpenAICompatibleProvider(options);
+  const geminiSchema = needsGeminiSchemaSanitize(options);
+  if (!googleOpenAI && !geminiSchema) return null;
 
   const logs: CompatibilityLog[] = [];
 
-  const streamOptionsLog = removeGoogleStreamOptions(body);
-  if (streamOptionsLog) logs.push(streamOptionsLog);
+  if (googleOpenAI) {
+    const streamOptionsLog = removeGoogleStreamOptions(body);
+    if (streamOptionsLog) logs.push(streamOptionsLog);
 
-  const maxTokensLog = clampGoogleMaxTokens(body);
-  if (maxTokensLog) logs.push(maxTokensLog);
+    const maxTokensLog = clampGoogleMaxTokens(body);
+    if (maxTokensLog) logs.push(maxTokensLog);
+  }
 
-  if (sanitizeGoogleTools(body)) {
+  if (geminiSchema && sanitizeGeminiToolsInBody(body)) {
     logs.push({
       code: "tools_schema_sanitized",
-      message: "Sanitized tool schemas for Google OpenAI-compatible upstream",
+      message: "Sanitized tool schemas for Gemini/Antigravity upstream",
       toolCount: Array.isArray(body.tools) ? body.tools.length : 0,
     });
   }
