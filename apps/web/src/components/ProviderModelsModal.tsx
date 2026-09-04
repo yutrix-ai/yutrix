@@ -238,6 +238,7 @@ export function ProviderModelsModal({ open, onOpenChange, provider, onRefreshSuc
             tokenizerRepo: m.tokenizerRepo,
             useOpencodeProxy: Boolean(m.useOpencodeProxy),
             alias: m.alias,
+            useOpencodeProxy: Boolean(m.useOpencodeProxy),
           }))
         ),
       });
