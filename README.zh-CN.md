@@ -4,9 +4,14 @@
   <img src="./apps/web/public/favicon.svg" width="120" alt="Yutrix Logo" />
 </p>
 
-[English README](./README.md) · [Caddy 部署指南](./docs/deployment-caddy.md) · [Docker Compose (PostgreSQL) 示例](./docker-compose.postgres.example.yml) · [OpenCode 兼容通道](./docs/opencode-sidecar.md)
+**一个自建网关，同时接住 OpenAI 兼容与 Anthropic 风格的 API。** Claude Code、Cursor 或任意兼容 SDK 只需要一个 URL。驭算负责路由、鉴权、Key、日志、降级和管理后台。客户端继续用已经会的协议，不用换 SDK。
 
-**一个自建网关，同时接住 OpenAI 兼容与 Anthropic 风格的客户端。** Claude Code、Cursor 或任意兼容 SDK 只需要一个 URL：驭算负责路由、API Key、审计日志、降级和后台。客户端继续用它们已经会的协议，不用换 SDK。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.16-339933.svg)](./package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-workspace-f69220.svg)](https://pnpm.io/)
+
+[English README](./README.md) · [Caddy 部署指南](./docs/deployment-caddy.md) · [Docker Compose (PostgreSQL) 示例](./docker-compose.postgres.example.yml) · [OpenCode 兼容通道](./docs/opencode-sidecar.md)
 
 Yutrix（驭算，前身为 PromptGate）做的是协议网关，不是再造一个模型平台：统一入口、统一鉴权、统一路由、统一日志、统一降级。
 
@@ -26,6 +31,7 @@ modelId 只是写入请求体的模型字符串
 
 ## 目录
 
+* [你会用到什么](#你会用到什么)
 * [核心特性](#核心特性)
 * [兼容通道 / OpenCode sidecar](#兼容通道--opencode-sidecar)
 * [核心概念](#核心概念)
@@ -60,19 +66,15 @@ modelId 只是写入请求体的模型字符串
 
 ---
 
-### Logo 设计理念
-
-Yutrix 的 Logo 采用了极具现代感的拱门（Gate）造型，中央悬浮着一颗发光的代码火花（Prompt）。这象征着它作为一个强大、安全、智能的 LLM 提示词网关（Portal）。标志性的青蓝色渐变色调传达出科技感、深度与可靠性。
-
 ## 你会用到什么
 
-日常会用到的能力（不是发版流水账）：
+日常会用到的能力，而不是发版流水账：
 
 - **按 Host / Path / 协议分流**，路由级来源 IP 白名单
 - **多级漏斗降级** + Best Effort 同名模型匹配
 - **策略路由**（vision / debug / code / long_context / writing / general）与续接锁定
-- **Response Continuity**：生成触顶 `max_tokens` 时自动续写拼接，而不是截断甩给用户
-- **兼容通道（OpenCode sidecar）**：给套件墙模型开通道，客户端始终走普通 API
+- **Response Continuity**：上游空输出或只吐推理时自动重试，而不是把空回答甩给用户
+- **兼容通道（OpenCode sidecar）**：给套件墙模型开通道（例如 OpenRouter Inkling），客户端始终走普通 API
 - **响应缓存**、提示词策略、用户/组输入 Token 上限、工具循环熔断
 - **管理后台**：Key、供应商、路由、审计日志、系统信息；SQLite 或 PostgreSQL 自托管
 
@@ -101,12 +103,12 @@ Path: /v1/messages
 
 ### 兼容通道 / OpenCode sidecar
 
-有些上游（例如部分 OpenRouter 免费 / Agent 模型）只认特定套件的流量。驭算可以把这些模型送到**本机 loopback 的 OpenCode sidecar**，公开 API 不变。
+有些上游只认特定套件的流量——OpenRouter Inkling 这类免费 / Agent 模型是最常见的例子。驭算可以把这些模型送到**本机 loopback 的 OpenCode sidecar**，公开 API 不变。
 
 - 管理员在供应商模型上按模型打开 **兼容通道 / useOpencodeProxy**
-- 客户端继续走普通的 OpenAI 兼容或 Anthropic 风格接口，看不到 OpenCode；驭算也不会伪造 `Referer` / `X-Title`
+- 客户端继续走普通的 OpenAI 兼容或 Anthropic 风格接口，看不到 OpenCode。走的是 sidecar，不是伪造 `Referer` / `X-Title`
 - Key 仍在 Yutrix `providerApiKeys`，调用前再写入 sidecar 的 `auth.json`
-- **系统信息**页负责安装/更新 sidecar、可选下载代理（未配置就保持空白），以及 **自动更新（默认开启）**——启动时检查 + 每日一次；失败只记 `lastError`，不会把网关打挂
+- **系统信息**页负责安装/更新 sidecar、可选下载代理（留空即不使用），以及 **自动更新（默认开启）**——启动时检查 + 每日一次；失败只记 `lastError`，不会把网关打挂
 
 运维说明见 [docs/opencode-sidecar.md](./docs/opencode-sidecar.md)。
 
@@ -1564,6 +1566,7 @@ data/action.log
 - [版本与产品线说明（Community vs 商业版）](./docs/editions.md)
 - [English README](./README.md)
 - [Caddy 部署指南](./docs/deployment-caddy.md)
+- [OpenCode 兼容通道（运维）](./docs/opencode-sidecar.md)
 - [全新安装测试](./docs/fresh-install-test.md)
 - [实时日志说明](./docs/realtime-config.md)
 - [发布检查清单](./docs/release-checklist.md)

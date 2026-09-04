@@ -6,7 +6,7 @@
   <img src="./apps/web/public/favicon.svg" width="120" alt="Yutrix Logo" />
 </p>
 
-**One self-hosted gateway for OpenAI-compatible and Anthropic-style clients.** Point Claude Code, Cursor, or any compatible SDK at a single URL: Yutrix handles routing, API keys, audit logs, failover, and the admin UI. Clients keep talking the APIs they already know.
+**One self-hosted gateway for OpenAI-compatible and Anthropic-style APIs.** Point Claude Code, Cursor, or any compatible SDK at a single URL. Yutrix handles routing, auth, keys, logs, failover, and the admin UI. Clients keep the protocols they already know.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.16-339933.svg)](./package.json)
@@ -15,7 +15,7 @@
 
 [中文文档](./README.zh-CN.md) · [Caddy deployment](./docs/deployment-caddy.md) · [Docker Compose (PostgreSQL)](./docker-compose.postgres.example.yml) · [OpenCode sidecar](./docs/opencode-sidecar.md)
 
-Yutrix is a **protocol gateway**, not a model platform and not a model-type switch. One entry, one auth layer, one routing table, one log surface, one failover path.
+Yutrix is a **protocol gateway**, not a model marketplace and not a model-type switch. One entry, one auth layer, one routing table, one log surface, one failover path.
 
 ```text
 API Key        -> user identity
@@ -29,10 +29,6 @@ modelId        -> the string written into the request body
 
 A raw reverse proxy gets you through the first week. Then you need keys you can revoke, hostnames per team, Anthropic-shaped requests, a 429 that should hop instead of fail, and logs a human can read. Yutrix keeps that small-proxy mental model and makes it something you can actually run.
 
-### Logo Philosophy
-
-The Yutrix logo features a modern arch or gateway with a central glowing code spark. This symbolizes a powerful, secure, and intelligent portal for LLM prompts, with the blue gradient conveying technology, depth, and reliability.
-
 ## Features
 
 What you actually operate day to day:
@@ -40,10 +36,10 @@ What you actually operate day to day:
 - **Protocol-aware routing** by Host, path, and OpenAI / Anthropic shape — plus per-route source IP allowlists
 - **Cascading funnel failover** with Best Effort model matching when a layer is rate-limited or down
 - **Strategy routing** (vision / debug / code / long_context / writing / general) with continuation-aware model lock
-- **Response Continuity** so long generations that hit `max_tokens` are stitched instead of truncated
-- **Compatibility channel (OpenCode sidecar)** for harness-gated models — clients never see OpenCode
+- **Response Continuity** retries empty or reasoning-only completions before the client sees a dead stop
+- **Compatibility channel (OpenCode sidecar)** for harness-gated models (for example OpenRouter Inkling) — clients never see OpenCode
 - **Response cache**, prompt policies, user/group input token limits, and tool-loop circuit breaker
-- **Admin UI**: keys, providers, routes, audit logs, system info, SQLite or PostgreSQL
+- **Admin UI**: keys, providers, routes, audit logs, system info; SQLite or PostgreSQL, self-hosted
 
 ### Protocol-aware routing
 
@@ -94,12 +90,12 @@ The model name itself does not decide the protocol. The route protocol and provi
 
 ### Compatibility channel (OpenCode sidecar)
 
-Some upstreams (for example certain OpenRouter free / agentic models) only accept traffic from a recognized harness. Yutrix can send those models through a **managed loopback OpenCode sidecar** without changing the public API.
+Some upstreams only accept traffic from a recognized harness — OpenRouter Inkling and similar free / agentic models are the usual case. Yutrix can send those models through a **managed loopback OpenCode sidecar** without changing the public API.
 
 - Admins enable **兼容通道 / useOpencodeProxy** per provider model.
-- API clients stay on normal OpenAI-compatible or Anthropic-style endpoints. They never see OpenCode, and Yutrix does not spoof `Referer` / `X-Title`.
+- API clients stay on normal OpenAI-compatible or Anthropic-style endpoints. They never see OpenCode. The path is the sidecar, not `Referer` / `X-Title` spoofing.
 - Keys stay in Yutrix `providerApiKeys` and are mirrored into the sidecar `auth.json` immediately before a call.
-- **System Info** installs or updates the sidecar, optional download HTTP proxy (empty means unused), and **auto-update (default ON)** — startup plus a daily check; failures set `lastError` and do not take the gateway down.
+- **System Info** installs or updates the sidecar, optional download HTTP proxy (leave empty to disable), and **auto-update (default ON)** — a check at startup plus daily; failures set `lastError` and do not take the gateway down.
 
 Operator notes: [docs/opencode-sidecar.md](./docs/opencode-sidecar.md).
 
@@ -654,6 +650,7 @@ Please keep changes focused and include enough context in your PR for maintainer
 - [Editions overview (Community vs commercial)](./docs/editions.md)
 - [中文完整文档](./README.zh-CN.md)
 - [Caddy deployment guide](./docs/deployment-caddy.md)
+- [OpenCode sidecar (operators)](./docs/opencode-sidecar.md)
 - [Fresh install test](./docs/fresh-install-test.md)
 - [Realtime logging notes](./docs/realtime-config.md)
 - [Release checklist](./docs/release-checklist.md)

@@ -1,7 +1,7 @@
 # OpenCode sidecar (admin-managed, client-transparent)
 
 Yutrix can route selected provider models through a **loopback OpenCode sidecar**
-so harness-gated upstreams (for example some OpenRouter free models) work without
+so harness-gated upstreams (for example OpenRouter Inkling and similar free / agentic models) work without
 exposing OpenCode to API clients. The public gateway stays OpenAI / Anthropic
 compatible. Keys stay in `providerApiKeys`; the selected key is mirrored into
 OpenCode `auth.json` immediately before a call.
