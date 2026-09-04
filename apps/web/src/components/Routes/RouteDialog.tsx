@@ -6,7 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, SlidersHorizontal } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormField } from "@/components/FormField";
+import { AlertCircle, Shield, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouteForm } from "./RouteFormContext";
 import { RouteTargetsTable } from "./RouteTargetsTable";
@@ -172,95 +174,123 @@ export function RouteDialog() {
               </div>
             </div>
 
-            <div className="flex items-start gap-3">
-              <Switch
-                id="timeout-eject"
-                checked={!!formData.timeoutEjectEnabled}
-                onCheckedChange={(checked) => setFormData({ ...formData, timeoutEjectEnabled: checked })}
-              />
-              <div className="space-y-1">
-                <Label htmlFor="timeout-eject" className="cursor-pointer font-medium text-sm">
-                  {t("routes.fields.timeoutEject", "超时摘流")}
-                </Label>
-                <p className="text-xs text-muted-foreground leading-snug">
-                  {t("routes.hints.timeoutEject", "超时后摘除当前首层，后续请求立即降级；探活成功后恢复。默认关闭。")}
-                </p>
-              </div>
-            </div>
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  {t("routes.sections.access", "访问与安全")}
+                </CardTitle>
+                <CardDescription>
+                  {t("routes.sections.accessDesc", "超时摘流、来源限制与授权访问。")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <Label htmlFor="timeout-eject" className="cursor-pointer">
+                      {t("routes.fields.timeoutEject", "超时摘流")}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      {t("routes.hints.timeoutEject", "超时后摘除当前首层，后续请求立即降级；探活成功后恢复。默认关闭。")}
+                    </p>
+                  </div>
+                  <Switch
+                    id="timeout-eject"
+                    checked={!!formData.timeoutEjectEnabled}
+                    onCheckedChange={(checked) => setFormData({ ...formData, timeoutEjectEnabled: checked })}
+                  />
+                </div>
 
-            {/* 来源限制 */}
-            <div className="space-y-2">
-              <Label htmlFor="ip-whitelist">{t("routes.fields.ipWhitelist", "来源限制")}</Label>
-              <Input
-                id="ip-whitelist"
-                className="font-mono text-sm"
-                value={formData.ipWhitelist || ""}
-                onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
-                placeholder={t("routes.placeholders.ipWhitelist", "0.0.0.0/0")}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t("routes.hints.ipWhitelist", "空或 0.0.0.0/0 表示不限制。多个 IP / CIDR 用逗号分隔。")}
-              </p>
-            </div>
+                <FormField
+                  label={t("routes.fields.ipWhitelist", "来源限制")}
+                  hint={t("routes.hints.ipWhitelist", "空或 0.0.0.0/0 表示不限制。多个 IP / CIDR 用逗号分隔。")}
+                >
+                  <Input
+                    id="ip-whitelist"
+                    className="font-mono text-sm"
+                    value={formData.ipWhitelist || ""}
+                    onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
+                    placeholder={t("routes.placeholders.ipWhitelist", "0.0.0.0/0")}
+                  />
+                </FormField>
 
-            {/* 授权访问 */}
-            <div className="p-3 border rounded-md bg-muted/20">
-              <div className="flex items-center justify-between mb-2">
-                <Label className="font-medium text-sm">{t("routes.fields.authorization", "授权访问")}</Label>
-                <span className="text-xs text-muted-foreground">{t("routes.hints.authorization", "选择可以访问此路由的用户和用户组。未选择则默认授权给默认组。")}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 border rounded-md bg-background">
-                {formData.authorizedGroupIds.length === 0 && formData.authorizedUserIds.length === 0 && (
-                  <span className="text-xs text-muted-foreground">{t("routes.hints.defaultAuth", "默认授权给默认组")}</span>
-                )}
-                {formData.authorizedGroupIds.map((gid: string) => {
-                  const g = groups.find((gr: any) => gr.id === gid);
-                  return g ? (
-                    <Badge key={gid} variant="secondary" className="text-xs cursor-pointer hover:bg-destructive/20" onClick={() => setFormData({...formData, authorizedGroupIds: formData.authorizedGroupIds.filter((id: string) => id !== gid)})}>
-                      {g.name} ×
-                    </Badge>
-                  ) : null;
-                })}
-                {formData.authorizedUserIds.map((uid: string) => {
-                  const u = usersForSelect.find((us: any) => us.id === uid);
-                  return u ? (
-                    <Badge key={uid} variant="outline" className="text-xs cursor-pointer hover:bg-destructive/20" onClick={() => setFormData({...formData, authorizedUserIds: formData.authorizedUserIds.filter((id: string) => id !== uid)})}>
-                      {u.username} ×
-                    </Badge>
-                  ) : null;
-                })}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <Select value="" onValueChange={(val) => {
-                  if (val && !formData.authorizedGroupIds.includes(val)) {
-                    setFormData({...formData, authorizedGroupIds: [...formData.authorizedGroupIds, val]});
-                  }
-                }}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder={t("routes.placeholders.addGroup", "添加用户组")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {groups.filter((g: any) => !formData.authorizedGroupIds.includes(g.id)).map((g: any) => (
-                      <SelectItem key={g.id} value={g.id}>{g.name}{g.isDefault ? ` (${t("groups.defaultBadge", "默认组")})` : ""}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value="" onValueChange={(val) => {
-                  if (val && !formData.authorizedUserIds.includes(val)) {
-                    setFormData({...formData, authorizedUserIds: [...formData.authorizedUserIds, val]});
-                  }
-                }}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder={t("routes.placeholders.addUser", "添加用户")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {usersForSelect.filter((u: any) => !formData.authorizedUserIds.includes(u.id)).map((u: any) => (
-                      <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+                <div className="space-y-3">
+                  <div>
+                    <Label>{t("routes.fields.authorization", "授权访问")}</Label>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {t("routes.hints.authorization", "选择可以访问此路由的用户和用户组。未选择则默认授权给默认组。")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 min-h-9 items-center">
+                    {formData.authorizedGroupIds.length === 0 && formData.authorizedUserIds.length === 0 && (
+                      <span className="text-sm text-muted-foreground">{t("routes.hints.defaultAuth", "默认授权给默认组")}</span>
+                    )}
+                    {formData.authorizedGroupIds.map((gid: string) => {
+                      const g = groups.find((gr: any) => gr.id === gid);
+                      return g ? (
+                        <Badge key={gid} variant="secondary" className="flex items-center gap-1 py-1 px-2 text-sm">
+                          {g.name}
+                          <button
+                            type="button"
+                            className="ml-0.5 rounded-full outline-none hover:bg-muted focus:bg-muted"
+                            aria-label={t("routes.hints.clickToRemove", "点击移除")}
+                            onClick={() => setFormData({...formData, authorizedGroupIds: formData.authorizedGroupIds.filter((id: string) => id !== gid)})}
+                          >
+                            <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                          </button>
+                        </Badge>
+                      ) : null;
+                    })}
+                    {formData.authorizedUserIds.map((uid: string) => {
+                      const u = usersForSelect.find((us: any) => us.id === uid);
+                      return u ? (
+                        <Badge key={uid} variant="outline" className="flex items-center gap-1 py-1 px-2 text-sm">
+                          {u.username}
+                          <button
+                            type="button"
+                            className="ml-0.5 rounded-full outline-none hover:bg-muted focus:bg-muted"
+                            aria-label={t("routes.hints.clickToRemove", "点击移除")}
+                            onClick={() => setFormData({...formData, authorizedUserIds: formData.authorizedUserIds.filter((id: string) => id !== uid)})}
+                          >
+                            <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                          </button>
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select value="" onValueChange={(val) => {
+                      if (val && !formData.authorizedGroupIds.includes(val)) {
+                        setFormData({...formData, authorizedGroupIds: [...formData.authorizedGroupIds, val]});
+                      }
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("routes.placeholders.addGroup", "添加用户组")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {groups.filter((g: any) => !formData.authorizedGroupIds.includes(g.id)).map((g: any) => (
+                          <SelectItem key={g.id} value={g.id}>{g.name}{g.isDefault ? ` (${t("groups.defaultBadge", "默认组")})` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value="" onValueChange={(val) => {
+                      if (val && !formData.authorizedUserIds.includes(val)) {
+                        setFormData({...formData, authorizedUserIds: [...formData.authorizedUserIds, val]});
+                      }
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("routes.placeholders.addUser", "添加用户")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {usersForSelect.filter((u: any) => !formData.authorizedUserIds.includes(u.id)).map((u: any) => (
+                          <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
 
             </DialogBody>

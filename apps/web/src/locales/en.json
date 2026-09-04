@@ -819,7 +819,9 @@
       "target": "Target Config",
       "fallback": "Fallback Config",
       "runtime": "Runtime Config",
-      "routingTarget": "Request Routing Targets (Funnel Model)"
+      "routingTarget": "Request Routing Targets (Funnel Model)",
+      "access": "Access & security",
+      "accessDesc": "Timeout eject, source restriction, and authorized access."
     },
     "fields": {
       "name": "Rule Name *",
