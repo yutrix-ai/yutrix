@@ -240,6 +240,13 @@ export interface CheckErrorFallbackOptions {
   forceCapabilityFallback?: boolean;
 }
 
+/** Funnel hops on any unsuccessful upstream status; only HTTP 200 is a terminal success. */
+export function isErrorFallbackStatus(status: unknown): boolean {
+  const n = typeof status === "number" ? status : Number(status);
+  if (!Number.isFinite(n)) return true;
+  return n !== 200;
+}
+
 export async function checkErrorFallback(
   options: CheckErrorFallbackOptions
 ): Promise<FallbackResult | null> {
@@ -259,7 +266,7 @@ export async function checkErrorFallback(
   const isVisionCapabilityError = responseData?.terminalError?.requiredCapability === "vision" || forceCapabilityFallback;
   const isPayloadIncompatible = responseData?.terminalError?.retryClass === "protocol_payload_incompatible";
   
-  if (!isVisionCapabilityError && !isPayloadIncompatible && status !== 429 && status !== 503 && status !== 529 && status !== 502 && status !== 504 && status !== 500 && status !== 401) {
+  if (!isVisionCapabilityError && !isPayloadIncompatible && !isErrorFallbackStatus(status)) {
     return null;
   }
 

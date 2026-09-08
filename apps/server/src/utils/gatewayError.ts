@@ -43,6 +43,10 @@ export function formatError(
 
 export function getStatusReasonCN(status: number): string {
   switch (status) {
+    case 400: return "上游请求无效";
+    case 401: return "上游鉴权失败";
+    case 403: return "上游拒绝访问";
+    case 404: return "上游模型不可用";
     case 429: return "上游限流";
     case 503: return "上游服务不可用";
     case 529: return "上游过载";

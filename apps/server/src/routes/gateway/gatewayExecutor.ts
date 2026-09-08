@@ -15,7 +15,7 @@ import { adaptRequestProtocol } from "./protocolAdapter";
 import { buildUpstreamHeaders, determineUpstreamPath, executeUpstreamFetch, createFakeStreamFromData } from "./upstream";
 import { buildBaseLog, insertInitialRequestLog, finalizeStreamLog } from "./logging";
 import { getGlobalQueue, getApiKeyQueue, getProviderQueue } from "./concurrency";
-import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
+import { checkConcurrencyFallback, checkErrorFallback, isErrorFallbackStatus } from "./fallback";
 import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
@@ -2130,7 +2130,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             }
 
             const isPayloadIncompatible = responseData.terminalError?.retryClass === "protocol_payload_incompatible";
-            if (!responseData.isStream && (isPayloadIncompatible || responseData.status === 401 || responseData.status === 429 || responseData.status === 500 || responseData.status === 502 || responseData.status === 503 || responseData.status === 504 || responseData.status === 529)) {
+            if (!responseData.isStream && (isPayloadIncompatible || isErrorFallbackStatus(responseData.status))) {
               maybeNoteTimeoutEject({
                 enabled: timeoutEjectEnabled(route),
                 route,
@@ -2430,6 +2430,47 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             responseData = null;
             attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
             continue; // fallback to next target
+          }
+        }
+
+        // Priority 3.5: Remaining non-200 (404 model_not_found, 403, 400, 500, …)
+        // never entered availability-hop or key-rotation. Hop if another layer exists.
+        if (currentAttempt && isErrorFallbackStatus(streamAvailabilityStatus)) {
+          const errorFallback = await checkErrorFallback({
+            status: streamAvailabilityStatus,
+            currentAttempt,
+            route,
+            body,
+            provider: ctx.activeProvider,
+            responseData: responseData || {
+              status: streamAvailabilityStatus,
+              data: { error: { message: streamTermErr.message, type: streamTermErr.errorType } },
+              isStream: true,
+            },
+            baseActionLog,
+            logAction,
+            incomingProtocol,
+          });
+          if (errorFallback) {
+            logAction({
+              ...baseActionLog,
+              level: "WARN",
+              code: "request.upstream_retry",
+              providerName: ctx.activeProvider?.name,
+              modelId: currentAttempt.modelId,
+              statusCode: streamAvailabilityStatus,
+              reason: "stream_status_funnel_fallback",
+            });
+            currentAttempt = errorFallback.newAttempt;
+            ctx.currentAttempt = currentAttempt;
+            keepContinuity = true;
+            if (responseData?.releaseSlots) {
+              responseData.releaseSlots();
+              responseData.releaseSlots = undefined;
+            }
+            responseData = null;
+            attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
+            continue;
           }
         }
 
