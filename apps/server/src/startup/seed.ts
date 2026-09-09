@@ -208,53 +208,57 @@ export async function seedModelDiscoverySettings() {
 }
 
 export async function seedBuiltinPromptPolicies() {
-  let adminId = "system";
-  const currentAdminList = await db
-    .select()
-    .from(users)
-    .where(eq(users.role, "admin"));
-  if (currentAdminList.length > 0) {
-    adminId = currentAdminList[0].id;
-  }
-  const builtins = [
-    {
-      id: "builtin-claude-code",
-      name: "Claude Code Built-in",
-      protocol: "anthropic",
-      injectPosition: "replace_system",
-      injectMode: "once_per_conversation",
-      content: "You are Claude Code, an AI assistant.",
-      version: 1,
-      conversationKeySource: "header",
-      conversationKeyName: "x-conversation-id",
-      enabled: true,
-    },
-    {
-      id: "builtin-codex-cli",
-      name: "Codex CLI Built-in",
-      protocol: "openai",
-      injectPosition: "replace_system",
-      injectMode: "once_per_conversation",
-      content: "You are Codex CLI, a coding assistant.",
-      version: 1,
-      conversationKeySource: "header",
-      conversationKeyName: "x-conversation-id",
-      enabled: true,
-    },
-  ];
-  for (const policy of builtins) {
-    const existing = await db
+  try {
+    let adminId = "system";
+    const currentAdminList = await db
       .select()
-      .from(promptPolicies)
-      .where(eq(promptPolicies.id, policy.id));
-    if (existing.length === 0) {
-      await db.insert(promptPolicies).values({
-        ...policy,
-        userId: adminId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      .from(users)
+      .where(eq(users.role, "admin"));
+    if (currentAdminList.length > 0) {
+      adminId = currentAdminList[0].id;
     }
+    const builtins = [
+      {
+        id: "builtin-claude-code",
+        name: "Claude Code Built-in",
+        protocol: "anthropic",
+        injectPosition: "replace_system",
+        injectMode: "once_per_conversation",
+        content: "You are Claude Code, an AI assistant.",
+        version: 1,
+        conversationKeySource: "header",
+        conversationKeyName: "x-conversation-id",
+        enabled: true,
+      },
+      {
+        id: "builtin-codex-cli",
+        name: "Codex CLI Built-in",
+        protocol: "openai",
+        injectPosition: "replace_system",
+        injectMode: "once_per_conversation",
+        content: "You are Codex CLI, a coding assistant.",
+        version: 1,
+        conversationKeySource: "header",
+        conversationKeyName: "x-conversation-id",
+        enabled: true,
+      },
+    ];
+    for (const policy of builtins) {
+      const existing = await db
+        .select()
+        .from(promptPolicies)
+        .where(eq(promptPolicies.id, policy.id));
+      if (existing.length === 0) {
+        await db.insert(promptPolicies).values({
+          ...policy,
+          userId: adminId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    }
+  } catch (err: any) {
+    console.warn("[PromptGate Bootstrap] seedBuiltinPromptPolicies skipped:", err?.message || err);
   }
 }
 

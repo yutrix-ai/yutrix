@@ -490,7 +490,37 @@ async function ensureTablesExist() {
       sourceRecordCount integer DEFAULT 0 NOT NULL,
       jobId text,
       createdAt integer NOT NULL
-    );`
+    );`,
+    `CREATE TABLE IF NOT EXISTS prompt_policies (
+      id text PRIMARY KEY NOT NULL,
+      userId text NOT NULL,
+      name text NOT NULL,
+      protocol text DEFAULT 'openai' NOT NULL,
+      injectPosition text DEFAULT 'append_system' NOT NULL,
+      injectMode text DEFAULT 'every_request' NOT NULL,
+      conversationKeySource text DEFAULT 'header',
+      conversationKeyName text DEFAULT 'X-Conversation-Id',
+      fallbackMode text DEFAULT 'treat_as_new',
+      content text NOT NULL,
+      version integer DEFAULT 1 NOT NULL,
+      description text,
+      enabled integer DEFAULT 1,
+      createdAt integer NOT NULL,
+      updatedAt integer NOT NULL
+    );`,
+    `CREATE TABLE IF NOT EXISTS prompt_injection_records (
+      id text PRIMARY KEY NOT NULL,
+      userId text NOT NULL,
+      apiKeyId text NOT NULL,
+      endpointId text,
+      subdomainId text,
+      promptPolicyId text NOT NULL,
+      conversationId text NOT NULL,
+      contentHash text NOT NULL,
+      createdAt integer NOT NULL
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_prompt_injection_records_conv_policy ON prompt_injection_records (conversationId, promptPolicyId);`,
+    `CREATE INDEX IF NOT EXISTS idx_prompt_injection_records_user_created ON prompt_injection_records (userId, createdAt);`
   ];
 
   for (const query of tableSqls) {
