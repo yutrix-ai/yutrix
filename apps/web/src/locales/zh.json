@@ -602,6 +602,7 @@
       "timeout": "无响应时限 (ms)",
       "streamTimeout": "流式空闲超时 (ms)",
       "concurrency": "并发限制",
+      "hourlyTokenLimit": "每小时 Token 限制",
       "maxOutputTokens": "最大输出 Token 裁剪",
       "upstreamProxyUrl": "上游请求代理 URL",
       "weightProxyUrl": "权重下载代理 URL"

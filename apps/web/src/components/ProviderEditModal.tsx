@@ -229,8 +229,8 @@ export function ProviderEditModal({
         <form onSubmit={handleSave} className="flex-1 flex flex-col min-h-0 overflow-hidden" autoComplete="off">
           <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Left side: Form */}
-            <div className="w-1/2 p-6 border-r flex flex-col overflow-hidden">
-              <div className="space-y-6">
+            <div className="w-1/2 p-6 border-r flex flex-col min-h-0 overflow-y-auto custom-scrollbar">
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="flex items-center">
                     {t("providers.fields.name", "供应商名称")}
@@ -291,7 +291,7 @@ export function ProviderEditModal({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2">
                       {t("providers.fields.upstreamProxyUrl", "Upstream Proxy URL")}
@@ -318,7 +318,7 @@ export function ProviderEditModal({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>{t("providers.fields.timeout", "Timeout (ms)")}</Label>
                     <Input
@@ -348,7 +348,7 @@ export function ProviderEditModal({
                     </p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>{t("providers.fields.concurrency", "Concurrency Limit")}</Label>
                     <Input
@@ -361,7 +361,7 @@ export function ProviderEditModal({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Hourly Token Limit</Label>
+                    <Label>{t("providers.fields.hourlyTokenLimit", "每小时 Token 限制")}</Label>
                     <Input
                       type="number"
                       min="0"

@@ -605,6 +605,7 @@
       "timeout": "No-answer timeout (ms)",
       "streamTimeout": "Stream Idle Timeout (ms)",
       "concurrency": "Concurrency Limit",
+      "hourlyTokenLimit": "Hourly Token Limit",
       "maxOutputTokens": "Max Output Tokens",
       "upstreamProxyUrl": "Upstream Proxy URL",
       "weightProxyUrl": "Weight Proxy URL"

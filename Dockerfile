@@ -18,7 +18,7 @@ COPY ecosystem.config.cjs ./
 ENV PNPM_IGNORE_BUILD_SCRIPTS=false
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-RUN pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true \
+RUN pnpm install --frozen-lockfile \
     && pnpm build
 
 ENV NODE_ENV=production

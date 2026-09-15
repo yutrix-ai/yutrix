@@ -1,14 +1,17 @@
 packages:
-  - 'apps/*'
-  - 'packages/*'
+  - "apps/*"
+  - "packages/*"
+dangerouslyAllowAllBuilds: true
 allowBuilds:
-  argon2: set this to true or false
-  better-sqlite3: set this to true or false
+  "@google/genai": true
+  argon2: true
+  better-sqlite3: true
   es5-ext: true
   esbuild: true
   msw: true
-  protobufjs: set this to true or false
-  sharp: set this to true or false
+  protobufjs: true
+  puppeteer: true
+  sharp: true
 allowedDeprecatedVersions:
   "@esbuild-kit/core-utils": "*"
   "@esbuild-kit/esm-loader": "*"
