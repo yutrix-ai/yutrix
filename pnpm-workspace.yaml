@@ -1,7 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
-dangerouslyAllowAllBuilds: true
+# Do not add dangerouslyAllowAllBuilds here. pnpm 10 maps it to
+# neverBuiltDependencies and allowBuilds to onlyBuiltDependencies; both set
+# is ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES and breaks Docker install.
 allowBuilds:
   "@google/genai": true
   argon2: true

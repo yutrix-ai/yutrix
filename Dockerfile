@@ -9,7 +9,7 @@ RUN apt-get update \
 RUN corepack enable \
     && npm install -g pm2
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY apps ./apps
 COPY packages ./packages
 COPY scripts ./scripts
@@ -18,7 +18,8 @@ COPY ecosystem.config.cjs ./
 ENV PNPM_IGNORE_BUILD_SCRIPTS=false
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-RUN pnpm install --frozen-lockfile \
+RUN corepack prepare --activate \
+    && pnpm install --frozen-lockfile \
     && pnpm build
 
 ENV NODE_ENV=production
