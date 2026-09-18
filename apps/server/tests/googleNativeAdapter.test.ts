@@ -66,6 +66,7 @@ describe("Google native adapter", () => {
                 additionalProperties: false,
                 properties: {
                   command: { type: "string", default: "ls" },
+                  confirm: { type: "boolean", enum: [true] },
                 },
                 required: ["command"],
               },
@@ -94,6 +95,7 @@ describe("Google native adapter", () => {
                 type: "object",
                 properties: {
                   command: { type: "string" },
+                  confirm: { type: "boolean", description: expect.stringContaining("true") },
                 },
                 required: ["command"],
               },

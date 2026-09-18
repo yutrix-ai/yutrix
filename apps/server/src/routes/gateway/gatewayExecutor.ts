@@ -1453,16 +1453,15 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
             }
 
-            let compatibilitySummary = undefined;
-            if (adapter?.id === "google") {
-              compatibilitySummary = applyProviderCompatibility(finalBody, {
-                providerName: provider.name,
-                baseUrl,
-                providerProtocol: currentAttempt.providerProtocol,
-                modelId: currentAttempt.modelId,
-                // logAction omitted to defer logging until response status is known
-              });
-            }
+            // Always invoke: applyProviderCompatibility is a no-op for unrelated providers.
+            // Do not gate on adapter.id === "google" — Antigravity uses transparent.
+            const compatibilitySummary = applyProviderCompatibility(finalBody, {
+              providerName: provider.name,
+              baseUrl,
+              providerProtocol: currentAttempt.providerProtocol,
+              modelId: currentAttempt.modelId,
+              // logAction omitted to defer logging until response status is known
+            });
 
             // Re-apply learned constraint rewrites for this provider:model (error-driven recovery).
             applyConstraintMutators(finalBody, targetState.constraintMutators);

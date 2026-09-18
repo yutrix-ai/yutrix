@@ -1,9 +1,6 @@
 import crypto from "crypto";
 import { parseSseDataLine } from "../../utils/gatewayContent";
-import {
-  isGoogleOpenAICompatibleProvider,
-  sanitizeGeminiSchema,
-} from "./providerCompatibility";
+import { sanitizeGeminiSchema } from "./providerCompatibility";
 
 type GoogleNativeRequestOptions = {
   body: any;
