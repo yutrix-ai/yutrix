@@ -17,6 +17,14 @@ import { loadDbConfig } from "../db/config";
 import { resolveDbFilePath } from "../db/path";
 import { runCopyPipeline, getMigrationProgress } from "../db/copy/pipeline";
 import { isMaintenanceMode, setMaintenanceMode } from "../services/maintenance";
+import {
+  parseMainDomains,
+  formatMainDomains,
+  parseDomainBranding,
+  resolveEffectiveBranding,
+  matchHostToDomain,
+  normalizeDomain,
+} from "@promptgate/shared";
 
 const execAsync = promisify(exec);
 
@@ -134,7 +142,22 @@ export default async function (fastify: FastifyInstance) {
   fastify.get(
     "/api/settings/public",
     async (request, reply) => {
-      const keys = ["theme", "accentColor", "tokenDisplayUnit", "systemName", "systemSlogan", "systemLogoUrl", "sidebarLogoAnimation", "appendSloganToTitle", "hideSystemNameInTitle", "showGithubIcon", "dateFormat", "timeFormat"];
+      const keys = [
+        "theme",
+        "accentColor",
+        "tokenDisplayUnit",
+        "systemName",
+        "systemSlogan",
+        "systemLogoUrl",
+        "sidebarLogoAnimation",
+        "appendSloganToTitle",
+        "hideSystemNameInTitle",
+        "showGithubIcon",
+        "dateFormat",
+        "timeFormat",
+        "domainBranding",
+        "mainDomain",
+      ];
       const list = await db
         .select()
         .from(systemSettings)
@@ -156,6 +179,22 @@ export default async function (fastify: FastifyInstance) {
       if (!map.showGithubIcon) map.showGithubIcon = "true";
       if (!map.dateFormat) map.dateFormat = "YYYY-MM-DD";
       if (!map.timeFormat) map.timeFormat = "24h";
+
+      // Dynamically resolve domain-specific branding overrides
+      const hostname = normalizeDomain(request.hostname);
+      const mainDomains = parseMainDomains(map.mainDomain);
+      const match = matchHostToDomain(hostname, mainDomains);
+      const matchedDomain = match.matchedDomain || (match.isRoot ? hostname : null);
+
+      if (matchedDomain && map.domainBranding) {
+        const domainBrandingMap = parseDomainBranding(map.domainBranding);
+        const effective = resolveEffectiveBranding(matchedDomain, map, domainBrandingMap);
+        Object.assign(map, effective);
+      }
+
+      // Never leak domainBranding configuration map or mainDomain in public response
+      delete map.domainBranding;
+      delete map.mainDomain;
 
       return map;
     },
@@ -214,6 +253,12 @@ export default async function (fastify: FastifyInstance) {
 
       for (const item of settings) {
         if (item.value !== undefined) {
+          let val = item.value;
+          if (item.key === "mainDomain") {
+            const parsed = parseMainDomains(item.value);
+            val = formatMainDomains(parsed);
+          }
+
           const existing = await db
             .select()
             .from(systemSettings)
@@ -221,12 +266,12 @@ export default async function (fastify: FastifyInstance) {
           if (existing.length > 0) {
             await db
               .update(systemSettings)
-              .set({ value: item.value, updatedAt: new Date() })
+              .set({ value: val, updatedAt: new Date() })
               .where(eq(systemSettings.key, item.key));
           } else {
             await db.insert(systemSettings).values({
               key: item.key,
-              value: item.value,
+              value: val,
               description: "",
               createdAt: new Date(),
               updatedAt: new Date(),

@@ -28,6 +28,7 @@ import {
 import { parseStrategyRoutingRules } from "../services/strategyRouting";
 import { coerceLegacyRouteForDisplay, resolveRouteRoutingMode } from "../services/opcAgentRouting";
 import { timeoutEjectAdminFields } from "../routes/gateway/timeoutEject";
+import { parseRouteHosts } from "@promptgate/shared";
 
 function routeDisplayShape(route: Record<string, unknown>) {
   const coerced = coerceLegacyRouteForDisplay(route);
@@ -116,11 +117,14 @@ export async function getAdminRoutes(request: FastifyRequest, reply: FastifyRepl
     const activeSchedule = findActiveSchedule(parsedSchedules, now, dailyStartStr);
     const display = routeDisplayShape(route as Record<string, unknown>);
 
+    const parsedHosts = parseRouteHosts(route.hosts, subdomain?.hostname);
+
     return {
       id: route.id,
       name: route.name || endpoint?.name || "",
       enabled: route.enabled,
-      host: subdomain?.hostname || "*",
+      host: parsedHosts.join(", ") || "*",
+      hosts: parsedHosts,
       subdomainId: route.subdomainId,
       path: endpoint?.path || "",
       endpointId: endpoint?.id || "",
@@ -226,11 +230,14 @@ export async function getAdminRouteById(request: FastifyRequest, reply: FastifyR
     }
   }
 
+  const parsedHosts = parseRouteHosts(route.hosts, subdomain?.hostname);
+
   return {
     id: route.id,
     name: route.name || endpoint?.name || "",
     enabled: route.enabled,
-    host: subdomain?.hostname || "*",
+    host: parsedHosts.join(", ") || "*",
+    hosts: parsedHosts,
     subdomainId: route.subdomainId,
     path: endpoint?.path || "",
     endpointId: endpoint?.id || "",

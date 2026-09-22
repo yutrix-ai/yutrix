@@ -3,6 +3,7 @@ import { endpoints, endpointRoutes, subdomains, systemSettings } from "../db/sch
 import { eq } from "drizzle-orm";
 import {
   collectRouteIdentityIssues,
+  parseRouteHosts,
   type RouteIdentityRecord,
 } from "@promptgate/shared";
 
@@ -19,6 +20,7 @@ export async function loadRouteIdentityRecords(): Promise<RouteIdentityRecord[]>
     .select({
       id: endpointRoutes.id,
       name: endpointRoutes.name,
+      hosts: endpointRoutes.hosts,
       hostname: subdomains.hostname,
       path: endpoints.path,
       incomingProtocol: endpoints.incomingProtocol,
@@ -31,6 +33,7 @@ export async function loadRouteIdentityRecords(): Promise<RouteIdentityRecord[]>
     id: row.id,
     name: row.name || "",
     host: row.hostname || "*",
+    hosts: parseRouteHosts(row.hosts, row.hostname),
     path: row.path || "",
     incomingProtocol: row.incomingProtocol || "openai",
   }));
@@ -39,6 +42,7 @@ export async function loadRouteIdentityRecords(): Promise<RouteIdentityRecord[]>
 export async function assertRouteIdentityAvailable(input: {
   name: unknown;
   hostInput: string;
+  hosts?: string[];
   path: string;
   incomingProtocol: string;
   excludeRouteId?: string | null;
@@ -51,6 +55,7 @@ export async function assertRouteIdentityAvailable(input: {
   const issues = collectRouteIdentityIssues({
     name: input.name,
     hostInput: input.hostInput,
+    hosts: input.hosts,
     path: input.path,
     protocol: input.incomingProtocol,
     records,
@@ -63,3 +68,4 @@ export async function assertRouteIdentityAvailable(input: {
   const first = issues[0];
   return { ok: false, error: first.error, code: first.code };
 }
+

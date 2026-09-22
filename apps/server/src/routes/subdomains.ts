@@ -6,6 +6,7 @@ import { systemSettings } from "../db/schema";
 import crypto from "crypto";
 import { z } from "zod";
 import { requireAdmin } from "../middleware/auth";
+import { getMainDomain } from "@promptgate/shared";
 
 const subdomainSchema = z.object({
   name: z
@@ -54,10 +55,11 @@ export default async function (fastify: FastifyInstance) {
         .where(eq(systemSettings.key, "mainDomain"));
       const mainDomain =
         mainDomainSettings.length > 0 ? mainDomainSettings[0].value : "";
+      const primaryDomain = getMainDomain(mainDomain);
 
       let hostname = "";
-      if (mainDomain) {
-        hostname = `${name}.${mainDomain}`;
+      if (primaryDomain) {
+        hostname = `${name}.${primaryDomain}`;
       } else {
         if (process.env.NODE_ENV === "production") {
           return reply

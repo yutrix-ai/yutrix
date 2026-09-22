@@ -3,4 +3,5 @@ export * from "./types";
 export * from "./constants";
 export * from "./usageStats";
 export * from "./routeIdentity";
+export * from "./domain";
 export * from "./distillation";

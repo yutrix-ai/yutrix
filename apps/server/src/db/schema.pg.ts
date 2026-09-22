@@ -245,6 +245,7 @@ export const endpointRoutes = pgTable(
     name: text("name").default(""),
     endpointId: text("endpointId").notNull(),
     subdomainId: text("subdomainId"),
+    hosts: text("hosts"),
     providerId: text("providerId").notNull(),
     providerProtocol: text("providerProtocol").notNull().default("openai"),
     modelId: text("modelId").notNull(),

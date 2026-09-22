@@ -138,8 +138,22 @@ export function RouteList({
                     <Badge variant="outline" className="text-zinc-500">{r.incomingProtocol === 'openai' ? 'OpenAI' : 'Anthropic'}</Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="text-sm">{r.host}</div>
-                    <div className="text-xs text-muted-foreground">{r.path}</div>
+                    {r.hosts && r.hosts.length > 1 ? (
+                      <div className="flex flex-wrap gap-1 max-w-[280px]">
+                        {r.hosts.map((h: string) => (
+                          <Badge
+                            key={h}
+                            variant="secondary"
+                            className="font-mono text-xs font-normal bg-muted/60 text-foreground"
+                          >
+                            {h}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm font-mono">{r.host || "*"}</div>
+                    )}
+                    <div className="text-xs text-muted-foreground mt-0.5 font-mono">{r.path}</div>
                   </TableCell>
                   <TableCell>
                     {/* Primary Target Info */}

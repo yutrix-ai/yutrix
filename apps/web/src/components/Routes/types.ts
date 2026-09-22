@@ -26,6 +26,7 @@ export interface RouteItem {
   name: string;
   enabled: boolean;
   host: string;
+  hosts?: string[];
   path: string;
   incomingProtocol: string;
   providerId: string;

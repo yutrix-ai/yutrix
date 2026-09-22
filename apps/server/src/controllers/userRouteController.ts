@@ -18,6 +18,7 @@ import {
 import { getUserAuthorizedRouteIds } from "../services/routeService";
 import { normalizeUserRouteOverridePayload } from "../services/clientModelOverride";
 import { isClassicRoutingMode, resolveRouteRoutingMode } from "../services/opcAgentRouting";
+import { parseRouteHosts } from "@promptgate/shared";
 
 export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -100,10 +101,13 @@ export async function getUserRoutes(request: FastifyRequest, reply: FastifyReply
       // Client override is exclusive with a fixed page modelId
       const useClientModel = !!(override as any)?.useClientModel && !finalOverrideModelId;
 
+      const parsedHosts = parseRouteHosts(route.hosts, subdomain?.hostname);
+
       return {
         id: route.id,
         name: route.name || endpoint?.name || "未命名规则",
-        host: subdomain ? subdomain.hostname : "*",
+        host: parsedHosts.join(", ") || "*",
+        hosts: parsedHosts,
         path: endpoint?.path || "",
         incomingProtocol: endpoint?.incomingProtocol || "openai",
         routingMode: resolveRouteRoutingMode(route),

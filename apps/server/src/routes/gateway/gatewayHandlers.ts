@@ -92,6 +92,7 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
       subdomainResult.allowFallback,
       reply,
       request.log,
+      request.hostname,
     );
     if (!routeResult) return;
 

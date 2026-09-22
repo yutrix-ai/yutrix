@@ -178,13 +178,38 @@
         "animAurora": "🌌 极光晕染 (常驻)",
         "appendSlogan": "在浏览器标签页追加口号",
         "appendSloganDesc": "开启后，浏览器标签页标题将显示为：系统名称 - 系统口号",
-        "hideSystemName": "仅显示系统口号 (隐藏系统名称)"
+        "hideSystemName": "仅显示系统口号 (隐藏系统名称)",
+        "githubIcon": "顶部 GitHub 图标",
+        "showGithubIcon": "在顶栏显示 GitHub 仓库入口",
+        "domainScope": "域名范围",
+        "globalDefault": "全局默认",
+        "customized": "已定制",
+        "inheriting": "继承默认",
+        "globalDefaultNotice": "配置系统全局默认的品牌标识。未配置独立品牌的域名将默认显示此套品牌。",
+        "domainScopeNotice": "正在为域名「{{domain}}」配置专属品牌标识。未单独填写的字段将自动继承全局默认配置。",
+        "copyFromGlobal": "复制全局配置",
+        "copiedFromGlobal": "已复制全局默认配置到当前域名",
+        "resetDomainBranding": "清除定制 (恢复继承)",
+        "resetDomainSuccess": "已清除该域名的专属定制，恢复继承全局默认配置",
+        "inheritPlaceholder": "继承默认: {{value}}",
+        "animInherit": "继承全局默认 ({{anim}})",
+        "customLogoBadge": "专属图标",
+        "inheritedLogoBadge": "继承全局",
+        "resetToDefaultLogo": "恢复全局图标",
+        "noDomainsHint": "💡 当前尚未配置主域名。在下方【基础设置】添加主域名后，可为不同域名独立配置专属品牌与 Logo。"
       },
       "basic": {
         "title": "基础设置",
         "desc": "配置域名和网络相关的基础参数",
         "mainDomain": "主域名",
-        "mainDomainHint": "用于生成二级域名的基础域名",
+        "mainDomainHint": "支持配置多个主域名（外部 Caddy 等反向代理可接入多个域名，二级域名与路由将自动生效于所有主域名）。列表中首个域名为默认主选域名。",
+        "mainDomainPlaceholder": "输入域名并回车或点击添加，如 brtel.link",
+        "addDomain": "添加",
+        "primaryTag": "主选",
+        "setPrimary": "设为主选",
+        "removeDomain": "移除域名",
+        "domainInvalid": "请输入有效的域名格式（如 example.com）",
+        "domainExists": "该域名已存在",
         "queueTimeout": "默认队列超时时间 (ms)",
         "queueTimeoutHint": "请求在队列中等待的最大时间"
       },
@@ -777,6 +802,26 @@
     },
     "copyName": {
       "label": "副本"
+    },
+    "domains": {
+      "title": "域名与二级域名配置",
+      "modeLabel": "域名匹配模式",
+      "modeWildcard": "全部域名 (*)",
+      "modeSpecific": "指定二级域名",
+      "modeWildcardDesc": "匹配任意外部请求域名 (Host: *)，当请求路径匹配时即可触发此路由规则。",
+      "primaryDomain": "所属一级域名",
+      "subdomainPrefix": "二级域名前缀",
+      "subdomainPlaceholder": "例如：code、api 或 @ (根域名)",
+      "customHost": "自定义完整域名",
+      "customPlaceholder": "例如：api.yourdomain.com",
+      "customOption": "自定义完整域名",
+      "addBinding": "添加二级域名",
+      "addCustom": "添加自定义域名",
+      "alreadyAdded": "已添加",
+      "allUsedHint": "已添加所有一级域名（同一个路由只允许一个一级域名出现一次）",
+      "singleMainDomainRule": "同一个路由中只允许一个一级域名出现一次",
+      "rootDomain": "根域名",
+      "deleteBinding": "移除此域名"
     },
     "badges": {
       "bestEffort": "尽力而为"
@@ -1559,7 +1604,7 @@
       "enabled": "创建后立即启用"
     },
     "hints": {
-      "prefix": "完整域名将由前缀 + 系统设置中的「主域名 (mainDomain)」自动拼接"
+      "prefix": "完整域名将由前缀 + 系统设置中的「主域名」自动拼接（在所有已配置的主域名下均自动生效）"
     },
     "placeholders": {
       "prefix": "例如: code",

@@ -79,6 +79,7 @@ import {
   ERR_SETUP_REQUIRED_MESSAGE,
   ERR_MAINTENANCE_ACTIVE,
   ERR_MAINTENANCE_ACTIVE_MESSAGE,
+  parseMainDomains,
 } from "@promptgate/shared";
 import {
   isMaintenanceMode,
@@ -150,13 +151,14 @@ fastify.addHook("onRequest", async (request, reply) => {
         let isAllowed = false;
 
         if (allowlist.includes("*")) {
-          // Wildcard in prod: only allow same-site (mainDomain and its subdomains)
-          if (mainDomain) {
+          // Wildcard in prod: only allow same-site (mainDomains and their subdomains)
+          const mainDomains = parseMainDomains(mainDomain);
+          if (mainDomains.length > 0) {
             try {
-              const originHost = new URL(origin).hostname;
-              isAllowed =
-                originHost === mainDomain ||
-                originHost.endsWith(`.${mainDomain}`);
+              const originHost = new URL(origin).hostname.toLowerCase();
+              isAllowed = mainDomains.some(
+                (d) => originHost === d || originHost.endsWith(`.${d}`)
+              );
             } catch {
               isAllowed = false;
             }

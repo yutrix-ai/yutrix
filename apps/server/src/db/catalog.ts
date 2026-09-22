@@ -675,6 +675,11 @@ export const CATALOG: Record<string, CatalogTable> = {
         propName: "subdomainId",
         logicalType: "text",
       },
+      "hosts": {
+        name: "hosts",
+        propName: "hosts",
+        logicalType: "text",
+      },
       "providerId": {
         name: "providerId",
         propName: "providerId",

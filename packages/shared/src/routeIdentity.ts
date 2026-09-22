@@ -47,15 +47,17 @@ export function nextCopyRouteName(
   return base ? `${base} ${label} ${Date.now()}` : `${label} ${Date.now()}`;
 }
 
+import { getMainDomain, parseRouteHosts } from "./domain";
+
 export function normalizeRouteHostKey(
   hostInput: string,
-  mainDomain: string,
+  mainDomain: string | string[],
   options?: { fallbackLocalhost?: boolean },
 ): string {
   const trimmed = String(hostInput ?? "").trim();
   if (!trimmed || trimmed === "*" || trimmed.toLowerCase() === "all") return "*";
   if (trimmed.includes(".")) return trimmed.toLowerCase();
-  const domain = String(mainDomain ?? "").trim().toLowerCase();
+  const domain = getMainDomain(mainDomain);
   if (domain) return `${trimmed.toLowerCase()}.${domain}`;
   if (options?.fallbackLocalhost === false) return trimmed.toLowerCase();
   return `${trimmed.toLowerCase()}.localhost`;
@@ -71,34 +73,56 @@ export function normalizeRouteProtocol(protocol: unknown): string {
 
 export interface RouteMatchingKey {
   host: string;
+  hosts?: string[];
   path: string;
   protocol: string;
 }
 
 export function normalizeRouteMatchingKey(input: {
   hostInput: string;
+  hosts?: string[];
   path: string;
   protocol: string;
-  mainDomain: string;
+  mainDomain: string | string[];
   fallbackLocalhost?: boolean;
 }): RouteMatchingKey {
-  return {
-    host: normalizeRouteHostKey(input.hostInput, input.mainDomain, {
+  const rawList =
+    input.hosts && input.hosts.length > 0
+      ? input.hosts
+      : parseRouteHosts(input.hostInput);
+
+  const normalizedHosts = rawList.map((h) =>
+    normalizeRouteHostKey(h, input.mainDomain, {
       fallbackLocalhost: input.fallbackLocalhost,
     }),
+  );
+
+  return {
+    host: normalizedHosts[0] || "*",
+    hosts: normalizedHosts,
     path: normalizeRoutePath(input.path),
     protocol: normalizeRouteProtocol(input.protocol),
   };
 }
 
 export function matchingKeysEqual(a: RouteMatchingKey, b: RouteMatchingKey): boolean {
-  return a.host === b.host && a.path === b.path && a.protocol === b.protocol;
+  if (a.path !== b.path || a.protocol !== b.protocol) return false;
+
+  const aHosts = a.hosts && a.hosts.length > 0 ? a.hosts : [a.host];
+  const bHosts = b.hosts && b.hosts.length > 0 ? b.hosts : [b.host];
+
+  const aSet = new Set(aHosts);
+  for (const bh of bHosts) {
+    if (aSet.has(bh)) return true;
+  }
+  return false;
 }
 
 export interface RouteIdentityRecord {
   id: string;
   name: string;
   host: string;
+  hosts?: string[];
   path: string;
   incomingProtocol: string;
 }
@@ -121,13 +145,18 @@ export function findRouteNameCollision(
 export function findMatchingKeyCollision(
   key: RouteMatchingKey,
   records: RouteIdentityRecord[],
-  options: { excludeRouteId?: string | null; mainDomain: string; fallbackLocalhost?: boolean },
+  options: {
+    excludeRouteId?: string | null;
+    mainDomain: string | string[];
+    fallbackLocalhost?: boolean;
+  },
 ): RouteIdentityRecord | null {
   return (
     records.find((record) => {
       if (options.excludeRouteId && record.id === options.excludeRouteId) return false;
       const existing = normalizeRouteMatchingKey({
         hostInput: record.host,
+        hosts: record.hosts,
         path: record.path,
         protocol: record.incomingProtocol,
         mainDomain: options.mainDomain,
@@ -147,10 +176,11 @@ export interface RouteIdentityIssue {
 export function collectRouteIdentityIssues(input: {
   name: unknown;
   hostInput: string;
+  hosts?: string[];
   path: string;
   protocol: string;
   records: RouteIdentityRecord[];
-  mainDomain: string;
+  mainDomain: string | string[];
   excludeRouteId?: string | null;
   requireName?: boolean;
   fallbackLocalhost?: boolean;
@@ -175,6 +205,7 @@ export function collectRouteIdentityIssues(input: {
 
   const key = normalizeRouteMatchingKey({
     hostInput: input.hostInput,
+    hosts: input.hosts,
     path: input.path,
     protocol: input.protocol,
     mainDomain: input.mainDomain,
@@ -202,6 +233,7 @@ export function matchingKeySubmitBlocked(issues: RouteIdentityIssue[]): boolean 
 export interface RouteCopySource {
   name: string;
   host: string;
+  hosts?: string[];
   path: string;
   incomingProtocol: string;
   targets?: unknown;
@@ -221,6 +253,7 @@ export interface RouteCopySource {
 export interface RouteCopyDraft {
   name: string;
   hostInput: string;
+  hosts: string[];
   path: string;
   incomingProtocol: string;
   targets: unknown[];
@@ -261,9 +294,15 @@ export function buildCopiedRouteDraft(
   existingNames: string[],
   copyLabel?: string,
 ): RouteCopyDraft {
+  const parsedHosts =
+    source.hosts && source.hosts.length > 0
+      ? source.hosts
+      : parseRouteHosts(source.host);
+
   return {
     name: nextCopyRouteName(source.name, existingNames, copyLabel),
-    hostInput: copySourceHostInput(source.host),
+    hostInput: copySourceHostInput(parsedHosts.join(", ")),
+    hosts: parsedHosts,
     path: source.path || "",
     incomingProtocol: source.incomingProtocol || "openai",
     targets: parseCopiedTargets(source.targets),

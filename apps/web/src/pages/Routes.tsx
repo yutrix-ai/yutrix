@@ -17,6 +17,7 @@ export default function RoutesPage() {
 
   const contextValue = {
     dialogOpen: state.dialogOpen, setDialogOpen: state.setDialogOpen, editingId: state.editingId, copying: state.copying, identityIssues: state.identityIssues, handleSave: state.handleSave, formData: state.formData, setFormData: state.setFormData,
+    mainDomain: state.mainDomain,
     providers: state.providers, handlePathChange: state.handlePathChange, handleProtocolChange: state.handleProtocolChange,
     policies: state.policies,
     groups: state.groups, usersForSelect: state.usersForSelect, closeDialog: state.closeDialog, getProviderProtocolForSelection: state.getProviderProtocolForSelection,

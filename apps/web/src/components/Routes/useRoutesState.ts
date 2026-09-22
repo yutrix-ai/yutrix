@@ -18,6 +18,10 @@ import {
   DEFAULT_PROVIDER_TIMEOUT_MS,
   matchingKeySubmitBlocked,
   trimRouteName,
+  parseRouteHosts,
+  parseMainDomains,
+  parseRouteDomainBindings,
+  validateRouteDomainBindings,
 } from "@promptgate/shared";
 
 interface GroupOption {
@@ -63,6 +67,7 @@ function parseRouteTargets(route: RouteItem): any[] {
 const emptyFormData = {
   name: "",
   hostInput: "*",
+  hosts: ["*"] as string[],
   path: "/v1/chat/completions",
   incomingProtocol: "openai",
   routingMode: "classic" as string,
@@ -395,6 +400,7 @@ export function useRoutesState() {
         id: route.id,
         name: route.name,
         host: route.host,
+        hosts: route.hosts,
         path: route.path,
         incomingProtocol: route.incomingProtocol,
       })),
@@ -406,6 +412,7 @@ export function useRoutesState() {
       collectRouteIdentityIssues({
         name: formData.name,
         hostInput: formData.hostInput,
+        hosts: formData.hosts,
         path: formData.path,
         protocol: formData.incomingProtocol,
         records: identityRecords,
@@ -413,7 +420,7 @@ export function useRoutesState() {
         excludeRouteId: editingId,
         requireName: true,
       }),
-    [formData.name, formData.hostInput, formData.path, formData.incomingProtocol, identityRecords, mainDomain, editingId],
+    [formData.name, formData.hostInput, formData.hosts, formData.path, formData.incomingProtocol, identityRecords, mainDomain, editingId],
   );
 
   const handleSave = async (e: React.FormEvent) => {
@@ -430,10 +437,23 @@ export function useRoutesState() {
       toast.error(t("routes.toasts.fillRequired", "请填写所有必填项（包含至少一个目标）"));
       return;
     }
+
+    const effectiveHosts = formData.hosts && formData.hosts.length > 0 ? formData.hosts : parseRouteHosts(formData.hostInput);
+    if (effectiveHosts.length > 1 || (effectiveHosts.length === 1 && effectiveHosts[0] !== "*")) {
+      const mainDomains = parseMainDomains(mainDomain);
+      const bindings = parseRouteDomainBindings(effectiveHosts, mainDomains);
+      const domainValidation = validateRouteDomainBindings(bindings);
+      if (!domainValidation.ok) {
+        toast.error(domainValidation.error || t("routes.domains.singleMainDomainRule", "同一个路由中只允许一个一级域名出现一次"));
+        return;
+      }
+    }
+
     try {
       const dataToSave = {
         name: trimRouteName(formData.name),
         hostInput: formData.hostInput,
+        hosts: effectiveHosts,
         path: formData.path,
         incomingProtocol: formData.incomingProtocol,
         routingMode: formData.routingMode || "classic",
@@ -488,17 +508,19 @@ export function useRoutesState() {
   const openCreate = () => {
     setEditingId(null);
     setCopying(false);
-    setFormData({ ...emptyFormData, targets: [] });
+    setFormData({ ...emptyFormData, hosts: ["*"], targets: [] });
     setDialogOpen(true);
   };
 
   const openCopy = (route: RouteItem) => {
     setEditingId(null);
     setCopying(true);
+    const routeHosts = parseRouteHosts(route.hosts, route.host);
     const draft = buildCopiedRouteDraft(
       {
         name: route.name,
         host: route.host,
+        hosts: routeHosts,
         path: route.path,
         incomingProtocol: route.incomingProtocol,
         targets: parseRouteTargets(route),
@@ -520,6 +542,8 @@ export function useRoutesState() {
     setFormData({
       ...emptyFormData,
       ...draft,
+      hosts: draft.hosts && draft.hosts.length > 0 ? draft.hosts : ["*"],
+      hostInput: draft.hosts && draft.hosts.length > 0 ? draft.hosts.join(", ") : "*",
       targets: coerceTargetsForRoutingMode(draft.targets, route.routingMode),
       routingMode: normalizeRoutingModeForForm(route.routingMode),
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
@@ -530,23 +554,31 @@ export function useRoutesState() {
   const openEdit = async (route: RouteItem) => {
     setEditingId(route.id);
     setCopying(false);
-    let hostInput = route.host;
+    const routeHosts = parseRouteHosts(route.hosts, route.host);
+    let hostInput = routeHosts.join(", ");
     if (hostInput === "all" || hostInput === "*") hostInput = "*";
     const epProto = route.incomingProtocol || "openai";
     const normalizedMode = normalizeRoutingModeForForm(route.routingMode);
     const parsedTargets = coerceTargetsForRoutingMode(parseRouteTargets(route), route.routingMode);
 
     setFormData({
-      name: route.name, hostInput, path: route.path, incomingProtocol: epProto,
+      name: route.name,
+      hostInput,
+      hosts: routeHosts,
+      path: route.path,
+      incomingProtocol: epProto,
       routingMode: normalizedMode,
       targets: parsedTargets,
       timeoutMs: route.timeoutMs,
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
-      retryCount: route.retryCount ?? 3, queueTimeoutMs: route.queueTimeoutMs, maxBodyMb: route.maxBodyMb,
+      retryCount: route.retryCount ?? 3,
+      queueTimeoutMs: route.queueTimeoutMs,
+      maxBodyMb: route.maxBodyMb,
       enabled: route.enabled,
       allowClientModel: route.allowClientModel || false,
       ipWhitelist: route.ipWhitelist || "",
-      authorizedUserIds: route.authorizedUserIds || [], authorizedGroupIds: route.authorizedGroupIds || [],
+      authorizedUserIds: route.authorizedUserIds || [],
+      authorizedGroupIds: route.authorizedGroupIds || [],
       fallbackMatchTarget: route.fallbackMatchTarget || false,
       schedules: undefined,
     });
@@ -589,6 +621,7 @@ export function useRoutesState() {
 
   return {
     t, routes, providers, allModels, policies, groups, usersForSelect, loading, dialogOpen, setDialogOpen, editingId, copying, identityIssues,
+    mainDomain,
     models, modelsProviderId, loadingModels, primaryModelMessage, setPrimaryModelMessage,
     deleteConfirm, setDeleteConfirm, formData, setFormData, fallbackModels, fallbackModelsProviderId,
     loadingFallbackModels, fallbackModelMessage, setFallbackModelMessage, scheduleDialogOpen, setScheduleDialogOpen,

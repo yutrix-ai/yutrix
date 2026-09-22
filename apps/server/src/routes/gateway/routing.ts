@@ -15,6 +15,120 @@ import {
   getDailyStartTime,
 } from "../../utils/scheduleEvaluator";
 
+import {
+  parseMainDomains,
+  matchHostToDomain,
+  normalizeDomain,
+  parseRouteHosts,
+} from "@promptgate/shared";
+
+export interface HostSubdomainLookupResult {
+  /** The matched subdomain database record, or null if matched as root/wildcard host */
+  subdomainRecord: any | null;
+  /** True if this host is allowed to fall back to wildcard routes */
+  allowFallback: boolean;
+  /** True if a matching subdomain was found but is explicitly disabled */
+  disabled?: boolean;
+}
+
+/**
+ * Resolves the subdomain or root host record for an incoming hostname.
+ *
+ * Implements a robust multi-domain resolution chain:
+ * 1. Exact match in `subdomains` table (subdomains.hostname == host)
+ * 2. Configured main domain root match (host in mainDomains) -> wildcard root access
+ * 3. Subdomain prefix match across any configured main domain (e.g. 'api' for 'api.domain2.com')
+ * 4. Unknown host fallback check (allowUnknownHostFallback == "true")
+ */
+export async function findSubdomainForHost(
+  hostname: string,
+): Promise<HostSubdomainLookupResult | null> {
+  const normalizedHost = normalizeDomain(hostname);
+  if (!normalizedHost) return null;
+
+  // 1. Exact match in subdomains table
+  const exactList = await db
+    .select()
+    .from(subdomains)
+    .where(eq(subdomains.hostname, normalizedHost));
+
+  if (exactList.length > 0) {
+    const record = exactList[0];
+    if (!record.enabled) {
+      return { subdomainRecord: record, allowFallback: false, disabled: true };
+    }
+    return { subdomainRecord: record, allowFallback: false };
+  }
+
+  // 2. Fetch main domains setting
+  const mainDomainSettings = await db
+    .select()
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "mainDomain"));
+  const rawMainDomain =
+    mainDomainSettings.length > 0 ? mainDomainSettings[0].value : "";
+  const mainDomains = parseMainDomains(rawMainDomain);
+
+  // If in dev and no mainDomain configured, fallback to localhost
+  if (mainDomains.length === 0 && process.env.NODE_ENV !== "production") {
+    mainDomains.push("localhost");
+  }
+
+  const match = matchHostToDomain(normalizedHost, mainDomains);
+
+  // 3. Match configured main domain root -> wildcard routes allowed directly
+  if (match.isRoot) {
+    return { subdomainRecord: null, allowFallback: true };
+  }
+
+  // 4. Subdomain prefix match across any configured main domain
+  if (match.prefix) {
+    const prefixRecords = await db
+      .select()
+      .from(subdomains)
+      .where(eq(subdomains.name, match.prefix));
+
+    if (prefixRecords.length > 0) {
+      const record = prefixRecords[0];
+      if (!record.enabled) {
+        return { subdomainRecord: record, allowFallback: false, disabled: true };
+      }
+      return { subdomainRecord: record, allowFallback: false };
+    }
+
+    const primaryDomain = mainDomains[0];
+    if (primaryDomain) {
+      const primaryCandidate = `${match.prefix}.${primaryDomain}`;
+      const primaryRecords = await db
+        .select()
+        .from(subdomains)
+        .where(eq(subdomains.hostname, primaryCandidate));
+
+      if (primaryRecords.length > 0) {
+        const record = primaryRecords[0];
+        if (!record.enabled) {
+          return { subdomainRecord: record, allowFallback: false, disabled: true };
+        }
+        return { subdomainRecord: record, allowFallback: false };
+      }
+    }
+  }
+
+  // 5. Unknown host fallback check
+  const fallbackSettings = await db
+    .select()
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "allowUnknownHostFallback"));
+  const allowFallback =
+    fallbackSettings.length > 0 && fallbackSettings[0].value === "true";
+
+  if (allowFallback) {
+    return { subdomainRecord: null, allowFallback: true };
+  }
+
+  return null;
+}
+
 /**
  * Resolves the subdomain record for the given hostname.
  *
@@ -26,46 +140,33 @@ export async function resolveSubdomain(
   incomingProtocol: string,
   reply: FastifyReply,
 ): Promise<{ subdomainRecord: any; allowFallback: boolean } | null> {
-  // Subdomain matching
-  const subdomainList = await db
-    .select()
-    .from(subdomains)
-    .where(eq(subdomains.hostname, hostname));
-  const subdomainRecord = subdomainList.length > 0 ? subdomainList[0] : null;
+  const result = await findSubdomainForHost(hostname);
 
-  if (
-    subdomainList.length > 0 &&
-    (!subdomainRecord || !subdomainRecord.enabled)
-  ) {
+  if (result?.disabled) {
     reply
       .code(403)
       .send(formatError(incomingProtocol, 403, "Subdomain is disabled"));
     return null;
   }
 
-  let allowFallback = false;
-  if (!subdomainRecord) {
-    const settings = await db
-      .select()
-      .from(systemSettings)
-      .where(eq(systemSettings.key, "allowUnknownHostFallback"));
-    allowFallback = settings.length > 0 && settings[0].value === "true";
-    if (!allowFallback) {
-      reply
-        .code(404)
-        .send(
-          formatError(
-            incomingProtocol,
-            404,
-            "No route configured for this host/path/protocol.",
-            "route_not_configured"
-          ),
-        );
-      return null;
-    }
+  if (!result) {
+    reply
+      .code(404)
+      .send(
+        formatError(
+          incomingProtocol,
+          404,
+          "No route configured for this host/path/protocol.",
+          "route_not_configured",
+        ),
+      );
+    return null;
   }
 
-  return { subdomainRecord, allowFallback };
+  return {
+    subdomainRecord: result.subdomainRecord,
+    allowFallback: result.allowFallback,
+  };
 }
 
 /**
@@ -82,6 +183,7 @@ export async function resolveEndpointAndRoute(
   allowFallback: boolean,
   reply: FastifyReply,
   log?: { error: (...args: any[]) => void },
+  requestHostname?: string,
 ): Promise<{ endpoint: any; route: any } | null> {
   // Endpoint matching (path + protocol)
   const endpointList = await db
@@ -110,11 +212,6 @@ export async function resolveEndpointAndRoute(
   }
   const endpoint = endpointList[0];
 
-  // Optional virtualModelAlias matching if request provides a model and endpoint has one defined
-  // We don't fail if body.model differs, unless we want strict routing.
-  // The requirement is "不要强依赖 body.model == endpoint.targetModel"
-  // So we just take the first matched route
-
   let allRoutes = await db
     .select()
     .from(endpointRoutes)
@@ -126,23 +223,55 @@ export async function resolveEndpointAndRoute(
     );
 
   let routes = allRoutes.filter(r => r.enabled);
+  const normHost = requestHostname ? normalizeDomain(requestHostname) : (subdomainRecord?.hostname || "");
 
-  if (subdomainRecord) {
-    const subdomainRoutes = routes.filter(
-      (r) => r.subdomainId === subdomainRecord.id,
-    );
-    if (subdomainRoutes.length > 0) {
-      routes = subdomainRoutes;
-    } else {
-      routes = routes.filter((r) => !r.subdomainId); // fallback to wildcard
+  // Match routes against hosts or subdomainId
+  const specificRoutes = routes.filter((r) => {
+    if (r.hosts) {
+      const hList = parseRouteHosts(r.hosts);
+      if (hList.includes("*")) return false;
+      return (
+        (normHost && hList.includes(normHost)) ||
+        (subdomainRecord && hList.includes(subdomainRecord.hostname))
+      );
     }
+    return subdomainRecord && r.subdomainId === subdomainRecord.id;
+  });
+
+  const wildcardRoutes = routes.filter((r) => {
+    if (r.hosts) {
+      return parseRouteHosts(r.hosts).includes("*");
+    }
+    return !r.subdomainId;
+  });
+
+  if (specificRoutes.length > 0) {
+    routes = specificRoutes;
   } else {
-    routes = routes.filter((r) => !r.subdomainId); // only match wildcard routes
+    routes = wildcardRoutes;
   }
 
-  const matchedAllRoutes = subdomainRecord
-    ? allRoutes.filter(r => r.subdomainId === subdomainRecord.id || !r.subdomainId)
-    : allRoutes.filter(r => !r.subdomainId);
+  const allSpecificRoutes = allRoutes.filter((r) => {
+    if (r.hosts) {
+      const hList = parseRouteHosts(r.hosts);
+      if (hList.includes("*")) return false;
+      return (
+        (normHost && hList.includes(normHost)) ||
+        (subdomainRecord && hList.includes(subdomainRecord.hostname))
+      );
+    }
+    return subdomainRecord && r.subdomainId === subdomainRecord.id;
+  });
+
+  const allWildcardRoutes = allRoutes.filter((r) => {
+    if (r.hosts) {
+      return parseRouteHosts(r.hosts).includes("*");
+    }
+    return !r.subdomainId;
+  });
+
+  const matchedAllRoutes =
+    allSpecificRoutes.length > 0 ? allSpecificRoutes : allWildcardRoutes;
 
   if (routes.length === 0) {
     if (matchedAllRoutes.length > 0) {

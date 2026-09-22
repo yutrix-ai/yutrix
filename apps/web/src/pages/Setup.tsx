@@ -311,10 +311,10 @@ export default function Setup() {
                     id="main-domain"
                     value={mainDomain}
                     onChange={(e) => setMainDomain(e.target.value)}
-                    placeholder="e.g. pg.example.com or localhost:3000"
+                    placeholder="例如: brtel.link, yutrix.ai（支持多个域名以逗号分隔）"
                   />
                   <p className="text-xs text-muted-foreground">
-                    {t("setup.mainDomainHint", "用于生成子域名路由与跨域访问校验，例如 gateway.yourdomain.com")}
+                    {t("setup.mainDomainHint", "用于生成子域名路由与跨域访问校验，支持配置多个主域名（以逗号分隔），例如 brtel.link, yutrix.ai")}
                   </p>
                 </div>
                 <div className="space-y-2">

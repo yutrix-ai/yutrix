@@ -10,7 +10,7 @@ import { AlertCircle, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouteForm } from "./RouteFormContext";
 import { RouteTargetsTable } from "./RouteTargetsTable";
-import { StrategyRoutingEditor, StrategyRoutingSummary } from "./StrategyRoutingEditor";
+import { RouteDomainConfig } from "./RouteDomainConfig";
 import { matchingKeySubmitBlocked, ROUTE_IDENTITY_ERROR } from "@promptgate/shared";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ export function RouteDialog() {
   const [showStrategyPanel, setShowStrategyPanel] = useState(false);
   const {
     dialogOpen, setDialogOpen, editingId, copying, identityIssues = [], handleSave, formData, setFormData,
+    mainDomain,
     providers, handlePathChange, handleProtocolChange,
     policies,
     groups, usersForSelect, closeDialog, getProviderProtocolForSelection,
@@ -64,7 +65,7 @@ export function RouteDialog() {
               )}
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                 <div className="space-y-2">
-                  <Label>{t("routes.fields.name", "规则名称")}</Label>
+                  <Label>{t("routes.fields.name", "规则名称 *")}</Label>
                   <Input
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -81,29 +82,7 @@ export function RouteDialog() {
                     </p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <Label>{t("routes.fields.host", "Host / 二级域名 *")}</Label>
-                  <Input
-                    value={formData.hostInput}
-                    onChange={e => setFormData({ ...formData, hostInput: e.target.value })}
-                    placeholder={t("routes.placeholders.host", "例如：api.yourdomain.com 或 sub")}
-                    required
-                    autoFocus={!!copying}
-                    aria-invalid={!!matchingKeyIssue}
-                    className={cn(matchingKeyIssue && "border-destructive focus-visible:ring-destructive")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t("routes.fields.path", "请求路径 *")}</Label>
-                  <Input
-                    value={formData.path}
-                    onChange={e => handlePathChange(e.target.value)}
-                    placeholder={t("routes.placeholders.path", "例如：/v1/chat/completions")}
-                    required
-                    aria-invalid={!!matchingKeyIssue}
-                    className={cn(matchingKeyIssue && "border-destructive focus-visible:ring-destructive")}
-                  />
-                </div>
+
                 <div className="space-y-2">
                   <Label>{t("routes.fields.protocol", "路由协议 *")}</Label>
                   <Select value={formData.incomingProtocol} onValueChange={handleProtocolChange}>
@@ -115,8 +94,36 @@ export function RouteDialog() {
                       <SelectItem value="anthropic">{t("routes.hints.anthropicProtocol", "Anthropic 格式")}</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2 col-span-2">
+                  <Label>{t("routes.fields.path", "请求路径 *")}</Label>
+                  <Input
+                    value={formData.path}
+                    onChange={e => handlePathChange(e.target.value)}
+                    placeholder={t("routes.placeholders.path", "例如：/v1/chat/completions")}
+                    required
+                    aria-invalid={!!matchingKeyIssue}
+                    className={cn(matchingKeyIssue && "border-destructive focus-visible:ring-destructive")}
+                  />
+                </div>
+
+                {/* 域名与二级域名配置 */}
+                <div className="col-span-2">
+                  <RouteDomainConfig
+                    hosts={formData.hosts}
+                    hostInput={formData.hostInput}
+                    mainDomain={mainDomain || ""}
+                    onChange={(nextHosts, nextHostInput) => {
+                      setFormData({
+                        ...formData,
+                        hosts: nextHosts,
+                        hostInput: nextHostInput,
+                      });
+                    }}
+                  />
                   {matchingKeyIssue && !copying && (
-                    <p className="text-xs text-destructive col-span-2">
+                    <p className="text-xs text-destructive mt-1.5">
                       {t("routes.errors.matchingKeyConflict", "该 Host、Path 与 Protocol 组合已有路由")}
                     </p>
                   )}

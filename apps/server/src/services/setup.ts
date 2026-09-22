@@ -20,6 +20,12 @@ import {
   ensureDefaultGroup,
 } from "../startup/seed";
 import {
+  ERR_MAINTENANCE_ACTIVE,
+  ERR_MAINTENANCE_ACTIVE_MESSAGE,
+  parseMainDomains,
+  formatMainDomains,
+} from "@promptgate/shared";
+import {
   ensureFunnelRoutingColumns,
   ensureStrategyRoutingColumns,
   ensureProviderModelContextWindowColumn,
@@ -216,12 +222,13 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
     throw error;
   }
 
-  const mainDomain = params.mainDomain?.trim();
-  if (!mainDomain) {
+  const parsedDomains = parseMainDomains(params.mainDomain);
+  if (parsedDomains.length === 0) {
     const error: any = new Error("Main domain is required");
     error.statusCode = 400;
     throw error;
   }
+  const mainDomain = formatMainDomains(parsedDomains);
 
   const secret = params.secret?.trim();
   if (!secret || secret.length < 16) {

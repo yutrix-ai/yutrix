@@ -9,7 +9,7 @@ import {
 } from "../db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
-import { normalizeRouteHostKey } from "@promptgate/shared";
+import { normalizeRouteHostKey, parseMainDomains } from "@promptgate/shared";
 
 export async function getUserAuthorizedRouteIds(userId: string): Promise<Set<string>> {
   const userGroupsList = await db
@@ -96,13 +96,14 @@ export async function resolveRouteHost(hostInput: string) {
     .select()
     .from(systemSettings)
     .where(eq(systemSettings.key, "mainDomain"));
-  const mainDomain = settings.length > 0 ? settings[0].value : "";
+  const rawMainDomain = settings.length > 0 ? settings[0].value : "";
+  const domains = parseMainDomains(rawMainDomain);
 
-  if (!trimmed.includes(".") && !mainDomain && process.env.NODE_ENV === "production") {
+  if (!trimmed.includes(".") && domains.length === 0 && process.env.NODE_ENV === "production") {
     throw new Error("请先在系统设置中配置主域名，或填写完整 Host。");
   }
 
-  const hostname = normalizeRouteHostKey(trimmed, mainDomain || "", {
+  const hostname = normalizeRouteHostKey(trimmed, rawMainDomain || "", {
     fallbackLocalhost: process.env.NODE_ENV !== "production",
   });
   const shortName = hostname.split(".")[0];
@@ -174,15 +175,52 @@ export async function findOrCreateRouteSubdomain(input: {
   }
 }
 
+/**
+ * Bind multiple hosts to subdomains.
+ */
+export async function findOrCreateRouteSubdomains(input: {
+  hostInputs: string[];
+  userId: string;
+  description?: string;
+}): Promise<{ subdomainId: string | null; hostname: string }[]> {
+  const results: { subdomainId: string | null; hostname: string }[] = [];
+  for (const h of input.hostInputs) {
+    const res = await findOrCreateRouteSubdomain({
+      hostInput: h,
+      userId: input.userId,
+      description: input.description,
+    });
+    results.push(res);
+  }
+  return results;
+}
+
 export async function cleanupUnusedRouteSubdomain(subdomainId: string | null) {
   if (!subdomainId) return;
 
-  const remainingRoutes = await db
-    .select({ id: endpointRoutes.id })
-    .from(endpointRoutes)
-    .where(eq(endpointRoutes.subdomainId, subdomainId));
+  const targetSub = await db
+    .select()
+    .from(subdomains)
+    .where(eq(subdomains.id, subdomainId));
+  if (targetSub.length === 0) return;
+  const targetHostname = targetSub[0].hostname;
 
-  if (remainingRoutes.length === 0) {
+  const remainingRoutes = await db
+    .select({
+      id: endpointRoutes.id,
+      subdomainId: endpointRoutes.subdomainId,
+      hosts: endpointRoutes.hosts,
+    })
+    .from(endpointRoutes);
+
+  const isUsed = remainingRoutes.some((r) => {
+    if (r.subdomainId === subdomainId) return true;
+    if (r.hosts && r.hosts.includes(targetHostname)) return true;
+    return false;
+  });
+
+  if (!isUsed) {
     await db.delete(subdomains).where(eq(subdomains.id, subdomainId));
   }
 }
+

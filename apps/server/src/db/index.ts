@@ -276,6 +276,7 @@ async function runAutoMigrations() {
     "ALTER TABLE provider_models ADD COLUMN inputTokenPricePerM real;",
     "ALTER TABLE provider_models ADD COLUMN outputTokenPricePerM real;",
     "ALTER TABLE provider_models ADD COLUMN tokenizerRepo text;",
+    "ALTER TABLE provider_models ADD COLUMN alias text;",
     "ALTER TABLE provider_models ADD COLUMN active integer DEFAULT 1 NOT NULL;",
 
     // ── endpoints ──
@@ -301,6 +302,11 @@ async function runAutoMigrations() {
     "ALTER TABLE endpoint_routes ADD COLUMN allowClientModel integer DEFAULT 0 NOT NULL;",
     "ALTER TABLE endpoint_routes ADD COLUMN schedules text;",
     "ALTER TABLE endpoint_routes ADD COLUMN ipWhitelist text;",
+    "ALTER TABLE endpoint_routes ADD COLUMN retryCount integer DEFAULT 3 NOT NULL;",
+    "ALTER TABLE endpoint_routes ADD COLUMN routingMode text DEFAULT 'strategy' NOT NULL;",
+    "ALTER TABLE endpoint_routes ADD COLUMN targets text;",
+    "ALTER TABLE endpoint_routes ADD COLUMN timeoutEjectEnabled integer DEFAULT 0 NOT NULL;",
+    "ALTER TABLE endpoint_routes ADD COLUMN hosts text;",
 
     // ── users ──
     "ALTER TABLE users ADD COLUMN maxInputTokensOverride integer;",

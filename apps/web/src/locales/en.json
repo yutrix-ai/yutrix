@@ -178,13 +178,38 @@
         "animAurora": "🌌 Cosmic Aurora (Always)",
         "appendSlogan": "Append Slogan to Browser Tab Title",
         "appendSloganDesc": "When enabled, the browser tab title will be displayed as: System Name - System Slogan",
-        "hideSystemName": "Only Display Slogan (Hide System Name)"
+        "hideSystemName": "Only Display Slogan (Hide System Name)",
+        "githubIcon": "Top GitHub Icon",
+        "showGithubIcon": "Display GitHub repository entry in the top bar",
+        "domainScope": "Domain Scope",
+        "globalDefault": "Global Default",
+        "customized": "Customized",
+        "inheriting": "Inheriting",
+        "globalDefaultNotice": "Configure the global default branding identity. Domains without custom branding will inherit these settings.",
+        "domainScopeNotice": "Configuring independent branding for {{domain}}. Empty fields will automatically inherit the global default.",
+        "copyFromGlobal": "Copy Global Settings",
+        "copiedFromGlobal": "Copied global default settings to current domain",
+        "resetDomainBranding": "Clear Customization (Inherit)",
+        "resetDomainSuccess": "Cleared domain branding customization, restored inheritance from global default",
+        "inheritPlaceholder": "Inheriting default: {{value}}",
+        "animInherit": "Inherit Global Default ({{anim}})",
+        "customLogoBadge": "Custom Logo",
+        "inheritedLogoBadge": "Inherited",
+        "resetToDefaultLogo": "Reset to Global Logo",
+        "noDomainsHint": "💡 No main domains configured yet. Add main domains under 'Basic Settings' below to configure independent branding and logos per domain."
       },
       "basic": {
         "title": "Basic Settings",
         "desc": "Configure domain and network-related basic parameters",
-        "mainDomain": "Main Domain",
-        "mainDomainHint": "Base domain used to generate subdomains",
+        "mainDomain": "Main Domains",
+        "mainDomainHint": "Supports configuring multiple main domains (external reverse proxies like Caddy can route multiple domains to this gateway; subdomains and routes will automatically work across all configured main domains). The first domain is the default primary domain.",
+        "mainDomainPlaceholder": "Enter domain and press Enter or click Add, e.g. brtel.link",
+        "addDomain": "Add",
+        "primaryTag": "Primary",
+        "setPrimary": "Set Primary",
+        "removeDomain": "Remove domain",
+        "domainInvalid": "Please enter a valid domain format (e.g. example.com)",
+        "domainExists": "Domain already exists",
         "queueTimeout": "Default Queue Timeout (ms)",
         "queueTimeoutHint": "Maximum time a request waits in the queue"
       },
@@ -780,6 +805,26 @@
     },
     "copyName": {
       "label": "Copy"
+    },
+    "domains": {
+      "title": "Domain & Subdomain Configuration",
+      "modeLabel": "Domain Matching Mode",
+      "modeWildcard": "All Domains (*)",
+      "modeSpecific": "Specific Subdomains",
+      "modeWildcardDesc": "Matches any incoming host header (*); triggers whenever the request path matches.",
+      "primaryDomain": "Primary Domain",
+      "subdomainPrefix": "Subdomain Prefix",
+      "subdomainPlaceholder": "e.g. code, api or @ (root domain)",
+      "customHost": "Custom Full Host",
+      "customPlaceholder": "e.g. api.yourdomain.com",
+      "customOption": "Custom Full Host",
+      "addBinding": "Add Subdomain",
+      "addCustom": "Add Custom Host",
+      "alreadyAdded": "Already Added",
+      "allUsedHint": "All primary domains configured (each primary domain may only appear once per route)",
+      "singleMainDomainRule": "Each primary domain can appear at most once per route rule",
+      "rootDomain": "Root Domain",
+      "deleteBinding": "Remove Domain"
     },
     "badges": {
       "bestEffort": "Best Effort"
@@ -1562,7 +1607,7 @@
       "enabled": "Enable Immediately"
     },
     "hints": {
-      "prefix": "The full domain will be automatically concatenated as prefix + mainDomain."
+      "prefix": "The full domain will be automatically concatenated as prefix + main domain (effective across all configured main domains)."
     },
     "placeholders": {
       "prefix": "e.g., code",

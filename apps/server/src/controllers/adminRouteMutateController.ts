@@ -15,12 +15,21 @@ import { validateRouteConfig } from "../utils/routeValidator";
 import {
   saveRouteAuthorizations,
   findOrCreateRouteSubdomain,
+  findOrCreateRouteSubdomains,
   cleanupUnusedRouteSubdomain,
 } from "../services/routeService";
 import { stringifyStrategyRoutingRules } from "../services/strategyRouting";
 import { normalizeIpAclForStorage } from "../utils/ipAcl";
-import { assertRouteIdentityAvailable } from "../services/routeIdentityGuard";
-import { DEFAULT_PROVIDER_TIMEOUT_MS, trimRouteName } from "@promptgate/shared";
+import { assertRouteIdentityAvailable, getMainDomainSetting } from "../services/routeIdentityGuard";
+import {
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+  trimRouteName,
+  parseMainDomains,
+  parseRouteHosts,
+  formatRouteHosts,
+  parseRouteDomainBindings,
+  validateRouteDomainBindings,
+} from "@promptgate/shared";
 import { normalizeRoutingModeInput, resolveRouteRoutingMode } from "../services/opcAgentRouting";
 
 export async function createAdminRoute(request: FastifyRequest, reply: FastifyReply) {
@@ -49,17 +58,31 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     timeoutEjectEnabled,
     fallbackMatchTarget,
   } = body;
-  const hostInput = rawHostInput ?? body.host;
+  const rawHostsInput = body.hosts ?? rawHostInput ?? body.host;
+  const parsedHosts = parseRouteHosts(rawHostsInput);
+  const hostInput = parsedHosts.join(", ");
   const resolvedRoutingMode = normalizeRoutingModeInput(routingMode);
 
-  if (!hostInput || !path || !incomingProtocol || !targets || targets.length === 0) {
+  if (parsedHosts.length === 0 || !path || !incomingProtocol || !targets || targets.length === 0) {
     return reply.code(400).send({ error: "缺少必填字段或路由目标为空" });
+  }
+
+  // Validate main domain single use rule: "同一个路由中只允许一个一级域名出现一次"
+  if (parsedHosts.length > 1 || (parsedHosts.length === 1 && parsedHosts[0] !== "*")) {
+    const mainDomainSetting = await getMainDomainSetting();
+    const mainDomains = parseMainDomains(mainDomainSetting);
+    const bindings = parseRouteDomainBindings(parsedHosts, mainDomains);
+    const domainValidation = validateRouteDomainBindings(bindings);
+    if (!domainValidation.ok) {
+      return reply.code(400).send({ error: domainValidation.error });
+    }
   }
 
   const routeName = trimRouteName(name);
   const identity = await assertRouteIdentityAvailable({
     name: routeName,
     hostInput,
+    hosts: parsedHosts,
     path,
     incomingProtocol,
     requireName: true,
@@ -90,16 +113,16 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
 
   // Resolve host
   let subdomainId = null;
-  let routeHost = hostInput === "*" ? "*" : hostInput;
-  if (hostInput !== "*") {
+  let finalHosts: string | null = null;
+  if (parsedHosts.length > 0 && parsedHosts[0] !== "*") {
     try {
-      const resolvedHost = await findOrCreateRouteSubdomain({
-        hostInput,
+      const resolvedHosts = await findOrCreateRouteSubdomains({
+        hostInputs: parsedHosts,
         userId: user.id,
         description: description || "",
       });
-      subdomainId = resolvedHost.subdomainId;
-      routeHost = resolvedHost.hostname;
+      subdomainId = resolvedHosts[0]?.subdomainId || null;
+      finalHosts = JSON.stringify(resolvedHosts.map((r) => r.hostname));
     } catch (e: any) {
       return reply.code(400).send({ error: e.message });
     }
@@ -145,6 +168,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     name: routeName,
     endpointId,
     subdomainId,
+    hosts: finalHosts,
     providerId: firstTarget.providerId,
     providerProtocol: firstTarget.providerProtocol,
     modelId: firstTarget.modelId || "",
@@ -168,6 +192,8 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     .select({ name: providers.name })
     .from(providers)
     .where(eq(providers.id, firstTarget.providerId));
+
+  const routeHost = parsedHosts.length > 0 ? formatRouteHosts(parsedHosts) : "*";
 
   logAction({
     level: "信息",
@@ -262,18 +288,32 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
   const firstTarget = resolvedTargets[0];
 
   let finalSubdomainId = route.subdomainId;
-  const currentHostname = subdomain ? subdomain.hostname : "*";
-  const requestedHostInput = body.hostInput ?? body.host;
-  const nextHostInput =
-    requestedHostInput !== undefined && requestedHostInput !== ""
-      ? requestedHostInput
-      : currentHostname;
+  const currentHosts = parseRouteHosts(route.hosts, subdomain?.hostname);
+  const requestedHostsInput = body.hosts ?? body.hostInput ?? body.host;
+  const nextHosts =
+    requestedHostsInput !== undefined && requestedHostsInput !== ""
+      ? parseRouteHosts(requestedHostsInput)
+      : currentHosts;
+  const nextHostInput = nextHosts.join(", ");
   const nextPath = body.path !== undefined ? body.path : endpoint.path;
   const nameProvided = body.name !== undefined;
   const nextName = nameProvided ? trimRouteName(body.name) : route.name || "";
+
+  // Validate main domain single use rule: "同一个路由中只允许一个一级域名出现一次"
+  if (nextHosts.length > 1 || (nextHosts.length === 1 && nextHosts[0] !== "*")) {
+    const mainDomainSetting = await getMainDomainSetting();
+    const mainDomains = parseMainDomains(mainDomainSetting);
+    const bindings = parseRouteDomainBindings(nextHosts, mainDomains);
+    const domainValidation = validateRouteDomainBindings(bindings);
+    if (!domainValidation.ok) {
+      return reply.code(400).send({ error: domainValidation.error });
+    }
+  }
+
   const identity = await assertRouteIdentityAvailable({
     name: nextName,
     hostInput: nextHostInput,
+    hosts: nextHosts,
     path: nextPath,
     incomingProtocol: patchIncomingProtocol,
     excludeRouteId: id,
@@ -283,17 +323,20 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     return reply.code(400).send({ error: identity.error, code: identity.code });
   }
 
-  if (requestedHostInput && requestedHostInput !== currentHostname) {
-    if (requestedHostInput === "*") {
+  let finalHosts = route.hosts;
+  if (requestedHostsInput !== undefined) {
+    if (nextHosts.length === 1 && nextHosts[0] === "*") {
       finalSubdomainId = null;
+      finalHosts = null;
     } else {
       try {
-        const resolvedHost = await findOrCreateRouteSubdomain({
-          hostInput: requestedHostInput,
+        const resolvedHosts = await findOrCreateRouteSubdomains({
+          hostInputs: nextHosts,
           userId: user.id,
           description: body.description,
         });
-        finalSubdomainId = resolvedHost.subdomainId;
+        finalSubdomainId = resolvedHosts[0]?.subdomainId || null;
+        finalHosts = JSON.stringify(resolvedHosts.map((r) => r.hostname));
       } catch (e: any) {
         return reply.code(400).send({ error: e.message });
       }
@@ -354,6 +397,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     name: nameProvided ? nextName : route.name,
     endpointId: finalEndpointId,
     subdomainId: finalSubdomainId,
+    hosts: finalHosts,
     providerId: firstTarget.providerId,
     providerProtocol: firstTarget.providerProtocol,
     modelId: firstTarget.modelId || "",
@@ -394,7 +438,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     username: user.username,
     routeId: id,
     routeName: nameProvided ? nextName : (route.name || endpoint.name || ""),
-    host: updatedSubdomain[0]?.hostname || "*",
+    host: finalHosts ? parseRouteHosts(finalHosts).join(", ") : (updatedSubdomain[0]?.hostname || "*"),
     path: updatedEndpoint[0]?.path || endpoint.path,
     incomingProtocol: updatedEndpoint[0]?.incomingProtocol || endpoint.incomingProtocol,
     providerName: updatedProvider[0]?.name || firstTarget.providerId,
@@ -433,6 +477,7 @@ export async function deleteAdminRoute(request: FastifyRequest, reply: FastifyRe
       fallbackEnabled: endpointRoutes.fallbackEnabled,
       retryCount: endpointRoutes.retryCount,
       subdomainId: endpointRoutes.subdomainId,
+      hosts: endpointRoutes.hosts,
     })
     .from(endpointRoutes)
     .where(eq(endpointRoutes.id, id));
@@ -442,13 +487,16 @@ export async function deleteAdminRoute(request: FastifyRequest, reply: FastifyRe
     const subs = existing[0].subdomainId
       ? await db.select({ hostname: subdomains.hostname }).from(subdomains).where(eq(subdomains.id, existing[0].subdomainId))
       : [];
+    const hostText = existing[0].hosts
+      ? parseRouteHosts(existing[0].hosts).join(", ")
+      : (subs[0]?.hostname || "*");
     logAction({
       level: "警告",
       action: "路由删除",
       username: user.username,
       routeName: existing[0].name || (eps.length > 0 ? (eps[0].name || "未知路由") : "未知路由"),
       routeId: id,
-      host: subs[0]?.hostname || "*",
+      host: hostText,
       path: eps[0]?.path,
       incomingProtocol: eps[0]?.incomingProtocol,
       providerName: provs[0]?.name || existing[0].providerId,
@@ -461,7 +509,18 @@ export async function deleteAdminRoute(request: FastifyRequest, reply: FastifyRe
   await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, id));
   await db.delete(endpointRoutes).where(eq(endpointRoutes.id, id));
   if (existing.length > 0) {
-    await cleanupUnusedRouteSubdomain(existing[0].subdomainId);
+    if (existing[0].subdomainId) {
+      await cleanupUnusedRouteSubdomain(existing[0].subdomainId);
+    }
+    const parsed = parseRouteHosts(existing[0].hosts);
+    for (const h of parsed) {
+      if (h !== "*") {
+        const matchingSubs = await db.select({ id: subdomains.id }).from(subdomains).where(eq(subdomains.hostname, h));
+        for (const sub of matchingSubs) {
+          await cleanupUnusedRouteSubdomain(sub.id);
+        }
+      }
+    }
   }
 
   return { success: true };

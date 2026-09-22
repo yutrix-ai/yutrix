@@ -5,6 +5,9 @@ import { systemSettings, endpoints, endpointRoutes, subdomains } from "../../db/
 import { formatError } from "../../utils/gatewayError";
 import { extractAndValidateApiKey } from "./auth";
 
+import { findSubdomainForHost } from "./routing";
+import { parseRouteHosts } from "@promptgate/shared";
+
 /**
  * Infer `owned_by` from provider protocol and model ID heuristic.
  */
@@ -29,18 +32,12 @@ async function buildModelsFromRoutes(
 ): Promise<Array<{ id: string; object: string; created: number; owned_by: string }>> {
   const hostname = request.hostname; // Fastify strips port automatically
 
-  // --- 1. Resolve subdomain ---
-  const subdomainRows = await db
-    .select()
-    .from(subdomains)
-    .where(eq(subdomains.hostname, hostname));
-  const subdomainRecord = subdomainRows.length > 0 ? subdomainRows[0] : null;
-
-  // If the hostname matched a configured subdomain but it's disabled, return
-  // empty – the proxy handler would also reject with 403.
-  if (subdomainRecord && !subdomainRecord.enabled) {
+  // --- 1. Resolve subdomain via shared multi-domain resolver ---
+  const lookup = await findSubdomainForHost(hostname);
+  if (lookup?.disabled || !lookup) {
     return [];
   }
+  const subdomainRecord = lookup.subdomainRecord;
 
   // --- 2. Query all active & enabled endpoints ---
   const allEndpoints = await db
@@ -80,12 +77,25 @@ async function buildModelsFromRoutes(
 
     // Subdomain filtering – same logic as routing.ts resolveEndpointAndRoute
     if (subdomainRecord) {
-      // When we have a subdomain, accept routes bound to this subdomain
-      // OR wildcard routes (no subdomainId).
-      if (route.subdomainId && route.subdomainId !== subdomainRecord.id) continue;
+      if (route.hosts) {
+        const hList = parseRouteHosts(route.hosts);
+        if (
+          !hList.includes("*") &&
+          !hList.includes(hostname) &&
+          !hList.includes(subdomainRecord.hostname)
+        ) {
+          continue;
+        }
+      } else if (route.subdomainId && route.subdomainId !== subdomainRecord.id) {
+        continue;
+      }
     } else {
-      // No subdomain matched – only include wildcard routes.
-      if (route.subdomainId) continue;
+      if (route.hosts) {
+        const hList = parseRouteHosts(route.hosts);
+        if (!hList.includes("*") && !hList.includes(hostname)) continue;
+      } else if (route.subdomainId) {
+        continue;
+      }
     }
 
     // Extract L0 model ID
