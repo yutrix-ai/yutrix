@@ -81,36 +81,24 @@ export async function findSubdomainForHost(
     return { subdomainRecord: null, allowFallback: true };
   }
 
-  // 4. Subdomain prefix match across any configured main domain
+  // 4. Same prefix on another configured main domain.
+  // Only when exactly one sibling exists (`api.brtel.link` can serve `api.yutrix.ai`).
+  // Two rows that share the label stay isolated; the request must hit its own hostname.
   if (match.prefix) {
-    const prefixRecords = await db
+    const named = await db
       .select()
       .from(subdomains)
       .where(eq(subdomains.name, match.prefix));
-
-    if (prefixRecords.length > 0) {
-      const record = prefixRecords[0];
+    const siblings = named.filter((row) => {
+      const host = String(row.hostname || "").trim().toLowerCase();
+      return mainDomains.some((domain) => host === `${match.prefix}.${domain}`);
+    });
+    if (siblings.length === 1) {
+      const record = siblings[0];
       if (!record.enabled) {
         return { subdomainRecord: record, allowFallback: false, disabled: true };
       }
       return { subdomainRecord: record, allowFallback: false };
-    }
-
-    const primaryDomain = mainDomains[0];
-    if (primaryDomain) {
-      const primaryCandidate = `${match.prefix}.${primaryDomain}`;
-      const primaryRecords = await db
-        .select()
-        .from(subdomains)
-        .where(eq(subdomains.hostname, primaryCandidate));
-
-      if (primaryRecords.length > 0) {
-        const record = primaryRecords[0];
-        if (!record.enabled) {
-          return { subdomainRecord: record, allowFallback: false, disabled: true };
-        }
-        return { subdomainRecord: record, allowFallback: false };
-      }
     }
   }
 

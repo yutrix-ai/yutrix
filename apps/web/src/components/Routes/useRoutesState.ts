@@ -407,21 +407,22 @@ export function useRoutesState() {
     [routes],
   );
 
-  const identityIssues = useMemo(
-    () =>
-      collectRouteIdentityIssues({
-        name: formData.name,
-        hostInput: formData.hostInput,
-        hosts: formData.hosts,
-        path: formData.path,
-        protocol: formData.incomingProtocol,
-        records: identityRecords,
-        mainDomain,
-        excludeRouteId: editingId,
-        requireName: true,
-      }),
-    [formData.name, formData.hostInput, formData.hosts, formData.path, formData.incomingProtocol, identityRecords, mainDomain, editingId],
-  );
+  const identityIssues = useMemo(() => {
+    const drafted =
+      (formData.hosts && formData.hosts.length > 0) ||
+      String(formData.hostInput || "").trim().length > 0;
+    return collectRouteIdentityIssues({
+      name: formData.name,
+      hostInput: drafted ? formData.hostInput : "__draft__",
+      hosts: drafted ? formData.hosts : ["__draft__"],
+      path: formData.path,
+      protocol: formData.incomingProtocol,
+      records: identityRecords,
+      mainDomain,
+      excludeRouteId: editingId,
+      requireName: true,
+    });
+  }, [formData.name, formData.hostInput, formData.hosts, formData.path, formData.incomingProtocol, identityRecords, mainDomain, editingId]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();

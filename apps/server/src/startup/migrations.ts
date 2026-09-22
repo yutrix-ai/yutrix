@@ -29,6 +29,27 @@ export async function columnExists(tableName: string, columnName: string): Promi
   return info.rows.some((row: any) => row[1] === columnName);
 }
 
+/** Nullable text. Existing rows stay NULL and keep matching by subdomainId. */
+export async function ensureRouteHostsColumn(): Promise<void> {
+  if (!(await tableExists("endpoint_routes"))) return;
+  if (getDbDriver() === "postgres") {
+    const result = await (client as any).query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'endpoint_routes' AND column_name = 'hosts'
+       LIMIT 1`,
+    );
+    if ((result?.rows?.length ?? 0) > 0) return;
+    await (client as any).query(`ALTER TABLE "endpoint_routes" ADD COLUMN "hosts" text`);
+    console.log("[PromptGate] Added hosts column to endpoint_routes.");
+    return;
+  }
+  await addColumnIfMissing(
+    "endpoint_routes",
+    "hosts",
+    "ALTER TABLE endpoint_routes ADD COLUMN hosts text",
+  );
+}
+
 export async function addColumnIfMissing(tableName: string, columnName: string, ddl: string) {
   if (!(await tableExists(tableName))) return;
   if (await columnExists(tableName, columnName)) return;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, SlidersHorizontal } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouteForm } from "./RouteFormContext";
 import { RouteTargetsTable } from "./RouteTargetsTable";
@@ -16,7 +16,6 @@ import { cn } from "@/lib/utils";
 
 export function RouteDialog() {
   const { t } = useTranslation();
-  const [showStrategyPanel, setShowStrategyPanel] = useState(false);
   const {
     dialogOpen, setDialogOpen, editingId, copying, identityIssues = [], handleSave, formData, setFormData,
     mainDomain,
@@ -63,7 +62,7 @@ export function RouteDialog() {
                   </span>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>{t("routes.fields.name", "规则名称 *")}</Label>
                   <Input
@@ -96,7 +95,7 @@ export function RouteDialog() {
                   </Select>
                 </div>
 
-                <div className="space-y-2 col-span-2">
+                <div className="space-y-2 sm:col-span-2">
                   <Label>{t("routes.fields.path", "请求路径 *")}</Label>
                   <Input
                     value={formData.path}
@@ -109,8 +108,9 @@ export function RouteDialog() {
                 </div>
 
                 {/* 域名与二级域名配置 */}
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <RouteDomainConfig
+                    key={`${editingId ?? "new"}-${copying ? "copy" : "edit"}`}
                     hosts={formData.hosts}
                     hostInput={formData.hostInput}
                     mainDomain={mainDomain || ""}
@@ -129,7 +129,7 @@ export function RouteDialog() {
                   )}
                 </div>
                 
-                <div className="flex items-center gap-8 pt-5 col-span-2">
+                <div className="flex flex-col gap-3 pt-5 sm:col-span-2 sm:flex-row sm:items-center sm:gap-8">
                   <div className="flex items-center gap-2">
                     <Switch id="allow-client-model" checked={formData.allowClientModel} onCheckedChange={c => setFormData({...formData, allowClientModel: c})} />
                     <Label htmlFor="allow-client-model" className="cursor-pointer font-medium text-sm">{t("routes.fields.allowClientModel", "允许客户端指定模型")}</Label>

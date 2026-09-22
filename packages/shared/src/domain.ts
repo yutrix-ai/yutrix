@@ -5,6 +5,8 @@
 const DOMAIN_REGEX =
   /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$|^localhost$/i;
 
+const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
 /**
  * Checks if a string is a syntactically valid domain name or localhost.
  */
@@ -13,6 +15,14 @@ export function isValidDomain(domain: string): boolean {
   const trimmed = domain.trim().toLowerCase();
   if (trimmed.length > 253) return false;
   return DOMAIN_REGEX.test(trimmed);
+}
+
+/** `@` is the zone apex. Dotted values are multi-label prefixes such as `v2.api`. */
+export function isValidSubdomainPrefix(sub: string): boolean {
+  const value = String(sub ?? "").trim().toLowerCase();
+  if (value === "@") return true;
+  if (!value || value.length > 253) return false;
+  return value.split(".").every((label) => DNS_LABEL.test(label));
 }
 
 /**
@@ -403,10 +413,10 @@ export function validateRouteDomainBindings(
       if (!sub) {
         return { ok: false, error: `域名 ${normalizedMain} 未填写二级域名前缀` };
       }
-      if (sub !== "@" && !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(sub)) {
+      if (!isValidSubdomainPrefix(sub)) {
         return {
           ok: false,
-          error: `二级域名「${sub}」格式无效，只允许英文字母、数字和连字符`,
+          error: `二级域名「${sub}」格式无效，只允许英文字母、数字、连字符和多级前缀`,
         };
       }
     } else {

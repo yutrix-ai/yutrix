@@ -179,7 +179,7 @@ export function BasicSettings({ settings, updateSetting }: BasicSettingsProps) {
                           type="button"
                           onClick={() => handleRemoveDomain(domain)}
                           title={t("settings.sections.basic.removeDomain", "移除域名")}
-                          className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                          className={`ml-0.5 transition-colors ${isPrimary ? "text-primary-foreground/80 hover:text-primary-foreground" : "text-muted-foreground hover:text-destructive"}`}
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>

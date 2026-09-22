@@ -255,8 +255,11 @@ export default async function (fastify: FastifyInstance) {
         if (item.value !== undefined) {
           let val = item.value;
           if (item.key === "mainDomain") {
-            const parsed = parseMainDomains(item.value);
-            val = formatMainDomains(parsed);
+            const domains = parseMainDomains(item.value);
+            const raw = String(item.value ?? "").trim();
+            if (domains.length > 0) val = formatMainDomains(domains);
+            else if (!raw) val = "";
+            else val = item.value;
           }
 
           const existing = await db

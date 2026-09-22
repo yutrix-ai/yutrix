@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseRouteHosts,
+  isValidSubdomainPrefix,
   formatRouteHosts,
   parseRouteDomainBindings,
   validateRouteDomainBindings,
@@ -107,6 +108,19 @@ describe("Multi-Domain Route Bindings & Identity Spec (SDD Unit Tests)", () => {
       },
     ];
     expect(validateRouteDomainBindings(missingSub).ok).toBe(false);
+
+    expect(isValidSubdomainPrefix("v2.api")).toBe(true);
+    expect(isValidSubdomainPrefix("@")).toBe(true);
+    expect(isValidSubdomainPrefix("-bad")).toBe(false);
+    const nested = [
+      {
+        id: "1",
+        mainDomain: "brtel.link",
+        subdomain: "v2.api",
+        fullHost: "v2.api.brtel.link",
+      },
+    ];
+    expect(validateRouteDomainBindings(nested).ok).toBe(true);
   });
 
   it("findMatchingKeyCollision detects overlapping hosts between multi-host routes on same path and protocol", () => {

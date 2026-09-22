@@ -6,7 +6,7 @@ import { formatError } from "../../utils/gatewayError";
 import { extractAndValidateApiKey } from "./auth";
 
 import { findSubdomainForHost } from "./routing";
-import { parseRouteHosts } from "@promptgate/shared";
+import { normalizeDomain, parseRouteHosts } from "@promptgate/shared";
 
 /**
  * Infer `owned_by` from provider protocol and model ID heuristic.
@@ -30,7 +30,7 @@ function inferOwnedBy(providerProtocol: string, modelId: string): string {
 async function buildModelsFromRoutes(
   request: FastifyRequest,
 ): Promise<Array<{ id: string; object: string; created: number; owned_by: string }>> {
-  const hostname = request.hostname; // Fastify strips port automatically
+  const hostname = normalizeDomain(request.hostname);
 
   // --- 1. Resolve subdomain via shared multi-domain resolver ---
   const lookup = await findSubdomainForHost(hostname);
@@ -79,10 +79,11 @@ async function buildModelsFromRoutes(
     if (subdomainRecord) {
       if (route.hosts) {
         const hList = parseRouteHosts(route.hosts);
+        const subHost = normalizeDomain(subdomainRecord.hostname);
         if (
           !hList.includes("*") &&
           !hList.includes(hostname) &&
-          !hList.includes(subdomainRecord.hostname)
+          !(subHost && hList.includes(subHost))
         ) {
           continue;
         }

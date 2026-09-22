@@ -9,7 +9,7 @@ import {
 } from "../db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
-import { normalizeRouteHostKey, parseMainDomains } from "@promptgate/shared";
+import { normalizeRouteHostKey, parseMainDomains, parseRouteHosts } from "@promptgate/shared";
 
 export async function getUserAuthorizedRouteIds(userId: string): Promise<Set<string>> {
   const userGroupsList = await db
@@ -203,7 +203,7 @@ export async function cleanupUnusedRouteSubdomain(subdomainId: string | null) {
     .from(subdomains)
     .where(eq(subdomains.id, subdomainId));
   if (targetSub.length === 0) return;
-  const targetHostname = targetSub[0].hostname;
+  const targetHost = String(targetSub[0].hostname || "").trim().toLowerCase();
 
   const remainingRoutes = await db
     .select({
@@ -215,8 +215,8 @@ export async function cleanupUnusedRouteSubdomain(subdomainId: string | null) {
 
   const isUsed = remainingRoutes.some((r) => {
     if (r.subdomainId === subdomainId) return true;
-    if (r.hosts && r.hosts.includes(targetHostname)) return true;
-    return false;
+    if (!r.hosts || !targetHost) return false;
+    return parseRouteHosts(r.hosts).includes(targetHost);
   });
 
   if (!isUsed) {

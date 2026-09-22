@@ -13,6 +13,7 @@ import {
   ensureHotPathIndexes,
   ensureTokenLimitColumns,
   ensureFunnelRoutingColumns,
+  ensureRouteHostsColumn,
   ensureProviderModelContextWindowColumn,
   ensureSubdomainHostnameIdentity,
   ensureExclusiveUserGroupMembership,
@@ -181,6 +182,7 @@ export async function bootstrap() {
     console.log("[PromptGate Bootstrap] Running PostgreSQL migrations...");
     const { migratePg } = await import("./db/migrate-pg");
     await migratePg(db as any);
+    await ensureRouteHostsColumn();
     console.log("[PromptGate Bootstrap] PostgreSQL migrations completed.");
 
     await seedAdminUser();
@@ -295,6 +297,7 @@ export async function bootstrap() {
   }
 
   await ensureFunnelRoutingColumns();
+  await ensureRouteHostsColumn();
   await ensureStrategyRoutingColumns();
   await ensureTokenLimitColumns();
   await ensureProviderModelContextWindowColumn();

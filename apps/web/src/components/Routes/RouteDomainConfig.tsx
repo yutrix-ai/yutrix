@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,9 +10,8 @@ import {
   parseMainDomains,
   parseRouteHosts,
   parseRouteDomainBindings,
-  validateRouteDomainBindings,
-  RouteDomainBinding,
   isValidDomain,
+  isValidSubdomainPrefix,
 } from "@promptgate/shared";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +32,30 @@ interface BindingRow {
   customHost: string;
 }
 
+type DomainMode = "wildcard" | "specific";
+
+function emptyRow(domains: string[]): BindingRow {
+  return {
+    id: `row-${Date.now()}`,
+    isCustom: domains.length === 0,
+    mainDomain: domains[0] || "",
+    subdomain: "",
+    customHost: "",
+  };
+}
+
+function rowsFromHosts(hostList: string[], domains: string[]): BindingRow[] {
+  const parsed = parseRouteDomainBindings(hostList, domains);
+  if (parsed.length === 0) return [emptyRow(domains)];
+  return parsed.map((b, idx) => ({
+    id: `row-${idx}-${b.fullHost}`,
+    isCustom: !!b.isCustom,
+    mainDomain: b.isCustom ? "" : b.mainDomain,
+    subdomain: b.isCustom ? "" : b.subdomain,
+    customHost: b.isCustom ? b.fullHost : "",
+  }));
+}
+
 export function RouteDomainConfig({
   hosts = ["*"],
   hostInput = "*",
@@ -47,115 +70,74 @@ export function RouteDomainConfig({
     return parseMainDomains(mainDomain);
   }, [mainDomain]);
 
-  // Determine if currently wildcard
-  const effectiveHosts = useMemo(() => {
-    if (hosts && hosts.length > 0) return hosts;
-    return parseRouteHosts(hostInput);
-  }, [hosts, hostInput]);
-
-  const isWildcard = effectiveHosts.length === 1 && (effectiveHosts[0] === "*" || effectiveHosts[0] === "all");
-
-  // Local state for rows to allow seamless typing
-  const [rows, setRows] = useState<BindingRow[]>(() => {
-    if (isWildcard) {
-      return [
-        {
-          id: "row-1",
-          isCustom: configuredMainDomains.length === 0,
-          mainDomain: configuredMainDomains[0] || "",
-          subdomain: "",
-          customHost: "",
-        },
-      ];
-    }
-    const parsed = parseRouteDomainBindings(effectiveHosts, configuredMainDomains);
-    if (parsed.length === 0) {
-      return [
-        {
-          id: "row-1",
-          isCustom: configuredMainDomains.length === 0,
-          mainDomain: configuredMainDomains[0] || "",
-          subdomain: "",
-          customHost: "",
-        },
-      ];
-    }
-    return parsed.map((b, idx) => ({
-      id: `row-${idx}-${b.fullHost}`,
-      isCustom: !!b.isCustom,
-      mainDomain: b.isCustom ? "" : b.mainDomain,
-      subdomain: b.isCustom ? "" : b.subdomain,
-      customHost: b.isCustom ? b.fullHost : "",
-    }));
+  const [mode, setMode] = useState<DomainMode>(() => {
+    const initialHosts = hosts && hosts.length > 0 ? hosts : parseRouteHosts(hostInput);
+    const wildcard = initialHosts.length === 1 && (initialHosts[0] === "*" || initialHosts[0] === "all");
+    return wildcard ? "wildcard" : "specific";
   });
 
-  // Keep rows in sync if effectiveHosts changes from outside (e.g. dialog opened for new route)
-  useEffect(() => {
-    if (isWildcard) return;
-    const parsed = parseRouteDomainBindings(effectiveHosts, configuredMainDomains);
-    if (parsed.length > 0) {
-      setRows(
-        parsed.map((b, idx) => ({
-          id: `row-${idx}-${b.fullHost}`,
-          isCustom: !!b.isCustom,
-          mainDomain: b.isCustom ? "" : b.mainDomain,
-          subdomain: b.isCustom ? "" : b.subdomain,
-          customHost: b.isCustom ? b.fullHost : "",
-        }))
-      );
-    }
-  }, [effectiveHosts, configuredMainDomains, isWildcard]);
+  // Rows stay local while typing. Parent echoes would otherwise reset the input
+  // and turn an empty prefix into the apex host.
+  const [rows, setRows] = useState<BindingRow[]>(() => {
+    const domains = parseMainDomains(mainDomain);
+    const initialHosts = hosts && hosts.length > 0 ? hosts : parseRouteHosts(hostInput);
+    const wildcard = initialHosts.length === 1 && (initialHosts[0] === "*" || initialHosts[0] === "all");
+    if (wildcard) return [emptyRow(domains)];
+    return rowsFromHosts(initialHosts, domains);
+  });
+
+  const domainForRow = (row: BindingRow) => {
+    if (row.isCustom) return "";
+    if (row.mainDomain && configuredMainDomains.includes(row.mainDomain)) return row.mainDomain;
+    return configuredMainDomains[0] || row.mainDomain || "";
+  };
 
   // Calculate used main domains across rows to enforce single-use constraint
   const usedMainDomains = useMemo(() => {
-    return rows.filter((r) => !r.isCustom && r.mainDomain).map((r) => r.mainDomain);
-  }, [rows]);
+    return rows
+      .filter((r) => !r.isCustom)
+      .map((r) => domainForRow(r))
+      .filter(Boolean);
+  }, [rows, configuredMainDomains]);
 
   const availableMainDomains = useMemo(() => {
     return configuredMainDomains.filter((d) => !usedMainDomains.includes(d));
   }, [configuredMainDomains, usedMainDomains]);
 
-  // Serialize rows into hosts array and hostInput string
-  const updateParent = (nextRows: BindingRow[]) => {
+  // Incomplete rows are omitted. An empty prefix must not become the apex or "*".
+  const publish = (nextRows: BindingRow[], nextMode: DomainMode) => {
+    if (nextMode === "wildcard") {
+      onChange(["*"], "*");
+      return;
+    }
     const list: string[] = [];
     for (const r of nextRows) {
       if (r.isCustom) {
         const trimmed = r.customHost.trim().toLowerCase();
         if (trimmed) list.push(trimmed);
-      } else if (r.mainDomain) {
-        const sub = r.subdomain.trim().toLowerCase();
-        if (sub === "@") {
-          list.push(r.mainDomain);
-        } else if (sub) {
-          list.push(`${sub}.${r.mainDomain}`);
-        } else {
-          list.push(r.mainDomain);
-        }
+        continue;
       }
+      const domain = domainForRow(r);
+      const sub = r.subdomain.trim().toLowerCase();
+      if (!domain || !sub) continue;
+      list.push(sub === "@" ? domain : `${sub}.${domain}`);
     }
-    const finalHosts = list.length > 0 ? list : ["*"];
-    onChange(finalHosts, finalHosts.join(", "));
+    if (list.length === 0) onChange([], "");
+    else onChange(list, list.join(", "));
   };
 
-  const handleModeChange = (targetMode: "wildcard" | "specific") => {
+  const handleModeChange = (targetMode: DomainMode) => {
+    setMode(targetMode);
     if (targetMode === "wildcard") {
-      onChange(["*"], "*");
-    } else {
-      let initialRows = rows;
-      if (initialRows.length === 0 || initialRows.every((r) => !r.subdomain && !r.customHost)) {
-        initialRows = [
-          {
-            id: `row-${Date.now()}`,
-            isCustom: configuredMainDomains.length === 0,
-            mainDomain: configuredMainDomains[0] || "",
-            subdomain: "",
-            customHost: "",
-          },
-        ];
-        setRows(initialRows);
-      }
-      updateParent(initialRows);
+      publish(rows, "wildcard");
+      return;
     }
+    let initialRows = rows;
+    if (initialRows.length === 0 || initialRows.every((r) => !r.subdomain && !r.customHost)) {
+      initialRows = [emptyRow(configuredMainDomains)];
+      setRows(initialRows);
+    }
+    publish(initialRows, "specific");
   };
 
   const handleAddSubdomainRow = () => {
@@ -170,7 +152,7 @@ export function RouteDomainConfig({
     };
     const nextRows = [...rows, newRow];
     setRows(nextRows);
-    updateParent(nextRows);
+    publish(nextRows, "specific");
   };
 
   const handleAddCustomRow = () => {
@@ -183,7 +165,7 @@ export function RouteDomainConfig({
     };
     const nextRows = [...rows, newRow];
     setRows(nextRows);
-    updateParent(nextRows);
+    publish(nextRows, "specific");
   };
 
   const handleRemoveRow = (index: number) => {
@@ -197,12 +179,12 @@ export function RouteDomainConfig({
         customHost: "",
       };
       setRows([resetRow]);
-      updateParent([resetRow]);
+      publish([resetRow], mode);
       return;
     }
     const nextRows = rows.filter((_, idx) => idx !== index);
     setRows(nextRows);
-    updateParent(nextRows);
+    publish(nextRows, mode);
   };
 
   const handleRowDomainSelect = (index: number, val: string) => {
@@ -221,7 +203,7 @@ export function RouteDomainConfig({
       };
     }
     setRows(nextRows);
-    updateParent(nextRows);
+    publish(nextRows, mode);
   };
 
   const handleRowSubdomainChange = (index: number, sub: string) => {
@@ -231,7 +213,7 @@ export function RouteDomainConfig({
       subdomain: sub.trim().toLowerCase(),
     };
     setRows(nextRows);
-    updateParent(nextRows);
+    publish(nextRows, mode);
   };
 
   const handleRowCustomHostChange = (index: number, customHost: string) => {
@@ -241,12 +223,12 @@ export function RouteDomainConfig({
       customHost: customHost.trim().toLowerCase(),
     };
     setRows(nextRows);
-    updateParent(nextRows);
+    publish(nextRows, mode);
   };
 
   // Real-time validation warning
   const validationIssue = useMemo(() => {
-    if (isWildcard) return null;
+    if (mode === "wildcard") return null;
     // Check single main domain rule
     const mainCounts: Record<string, number> = {};
     for (const r of rows) {
@@ -264,8 +246,8 @@ export function RouteDomainConfig({
     for (const r of rows) {
       if (!r.isCustom) {
         const sub = r.subdomain.trim();
-        if (sub && sub !== "@" && !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(sub)) {
-          return `二级域名「${sub}」格式无效，仅支持英文字母、数字和连字符`;
+        if (sub && !isValidSubdomainPrefix(sub)) {
+          return `二级域名「${sub}」格式无效，仅支持英文字母、数字、连字符和多级前缀`;
         }
       } else {
         const host = r.customHost.trim();
@@ -275,7 +257,7 @@ export function RouteDomainConfig({
       }
     }
     return null;
-  }, [isWildcard, rows, t]);
+  }, [mode, rows, t]);
 
   return (
     <div className="space-y-3 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
@@ -295,7 +277,7 @@ export function RouteDomainConfig({
             onClick={() => handleModeChange("wildcard")}
             className={cn(
               "px-3 py-1 font-medium rounded transition-all",
-              isWildcard
+              mode === "wildcard"
                 ? "bg-background text-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:text-foreground"
             )}
@@ -308,7 +290,7 @@ export function RouteDomainConfig({
             onClick={() => handleModeChange("specific")}
             className={cn(
               "px-3 py-1 font-medium rounded transition-all",
-              !isWildcard
+              mode === "specific"
                 ? "bg-background text-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:text-foreground"
             )}
@@ -318,7 +300,7 @@ export function RouteDomainConfig({
         </div>
       </div>
 
-      {isWildcard ? (
+      {mode === "wildcard" ? (
         <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
           <span>
@@ -331,13 +313,14 @@ export function RouteDomainConfig({
       ) : (
         <div className="space-y-3 pt-1">
           {rows.map((row, index) => {
+            const rowDomain = domainForRow(row);
             const previewFullHost = row.isCustom
               ? row.customHost || t("routes.domains.customPlaceholder", "例如：api.example.com")
               : row.subdomain === "@"
-              ? `${row.mainDomain} (${t("routes.domains.rootDomain", "根域名")})`
+              ? `${rowDomain} (${t("routes.domains.rootDomain", "根域名")})`
               : row.subdomain
-              ? `${row.subdomain}.${row.mainDomain}`
-              : `${row.mainDomain}`;
+              ? `${row.subdomain}.${rowDomain}`
+              : t("routes.domains.subdomainPlaceholder", "例如：code、api 或 @ (根域名)");
 
             return (
               <div
@@ -348,7 +331,7 @@ export function RouteDomainConfig({
                 <div className="w-full sm:w-48 shrink-0">
                   <Select
                     disabled={disabled}
-                    value={row.isCustom ? "__custom__" : row.mainDomain}
+                    value={row.isCustom ? "__custom__" : rowDomain || undefined}
                     onValueChange={(val) => handleRowDomainSelect(index, val)}
                   >
                     <SelectTrigger className="h-9 text-xs">

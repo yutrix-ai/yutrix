@@ -725,5 +725,120 @@ describe("Multi-Domain Gateway Routing (Integration Tests)", () => {
     });
     expect(resLegacy.statusCode).not.toBe(404);
   });
+
+  it("does not cross-bind a prefix when two subdomains already share that name", async () => {
+    const endpointId = crypto.randomUUID();
+    await db.insert(endpoints).values({
+      id: endpointId,
+      userId: "test-user-id",
+      name: "Ambiguous Prefix Endpoint",
+      path: "/v0/chat/completions",
+      incomingProtocol: "openai",
+      enabled: true,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const brtelSubId = crypto.randomUUID();
+    const yutrixSubId = crypto.randomUUID();
+    const soloSubId = crypto.randomUUID();
+    await db.insert(subdomains).values({
+      id: brtelSubId,
+      userId: "test-user-id",
+      name: "twin",
+      hostname: "twin.brtel.link",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(subdomains).values({
+      id: yutrixSubId,
+      userId: "test-user-id",
+      name: "twin",
+      hostname: "twin.yutrix.ai",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(subdomains).values({
+      id: soloSubId,
+      userId: "test-user-id",
+      name: "solo",
+      hostname: "solo.brtel.link",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const routeBase = {
+      endpointId,
+      hosts: null,
+      providerId,
+      providerProtocol: "openai",
+      modelId: "gpt-4o",
+      enabled: true,
+      status: "active",
+      weight: 1,
+      priority: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await db.insert(endpointRoutes).values({
+      ...routeBase,
+      id: crypto.randomUUID(),
+      name: "Twin Brtel",
+      subdomainId: brtelSubId,
+    });
+    await db.insert(endpointRoutes).values({
+      ...routeBase,
+      id: crypto.randomUUID(),
+      name: "Twin Yutrix",
+      subdomainId: yutrixSubId,
+      priority: 1,
+    });
+    await db.insert(endpointRoutes).values({
+      ...routeBase,
+      id: crypto.randomUUID(),
+      name: "Solo Brtel",
+      subdomainId: soloSubId,
+    });
+
+    await db
+      .update(systemSettings)
+      .set({ value: "brtel.link, yutrix.ai, other.net", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "mainDomain"));
+
+    const payload = { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] };
+
+    const resExact = await fastify.inject({
+      method: "POST",
+      url: "/v0/chat/completions",
+      headers: { host: "twin.brtel.link", authorization: `Bearer ${apiKeyRaw}` },
+      payload,
+    });
+    expect(resExact.statusCode).not.toBe(404);
+
+    const resAmbiguous = await fastify.inject({
+      method: "POST",
+      url: "/v0/chat/completions",
+      headers: { host: "twin.other.net", authorization: `Bearer ${apiKeyRaw}` },
+      payload,
+    });
+    expect(resAmbiguous.statusCode).toBe(404);
+
+    const resSolo = await fastify.inject({
+      method: "POST",
+      url: "/v0/chat/completions",
+      headers: { host: "solo.other.net", authorization: `Bearer ${apiKeyRaw}` },
+      payload,
+    });
+    expect(resSolo.statusCode).not.toBe(404);
+
+    await db
+      .update(systemSettings)
+      .set({ value: "brtel.link, yutrix.ai", updatedAt: new Date() })
+      .where(eq(systemSettings.key, "mainDomain"));
+  });
 });
 
