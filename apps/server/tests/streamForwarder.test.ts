@@ -217,7 +217,8 @@ describe("streamForwarder keep-alive", () => {
     const forwardResult = await result;
 
     const output = writes.join("");
-    expect(forwardResult.gotFirstChunk).toBe(true);
+    expect(forwardResult.gotFirstChunk).toBe(false);
+    expect(forwardResult.visibleClientOutputSent).toBeFalsy();
     expect(output).toContain("\"reasoning_content\":\"thinking\"");
     expect(output).not.toContain("\"content\":\"<thought>thinking\"");
     expect(output).not.toContain("extra_content");
@@ -569,6 +570,46 @@ describe("first-token / stream read timeouts", () => {
 
     expect(result.gotFirstChunk).toBe(false);
     expect(result.visibleClientOutputSent).toBeFalsy();
+    expect(result.terminalError?.statusCode).toBe(504);
+    expect(result.terminalError?.message).toBe(FIRST_TOKEN_TIMEOUT_MESSAGE);
+  });
+
+  it("reasoning-only deltas do not satisfy first-token SLA; hang still times out as First token timeout", async () => {
+    vi.useFakeTimers();
+    const { reply, writes } = createReply();
+    const upstream = createControlledStream();
+
+    const resultPromise = forwardSSEStreamTransparent(
+      reply,
+      upstream.stream,
+      undefined,
+      undefined,
+      180000,
+      "openai",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "openai",
+      50,
+    );
+
+    upstream.enqueueSse({
+      id: "chatcmpl-reason",
+      object: "chat.completion.chunk",
+      choices: [{ index: 0, delta: { reasoning_content: "still thinking" }, finish_reason: null }],
+    });
+    await flushMicrotasks();
+    expect(writes.join("")).toContain("still thinking");
+
+    await vi.advanceTimersByTimeAsync(50);
+    const result = await resultPromise;
+
+    expect(result.gotFirstChunk).toBe(false);
+    expect(result.visibleClientOutputSent).toBeFalsy();
+    expect(result.meaningfulClientOutputSent).toBe(true);
     expect(result.terminalError?.statusCode).toBe(504);
     expect(result.terminalError?.message).toBe(FIRST_TOKEN_TIMEOUT_MESSAGE);
   });

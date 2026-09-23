@@ -62,11 +62,10 @@ import {
 /**
  * First-answer SLA vs post-answer idle SLA.
  *
- * `gotFirstAnswerChunk` must mean visible/semantic answer material — not a
- * role-only delta, usage-only frame, or SSE comment. Those early bytes used to
- * flip gotFirstChunk and disable the first-token timer; the model could then
- * hang on a huge tool-loop context until the client aborted, which logged as
- * successful 0/0/0 with no EmptyOutput retry/hop.
+ * `gotFirstAnswerChunk` means a visible answer or tool call. Role-only deltas,
+ * usage frames, SSE comments, and reasoning-only chunks do not count: OpenCode
+ * ignores reasoning, and treating it as the first answer used to cancel the
+ * first-token timer until the client aborted (status 200, tokens 0/0/0, no hop).
  */
 export function resolveStreamReadTimeoutMs(
   gotFirstAnswerChunk: boolean,
@@ -403,15 +402,9 @@ function logStreamCatchError(
 ) {
   if (!logAction || !baseActionLog) return;
   if (transportKind === "client_closed") {
-    logAction({
-      ...baseActionLog,
-      level: "INFO",
-      code: "request.client_closed",
-      adapterId: adapter?.id || "transparent",
-      errorCode: classified.code,
-      errorType: classified.errorType,
-      message: classified.message,
-    });
+    // Executor logs the canonical request.client_closed line after usage is
+    // committed. Emitting it here omits model/status/tokens, so the UI template
+    // prints raw {{modelId}} placeholders.
     return;
   }
   logAction({
@@ -768,7 +761,6 @@ export async function forwardSSEStreamTransparent(
               if (delta) {
                 if (delta.content && delta.content.length > 0) {
                   eventHasSemanticContent = true;
-                  visibleClientOutputSent = true;
                 }
                 if (delta.reasoning_content && delta.reasoning_content.length > 0) {
                   eventHasSemanticContent = true;
@@ -830,6 +822,22 @@ export async function forwardSSEStreamTransparent(
               }
               if (translated) {
                 outputLine = `data: ${JSON.stringify(dataCopy)}`;
+              }
+            }
+
+            // Visibility follows the bytes the client will see. Adapters may
+            // move thought text into reasoning_content before this point.
+            const forwardedDelta = dataCopy.choices?.[0]?.delta;
+            if (typeof forwardedDelta?.content === "string" && forwardedDelta.content.length > 0) {
+              eventHasSemanticContent = true;
+              visibleClientOutputSent = true;
+            }
+            if (Array.isArray(forwardedDelta?.tool_calls)) {
+              for (const tc of forwardedDelta.tool_calls) {
+                if (tc?.function && (tc.function.name || tc.function.arguments)) {
+                  eventHasSemanticContent = true;
+                  visibleClientOutputSent = true;
+                }
               }
             }
 
@@ -926,8 +934,8 @@ export async function forwardSSEStreamTransparent(
         return { gotFirstChunk, isLengthTruncated: false, lastToolCallState: stitchState, terminalEventSent: sentEvent, terminalError: adapterState?.terminalError, meaningfulClientOutputSent, visibleClientOutputSent };
       }
 
-      // Role-only / usage-only / comments must NOT satisfy first-token SLA.
-      if (eventHasSemanticContent || visibleClientOutputSent) {
+      // Role-only, usage-only, comments, and reasoning must NOT satisfy first-token SLA.
+      if (visibleClientOutputSent) {
         markFirstAnswerChunk();
       }
 
@@ -1156,7 +1164,6 @@ export async function forwardSSEStreamAdapted(
     if (success && payload) {
       if (hasMeaningfulOutputEvent(payload, "anthropic")) {
         meaningfulClientOutputSent = true;
-        markFirstAnswerChunk();
       }
       if (hasVisibleAnswerEvent(payload, "anthropic")) {
         visibleClientOutputSent = true;
@@ -1341,7 +1348,7 @@ export async function forwardSSEStreamAdapted(
 
             await reader.cancel().catch(() => {});
             observer?.onStreamEnd?.();
-            return { gotFirstChunk, isLengthTruncated: false, terminalEventSent: sentEvent, terminalError: err, meaningfulClientOutputSent };
+            return { gotFirstChunk, isLengthTruncated: false, terminalEventSent: sentEvent, terminalError: err, meaningfulClientOutputSent, visibleClientOutputSent };
           }
 
           // Notify observer with a deep COPY
@@ -1471,7 +1478,7 @@ export async function forwardSSEStreamAdapted(
     );
 
     observer?.onStreamEnd?.();
-    return { gotFirstChunk, isLengthTruncated: false, terminalEventSent: sentEvent, terminalError: classified, meaningfulClientOutputSent };
+    return { gotFirstChunk, isLengthTruncated: false, terminalEventSent: sentEvent, terminalError: classified, meaningfulClientOutputSent, visibleClientOutputSent };
   } finally {
     downstream.stop();
   }

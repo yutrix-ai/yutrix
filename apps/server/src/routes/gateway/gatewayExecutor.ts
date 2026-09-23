@@ -252,23 +252,45 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   });
 
   const finalizeClientClosedRequest = async (opts?: {
-    gotFirstChunk?: boolean;
+    answered?: boolean;
     responseData?: any;
   }) => {
     keepContinuity = false;
     clientClosedFinalized = true;
     stopStreamPrelude();
     const rd = opts?.responseData ?? responseData;
-    const gotFirstChunk = !!(opts?.gotFirstChunk ?? ctx.stream.gotFirstChunk);
-    // Zero-answer disconnect must not look like a successful EmptyOutput miss:
-    // clients that abort while waiting for the first real token used to land as
-    // request.completed status=200 tokens=0/0/0 fallback=false.
-    const statusCode = gotFirstChunk ? (rd?.status || 200) : CLIENT_CLOSED_STATUS;
-    const disconnectMessage = clientClosedDisconnectMessage(gotFirstChunk);
+    // Visible answer only. Reasoning or a role/comment chunk must not look like
+    // a successful turn: that path logged status=200 tokens=0/0/0 and skipped
+    // the empty-output hop because the first-token timer was already off.
+    const answered = !!(opts?.answered ?? ctx.stream.gotFirstChunk);
+    const statusCode = answered ? (rd?.status || 200) : CLIENT_CLOSED_STATUS;
+    const disconnectMessage = clientClosedDisconnectMessage(answered);
     ctx.clientDisconnected = true;
 
+    if (
+      rd
+      && !rd.roundUsageCommitted
+      && (ctx.continuity?.promptTokens || 0) === 0
+      && (ctx.continuity?.completionTokens || 0) === 0
+    ) {
+      try {
+        const toolCalls = Object.values(ctx.stream?.accumulatedToolArgs || {});
+        const roundUsage = await resolveRoundUsage(
+          ctx,
+          rd,
+          rd.roundRequestBody || ctx.usageRequestBody || ctx.body,
+          ctx.continuity?.accumulatedCompletionText || ctx.stream?.accumulatedCompletionText || "",
+          ctx.stream?.accumulatedReasoningText || "",
+          toolCalls,
+        );
+        commitRoundUsage(ctx, rd, roundUsage, rd.roundId || "client-closed");
+      } catch (usageErr) {
+        console.error("[Gateway] client-close usage commit failed:", usageErr);
+      }
+    }
+
     const finalLogSummary = await finalizeStreamLog(ctx, statusCode, {
-      usageStatus: gotFirstChunk ? undefined : "failed",
+      usageStatus: answered ? undefined : "failed",
       errorCode: CLIENT_CLOSED_CODE,
       errorMessage: disconnectMessage,
     });
@@ -290,7 +312,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       errorCode: CLIENT_CLOSED_CODE,
       errorType: CLIENT_CLOSED_ERROR_TYPE,
       message: disconnectMessage,
-      meaningfulClientOutputSent: gotFirstChunk,
+      meaningfulClientOutputSent: answered,
     });
 
     if (!reply.raw.writableEnded && !reply.raw.destroyed) {
@@ -2221,7 +2243,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
           terminalError: streamTermErr,
         })) {
           await finalizeClientClosedRequest({
-            gotFirstChunk: ctx.stream.gotFirstChunk || respResult.meaningfulClientOutputSent,
+            answered: !!(ctx.stream.gotFirstChunk || respResult.visibleClientOutputSent),
             responseData,
           });
           return;
@@ -2616,7 +2638,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
       if (isClientDisconnect) {
         await finalizeClientClosedRequest({
-          gotFirstChunk: ctx.stream.gotFirstChunk,
+          answered: !!ctx.stream.gotFirstChunk,
           responseData,
         });
         return;

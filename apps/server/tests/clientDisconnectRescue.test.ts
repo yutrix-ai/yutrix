@@ -332,6 +332,45 @@ describe("executeGatewayRequest refuses rescue after client disconnect", () => {
     expect(gatewayResponder.handleGatewayResponse).toHaveBeenCalledTimes(1);
     expectNoRescue();
     expectTerminalLogHasMessage();
+    const closed = logPayloads().find((e: any) => e.code === "request.client_closed");
+    expect(closed?.statusCode).toBe(CLIENT_CLOSED_STATUS);
+    expect(closed?.message).toBe("客户端在收到响应前断开了连接");
+  });
+
+  it("does not treat reasoning-only output as an answered client close", async () => {
+    (gatewayResponder.handleGatewayResponse as any).mockResolvedValueOnce({
+      isLengthTruncated: false,
+      terminalError: clientClosedTerminal(),
+      terminalEventSent: false,
+      meaningfulClientOutputSent: true,
+      visibleClientOutputSent: false,
+    });
+
+    await executeGatewayRequest(ctx, controller, 2, logAction, abortHandlers);
+
+    expectNoRescue();
+    const closed = logPayloads().find((e: any) => e.code === "request.client_closed");
+    expect(closed?.statusCode).toBe(CLIENT_CLOSED_STATUS);
+    expect(closed?.message).toBe("客户端在收到响应前断开了连接");
+    expect(closed?.promptTokens).not.toBe(0);
+  });
+
+  it("keeps status 200 when the client closes after a visible answer", async () => {
+    ctx.stream.gotFirstChunk = true;
+    (gatewayResponder.handleGatewayResponse as any).mockResolvedValueOnce({
+      isLengthTruncated: false,
+      terminalError: clientClosedTerminal(),
+      terminalEventSent: false,
+      meaningfulClientOutputSent: true,
+      visibleClientOutputSent: true,
+    });
+
+    await executeGatewayRequest(ctx, controller, 2, logAction, abortHandlers);
+
+    expectNoRescue();
+    const closed = logPayloads().find((e: any) => e.code === "request.client_closed");
+    expect(closed?.statusCode).toBe(200);
+    expect(closed?.message).toBe("客户端提前关闭连接");
   });
 
   it("does not start a fetch when the parent abort is already signaled before the first attempt", async () => {
