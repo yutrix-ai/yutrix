@@ -343,3 +343,71 @@ describe("thinking-mode passback recovery (vendor-neutral)", () => {
     expect(fresh.messages[1].reasoning_content).toBeUndefined();
   });
 });
+
+const GEMINI_TOOL_RESULT_REF_MSG =
+  "The referenced name `#/components/schemas/PageRoleDto` in function_response.response does not match to a display_name in the function_response.parts.";
+
+function toolResultRefBody(toolContent: any) {
+  return {
+    model: "some-relay-model",
+    messages: [
+      { role: "user", content: 'keep "$ref": here' },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: "c1", type: "function", function: { name: "Bash", arguments: "{}" } }],
+      },
+      { role: "tool", tool_call_id: "c1", content: toolContent },
+    ],
+  };
+}
+
+describe("tool result $ref recovery (vendor-neutral)", () => {
+  it("renames $ref keys in tool results when the upstream rejects them as part refs", () => {
+    const body = toolResultRefBody('{"schema":{"$ref":"#/components/schemas/PageRoleDto"}}');
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: GEMINI_TOOL_RESULT_REF_MSG,
+      body,
+      alreadyApplied: new Set(),
+    });
+    expect(plan?.code).toBe("escape_tool_result_refs");
+    plan!.mutate(body);
+    expect(body.messages[2].content).toBe('{"schema":{"_ref":"#/components/schemas/PageRoleDto"}}');
+    expect(body.messages[0].content).toBe('keep "$ref": here');
+  });
+
+  it("does not plan when tool results carry no $ref keys", () => {
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: GEMINI_TOOL_RESULT_REF_MSG,
+      body: toolResultRefBody('{"schema":{"_ref":"#/a"}}'),
+      alreadyApplied: new Set(),
+    });
+    expect(plan).toBeNull();
+  });
+
+  it("does not plan twice for the same target", () => {
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: GEMINI_TOOL_RESULT_REF_MSG,
+      body: toolResultRefBody('{"$ref":"#/a"}'),
+      alreadyApplied: new Set(["escape_tool_result_refs"]),
+    });
+    expect(plan).toBeNull();
+  });
+
+  it("re-applies onto a freshly built body with text-part tool content", () => {
+    const plan = planConstraintRecovery({
+      statusCode: 400,
+      errorMessage: GEMINI_TOOL_RESULT_REF_MSG,
+      body: toolResultRefBody('{"$ref":"#/a"}'),
+      alreadyApplied: new Set(),
+    });
+    expect(plan).not.toBeNull();
+
+    const fresh = toolResultRefBody([{ type: "text", text: '{ "$ref" : "#/b" }' }]);
+    applyConstraintMutators(fresh, [plan!.mutate]);
+    expect(fresh.messages[2].content).toEqual([{ type: "text", text: '{ "_ref" : "#/b" }' }]);
+  });
+});

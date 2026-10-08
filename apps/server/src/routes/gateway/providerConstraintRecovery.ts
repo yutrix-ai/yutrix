@@ -9,6 +9,8 @@
  * or provider brand hardcodes.
  */
 
+import { escapeToolResultRefs, hasToolResultRefKeys } from "./compatibility/toolResultRefs";
+
 export type ConstraintMutator = (body: any) => void;
 
 export interface ConstraintRewritePlan {
@@ -156,6 +158,14 @@ function rejectsThinkingMode(msg: string): boolean {
 }
 
 /**
+ * Gemini behind any relay: "The referenced name `#/...` in function_response.response
+ * does not match to a display_name in the function_response.parts."
+ */
+function rejectsToolResultRef(msg: string): boolean {
+  return /function_response/.test(msg) && /referenced name|display_name/.test(msg);
+}
+
+/**
  * Ordered recovery strategies. First match that has not been applied wins.
  * Callers should apply the mutator, record `code` in alreadyApplied, and retry.
  */
@@ -226,6 +236,21 @@ export function planConstraintRecovery(
         },
       };
     }
+  }
+
+  // 4) Tool result JSON contains `$ref` keys the upstream treats as part references.
+  if (
+    !applied.has("escape_tool_result_refs") &&
+    rejectsToolResultRef(msg) &&
+    hasToolResultRefKeys(body)
+  ) {
+    return {
+      code: "escape_tool_result_refs",
+      summary: "tool result $ref keys → _ref (upstream reads them as function_response part refs)",
+      mutate: (nextBody) => {
+        escapeToolResultRefs(nextBody);
+      },
+    };
   }
 
   return null;
