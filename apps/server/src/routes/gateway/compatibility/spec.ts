@@ -33,7 +33,10 @@ export const FIRST_PARTY_ONLY_RULE_IDS = [
   "max_tokens_clamped",
 ] as const;
 
-export const SHARED_GEMINI_SCHEMA_RULE_IDS = ["tools_schema_sanitized"] as const;
+export const SHARED_GEMINI_SCHEMA_RULE_IDS = [
+  "tools_schema_sanitized",
+  "tool_result_refs_escaped",
+] as const;
 
 export const MAX_GEMINI_SCHEMA_DEPTH = 32;
 

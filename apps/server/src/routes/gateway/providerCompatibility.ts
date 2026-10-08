@@ -16,6 +16,7 @@ function summarizeCompatibilityLogs(logs: CompatibilityLog[]): string {
         return `max_tokens(${log.originalMaxTokens || "?"}->${log.clampedMaxTokens})`;
       }
       if (log.code === "tools_schema_sanitized") return `tools_schema(${log.toolCount})`;
+      if (log.code === "tool_result_refs_escaped") return `tool_result_refs(${log.messageCount})`;
       return log.code;
     })
     .join(", ");

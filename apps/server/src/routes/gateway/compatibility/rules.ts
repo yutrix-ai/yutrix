@@ -55,6 +55,53 @@ function sanitizeGoogleTools(body: any): CompatibilityLog | null {
   };
 }
 
+// Gemini reads a `$ref` key inside function_response.response as a pointer to a
+// multimodal part display_name and 400s when none matches (e.g. OpenAPI dumps).
+// Also matches the escaped form for JSON nested inside JSON strings.
+const TOOL_RESULT_REF_KEY = /(\\?")\$ref(\\?"\s*:)/g;
+
+function escapeRefKeys(text: string): string {
+  return text.replace(TOOL_RESULT_REF_KEY, "$1_ref$2");
+}
+
+function escapeToolResultContent(content: any): { content: any; changed: boolean } {
+  if (typeof content === "string") {
+    const next = escapeRefKeys(content);
+    return { content: next, changed: next !== content };
+  }
+  if (!Array.isArray(content)) return { content, changed: false };
+
+  let changed = false;
+  const next = content.map((part: any) => {
+    if (part?.type !== "text" || typeof part.text !== "string") return part;
+    const text = escapeRefKeys(part.text);
+    if (text === part.text) return part;
+    changed = true;
+    return { ...part, text };
+  });
+  return { content: changed ? next : content, changed };
+}
+
+function escapeToolResultRefs(body: any): CompatibilityLog | null {
+  if (!Array.isArray(body?.messages)) return null;
+  let messageCount = 0;
+
+  for (const message of body.messages) {
+    if (message?.role !== "tool") continue;
+    const result = escapeToolResultContent(message.content);
+    if (!result.changed) continue;
+    message.content = result.content;
+    messageCount++;
+  }
+
+  if (messageCount === 0) return null;
+  return {
+    code: "tool_result_refs_escaped",
+    message: "Renamed $ref keys in tool results for Gemini function_response",
+    messageCount,
+  };
+}
+
 function clampGoogleMaxTokens(body: any): CompatibilityLog | null {
   if (!Number.isFinite(GOOGLE_MAX_OUTPUT_TOKENS) || GOOGLE_MAX_OUTPUT_TOKENS <= 0) {
     return null;
@@ -122,5 +169,10 @@ export const COMPATIBILITY_RULES: CompatibilityRule[] = [
     id: "tools_schema_sanitized",
     appliesTo: (profile) => GEMINI_SCHEMA.has(profile),
     apply: (body) => sanitizeGoogleTools(body),
+  },
+  {
+    id: "tool_result_refs_escaped",
+    appliesTo: (profile) => GEMINI_SCHEMA.has(profile),
+    apply: (body) => escapeToolResultRefs(body),
   },
 ];

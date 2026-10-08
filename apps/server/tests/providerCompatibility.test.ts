@@ -429,6 +429,65 @@ describe("applyProviderCompatibility", () => {
     expect(body.tools[2].function.name).toBe("broken");
   });
 
+  it("renames $ref keys in tool results for Antigravity", () => {
+    const openApiDump = JSON.stringify({
+      paths: {
+        "/roles": {
+          get: { responses: { "200": { schema: { $ref: "#/components/schemas/PageRoleDto" } } } },
+        },
+      },
+    });
+    const nestedJson = JSON.stringify({ raw: JSON.stringify({ $ref: "#/a" }) });
+    const body = {
+      model: "gemini-3.8-flash-high",
+      messages: [
+        { role: "system", content: 'keep "$ref": here' },
+        { role: "user", content: 'keep "$ref" : here' },
+        { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function" }] },
+        { role: "tool", tool_call_id: "c1", content: openApiDump },
+        {
+          role: "tool",
+          tool_call_id: "c2",
+          content: [
+            { type: "text", text: 'out: { "$ref" : "#/x" }' },
+            { type: "image_url", image_url: { url: "data:," } },
+          ],
+        },
+        { role: "tool", tool_call_id: "c3", content: nestedJson },
+        { role: "tool", tool_call_id: "c4", content: "mentions $ref without a key" },
+      ],
+    };
+
+    const summary = applyProviderCompatibility(body, antigravitySurface());
+
+    expect(summary).toBe("tool_result_refs(3)");
+    expect(body.messages[0].content).toBe('keep "$ref": here');
+    expect(body.messages[1].content).toBe('keep "$ref" : here');
+    expect(JSON.parse(body.messages[3].content as string).paths["/roles"].get.responses["200"].schema).toEqual({
+      _ref: "#/components/schemas/PageRoleDto",
+    });
+    expect((body.messages[4].content as any[])[0].text).toBe('out: { "_ref" : "#/x" }');
+    expect((body.messages[4].content as any[])[1]).toEqual({ type: "image_url", image_url: { url: "data:," } });
+    expect(JSON.parse(JSON.parse(body.messages[5].content as string).raw)).toEqual({ _ref: "#/a" });
+    expect(body.messages[6].content).toBe("mentions $ref without a key");
+  });
+
+  it("does not touch tool results for non-Gemini providers", () => {
+    const body = {
+      messages: [{ role: "tool", tool_call_id: "c1", content: '{"$ref":"#/a"}' }],
+    };
+
+    const summary = applyProviderCompatibility(body, {
+      providerName: "OpenRouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      providerProtocol: "openai",
+      modelId: "openrouter/free",
+    });
+
+    expect(summary).toBeNull();
+    expect(body.messages[0].content).toBe('{"$ref":"#/a"}');
+  });
+
   it("does not rewrite Google-branded transparent proxies on unofficial hosts", () => {
     const body = {
       max_tokens: 32000,
