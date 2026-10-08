@@ -12,8 +12,10 @@ allowBuilds:
   esbuild: true
   msw: true
   protobufjs: true
-  puppeteer: true
-  sharp: true
+  # Install scripts download from GitHub (Chrome / libvips) and time out on
+  # production hosts. Runtime never loads sharp; puppeteer is e2e-only.
+  puppeteer: false
+  sharp: false
 allowedDeprecatedVersions:
   "@esbuild-kit/core-utils": "*"
   "@esbuild-kit/esm-loader": "*"
