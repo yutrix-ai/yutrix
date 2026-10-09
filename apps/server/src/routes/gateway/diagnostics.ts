@@ -1,11 +1,11 @@
 import crypto from "crypto";
-import fs from "fs/promises";
-import path from "path";
 
 const MAX_SUMMARY_MESSAGES = 12;
-const DUMP_STATUSES = new Set([400, 422]);
 const MAX_SUMMARY_TOOLS = 20;
-const MAX_JSON_CHARS = 6000;
+const MAX_JSON_CHARS = 12000;
+const MAX_ANOMALIES = 20;
+const EXCERPT_RADIUS = 80;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 function safeStringify(value: any): string {
   try {
@@ -150,6 +150,7 @@ export function buildUpstreamRequestDiagnostic(body: any, meta: Record<string, a
 
   const summary = {
     ...meta,
+    anomalies: findBodyAnomalies(body),
     bodyBytes: Buffer.byteLength(bodyText),
     bodyHash: hashText(bodyText),
     rootKeys: shortKeys(body),
@@ -176,27 +177,128 @@ export function buildUpstreamRequestDiagnostic(body: any, meta: Record<string, a
   return text.length > MAX_JSON_CHARS ? `${text.slice(0, MAX_JSON_CHARS)}...<truncated>` : text;
 }
 
+type BodyAnomaly = {
+  type: string;
+  index?: number;
+  path?: string;
+  detail?: string;
+  excerpt?: string;
+};
+
+function excerptAt(text: string, pos: number): string {
+  const start = Math.max(0, pos - EXCERPT_RADIUS);
+  const end = Math.min(text.length, pos + EXCERPT_RADIUS);
+  // JSON-escape so control chars and broken surrogates stay visible in logs.
+  return JSON.stringify(text.slice(start, end));
+}
+
+function isEmptyContent(content: any): boolean {
+  if (content === null || content === undefined) return true;
+  if (typeof content === "string") return content.trim() === "";
+  if (Array.isArray(content)) return content.length === 0;
+  return false;
+}
+
+function scanStrings(value: any, path: string, out: BodyAnomaly[]): void {
+  if (out.length >= MAX_ANOMALIES) return;
+  if (typeof value === "string") {
+    const surrogate = value.search(LONE_SURROGATE);
+    if (surrogate >= 0) {
+      out.push({ type: "lone_surrogate", path, excerpt: excerptAt(value, surrogate) });
+    }
+    const nul = value.indexOf("\u0000");
+    if (nul >= 0 && out.length < MAX_ANOMALIES) {
+      out.push({ type: "nul_char", path, excerpt: excerptAt(value, nul) });
+    }
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item, idx) => scanStrings(item, `${path}[${idx}]`, out));
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    scanStrings(child, `${path}.${key}`, out);
+  }
+}
+
 /**
- * Opt-in: set GATEWAY_DUMP_UPSTREAM_4XX_DIR to write the exact outbound body of
- * upstream 400/422 responses to disk. Bodies contain user prompts — keep it off
- * except while debugging. Never throws and never blocks the request path.
+ * Structural problems upstreams often reject with a generic
+ * "invalid argument": tool call/result pairing, empty turns, bad UTF-16.
  */
-export function dumpUpstreamRejectedBody(
-  status: number,
-  body: any,
-  meta: Record<string, any>,
-): Promise<string | null> {
-  const dir = process.env.GATEWAY_DUMP_UPSTREAM_4XX_DIR;
-  if (!dir || !DUMP_STATUSES.has(status)) return Promise.resolve(null);
+export function findBodyAnomalies(body: any): BodyAnomaly[] {
+  const out: BodyAnomaly[] = [];
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const declaredTools = new Set(
+    (Array.isArray(body?.tools) ? body.tools : [])
+      .map((tool: any) => tool?.function?.name || tool?.name)
+      .filter(Boolean),
+  );
+  const seenCallIds = new Set<string>();
+  let pending = new Map<string, number>();
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const safeId = String(meta.requestId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
-  const file = path.join(dir, `${stamp}-${safeId}-${meta.attempt ?? 0}.json`);
-  const payload = safeStringify({ ...meta, status, dumpedAt: new Date().toISOString(), body });
+  const push = (anomaly: BodyAnomaly) => {
+    if (out.length < MAX_ANOMALIES) out.push(anomaly);
+  };
+  const flushPending = () => {
+    for (const [id, index] of pending) {
+      push({ type: "missing_tool_result", index, detail: `tool_call_id=${id}` });
+    }
+    pending = new Map();
+  };
 
-  return fs
-    .mkdir(dir, { recursive: true, mode: 0o700 })
-    .then(() => fs.writeFile(file, payload, { mode: 0o600 }))
-    .then(() => file)
-    .catch(() => null);
+  messages.forEach((message: any, index: number) => {
+    const role = message?.role;
+    const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+
+    if (role === "tool") {
+      const id = message.tool_call_id;
+      if (pending.has(id)) {
+        pending.delete(id);
+      } else {
+        push({
+          type: seenCallIds.has(id) ? "tool_result_out_of_order" : "orphan_tool_result",
+          index,
+          detail: `tool_call_id=${id}`,
+        });
+      }
+      if (isEmptyContent(message.content)) push({ type: "empty_content", index, detail: "role=tool" });
+      return;
+    }
+
+    flushPending();
+
+    if (role === "assistant" && toolCalls.length > 0) {
+      for (const call of toolCalls) {
+        const id = call?.id;
+        const name = call?.function?.name;
+        if (!id) {
+          push({ type: "tool_call_missing_id", index, detail: `name=${name}` });
+          continue;
+        }
+        if (seenCallIds.has(id)) push({ type: "duplicate_tool_call_id", index, detail: `tool_call_id=${id}` });
+        seenCallIds.add(id);
+        pending.set(id, index);
+
+        if (declaredTools.size > 0 && name && !declaredTools.has(name)) {
+          push({ type: "undeclared_tool_call", index, detail: `name=${name}` });
+        }
+        const args = call?.function?.arguments;
+        if (typeof args === "string" && args.trim() !== "") {
+          try {
+            JSON.parse(args);
+          } catch {
+            push({ type: "tool_call_bad_arguments", index, detail: `name=${name}`, excerpt: excerptAt(args, 0) });
+          }
+        }
+      }
+      return;
+    }
+
+    if (isEmptyContent(message?.content)) push({ type: "empty_content", index, detail: `role=${role}` });
+  });
+  flushPending();
+
+  scanStrings(body, "$", out);
+  return out.slice(0, MAX_ANOMALIES);
 }
