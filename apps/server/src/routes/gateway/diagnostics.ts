@@ -1,6 +1,9 @@
 import crypto from "crypto";
+import fs from "fs/promises";
+import path from "path";
 
 const MAX_SUMMARY_MESSAGES = 12;
+const DUMP_STATUSES = new Set([400, 422]);
 const MAX_SUMMARY_TOOLS = 20;
 const MAX_JSON_CHARS = 6000;
 
@@ -171,4 +174,29 @@ export function buildUpstreamRequestDiagnostic(body: any, meta: Record<string, a
 
   const text = safeStringify(summary);
   return text.length > MAX_JSON_CHARS ? `${text.slice(0, MAX_JSON_CHARS)}...<truncated>` : text;
+}
+
+/**
+ * Opt-in: set GATEWAY_DUMP_UPSTREAM_4XX_DIR to write the exact outbound body of
+ * upstream 400/422 responses to disk. Bodies contain user prompts — keep it off
+ * except while debugging. Never throws and never blocks the request path.
+ */
+export function dumpUpstreamRejectedBody(
+  status: number,
+  body: any,
+  meta: Record<string, any>,
+): Promise<string | null> {
+  const dir = process.env.GATEWAY_DUMP_UPSTREAM_4XX_DIR;
+  if (!dir || !DUMP_STATUSES.has(status)) return Promise.resolve(null);
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const safeId = String(meta.requestId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
+  const file = path.join(dir, `${stamp}-${safeId}-${meta.attempt ?? 0}.json`);
+  const payload = safeStringify({ ...meta, status, dumpedAt: new Date().toISOString(), body });
+
+  return fs
+    .mkdir(dir, { recursive: true, mode: 0o700 })
+    .then(() => fs.writeFile(file, payload, { mode: 0o600 }))
+    .then(() => file)
+    .catch(() => null);
 }

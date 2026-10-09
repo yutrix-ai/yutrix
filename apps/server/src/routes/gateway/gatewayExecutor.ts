@@ -52,7 +52,7 @@ import { maybeServeContinuationLoopStop } from "../../services/loopGuard";
 import { freezeUncutInboundBody, snapshotUncutInboundBody, resolveEmptyOutputLayerHopFromRoute } from "./emptyOutputLayerHop";
 import { ContinuityEngine } from "../../services/continuity/ContinuityEngine";
 import { ContinuityContext } from "../../services/continuity/types";
-import { buildUpstreamRequestDiagnostic } from "./diagnostics";
+import { buildUpstreamRequestDiagnostic, dumpUpstreamRejectedBody } from "./diagnostics";
 import { applyProviderCompatibility } from "./providerCompatibility";
 import {
   applyConstraintMutators,
@@ -1731,6 +1731,17 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                       upstreamPath,
                       errorDetail: result.errorDetail,
                     }, omitPayload),
+                  });
+                  void dumpUpstreamRejectedBody(result.status, upstreamBody, {
+                    requestId: baseActionLog.requestId,
+                    providerName: provider.name,
+                    modelId: currentAttempt.modelId,
+                    upstreamUrl: result.upstreamUrl || `${upstreamBaseUrl}${upstreamPath}`,
+                    incomingProtocol,
+                    streaming: isStreaming,
+                    attempt: attemptCount,
+                    errorDetail: result.errorDetail,
+                    upstreamError: result.data,
                   });
                 }
                 if (!isStreaming) {
