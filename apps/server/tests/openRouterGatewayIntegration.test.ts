@@ -155,19 +155,6 @@ describe("OpenRouter Gateway Integration", () => {
     });
   });
 
-  afterAll(async () => {
-    vi.restoreAllMocks();
-    // Cleanup sqlite
-    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, "or-integration-route"));
-    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, "or-integration-route"));
-    await db.delete(endpoints).where(eq(endpoints.id, "or-integration-ep"));
-    await db.delete(providerModels).where(eq(providerModels.providerId, "or-integration-prov"));
-    await db.delete(providerApiKeys).where(eq(providerApiKeys.providerId, "or-integration-prov"));
-    await db.delete(providers).where(eq(providers.id, "or-integration-prov"));
-    await db.delete(apiKeys).where(eq(apiKeys.userId, userId));
-    await db.delete(users).where(eq(users.id, userId));
-  });
-
   it("applies OpenRouter request policy and forwards assistant reasoning_details", async () => {
     let capturedUpstreamBody: any = null;
 
@@ -238,6 +225,14 @@ describe("OpenRouter Gateway Integration", () => {
   afterAll(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    await db.delete(routeAuthorizations).where(eq(routeAuthorizations.routeId, "or-integration-route"));
+    await db.delete(endpointRoutes).where(eq(endpointRoutes.id, "or-integration-route"));
+    await db.delete(endpoints).where(eq(endpoints.id, "or-integration-ep"));
+    await db.delete(providerModels).where(eq(providerModels.providerId, "or-integration-prov"));
+    await db.delete(providerApiKeys).where(eq(providerApiKeys.providerId, "or-integration-prov"));
+    await db.delete(providers).where(eq(providers.id, "or-integration-prov"));
+    await db.delete(apiKeys).where(eq(apiKeys.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
     await fastify.close();
     await closeAndCleanup(client, dbFile);
   });

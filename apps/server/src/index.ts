@@ -12,7 +12,7 @@ import { scheduleDistillationJobs } from "./services/distillation/scheduler";
 import { logAction } from "./utils/actionLogger";
 
 const envPath = process.cwd().endsWith("server") ? "../../.env" : ".env";
-dotenv.config({ path: envPath });
+dotenv.config({ path: envPath, quiet: true });
 
 const port = Number(process.env.PORT) || 3000;
 const host = process.env.HOST || "127.0.0.1";

@@ -319,7 +319,7 @@ describe("timeout eject gateway + admin", () => {
     return { response, elapsedMs: Date.now() - started };
   }
 
-  function stubByHost(handlers: Record<string, (url: string, init?: RequestInit, callIndex: number) => Promise<Response> | Response>) {
+  function stubByHost(handlers: Record<string, (url: string, init: RequestInit | undefined, callIndex: number) => Promise<Response> | Response>) {
     const counts = new Map<string, number>();
     const calls: Array<{ url: string; body: string }> = [];
     vi.stubGlobal("fetch", async (url: any, init?: RequestInit) => {

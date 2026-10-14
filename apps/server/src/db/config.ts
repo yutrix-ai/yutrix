@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import { resolveDbFilePath } from "./path";
 
 const envPath = process.cwd().endsWith("server") ? "../../.env" : ".env";
-dotenv.config({ path: envPath });
+dotenv.config({ path: envPath, quiet: true });
 
 export type DbDriver = "sqlite" | "postgres";
 
