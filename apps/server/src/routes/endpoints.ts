@@ -12,6 +12,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
+import { patchSchema } from "../utils/zodPatch";
 import { requireAdmin } from "../middleware/auth";
 
 const endpointSchema = z.object({
@@ -227,7 +228,7 @@ export default async function (fastify: FastifyInstance) {
     { onRequest: [requireAdmin] },
     async (request, reply) => {
       const { id } = request.params as any;
-      const parsed = endpointSchema.partial().safeParse(request.body);
+      const parsed = patchSchema(endpointSchema).safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: "Invalid input" });
       }
@@ -375,7 +376,7 @@ export default async function (fastify: FastifyInstance) {
     { onRequest: [requireAdmin] },
     async (request, reply) => {
       const { routeId } = request.params as any;
-      const parsed = routeSchema.partial().safeParse(request.body);
+      const parsed = patchSchema(routeSchema).safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: "Invalid input" });
       }

@@ -22,6 +22,7 @@ import {
   updateDistillationSettings,
 } from "../services/distillation/settingsService";
 import { buildSkillZipBuffer } from "../services/distillation/skillZipExporter";
+import { patchSchema } from "../utils/zodPatch";
 import { scheduleDistillationJobs } from "../services/distillation/scheduler";
 import { getActiveRoutingOverlay } from "../services/distillation/routingOverlay";
 
@@ -30,7 +31,7 @@ export async function getSettings(_req: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function patchSettings(req: FastifyRequest, reply: FastifyReply) {
-  const parsed = distillationSettingsSchema.partial().safeParse(req.body);
+  const parsed = patchSchema(distillationSettingsSchema).safeParse(req.body);
   if (!parsed.success) {
     return reply.code(400).send({ error: parsed.error.message });
   }

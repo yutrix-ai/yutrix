@@ -4,6 +4,7 @@ import { promptPolicies } from "../db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
+import { patchSchema } from "../utils/zodPatch";
 import { requireAdmin } from "../middleware/auth";
 
 const policySchema = z.object({
@@ -74,7 +75,7 @@ export default async function (fastify: FastifyInstance) {
     { onRequest: [requireAdmin] },
     async (request, reply) => {
       const { id } = request.params as any;
-      const parsed = policySchema.partial().safeParse(request.body);
+      const parsed = patchSchema(policySchema).safeParse(request.body);
       if (!parsed.success)
         return reply.code(400).send({ error: "Invalid input" });
 

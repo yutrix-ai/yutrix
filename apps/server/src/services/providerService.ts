@@ -7,6 +7,7 @@ import { providers, providerModels, providerTestSessions, providerApiKeys } from
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
+import { patchSchema } from "../utils/zodPatch";
 import { encryptText, decryptText } from "../utils/crypto";
 import { logAction } from "../utils/actionLogger";
 
@@ -59,7 +60,7 @@ export const createProviderSchema = z.object({
   manualModels: z.array(z.string()).optional(),
 });
 
-export const updateProviderSchema = createProviderSchema.omit({ apiKey: true }).partial();
+export const updateProviderSchema = patchSchema(createProviderSchema.omit({ apiKey: true }));
 
 export const testProviderSchema = z.object({
   openaiBaseUrl: z.string().url().optional().or(z.literal("")),
