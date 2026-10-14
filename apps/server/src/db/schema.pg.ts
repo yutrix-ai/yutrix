@@ -268,6 +268,7 @@ export const endpointRoutes = pgTable(
     strategyRoutingRules: text("strategyRoutingRules"),
     routingMode: text("routingMode").notNull().default("strategy"),
     targets: text("targets"),
+    modelProfiles: text("modelProfiles"),
     weight: integer("weight").notNull().default(1),
     priority: integer("priority").notNull().default(0),
     status: text("status").default("active"),

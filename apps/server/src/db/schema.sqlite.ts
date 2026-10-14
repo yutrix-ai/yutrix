@@ -227,6 +227,8 @@ export const endpointRoutes = sqliteTable(
     /** 'classic' | 'strategy' (legacy 'opc_agent' reads as classic). */
     routingMode: text("routingMode").notNull().default("strategy"),
     targets: text("targets"), // JSON array of targets for funnel routing
+    /** JSON array of extra funnel tables keyed by client model id; NULL = default table only. */
+    modelProfiles: text("modelProfiles"),
     weight: integer("weight").notNull().default(1),
     priority: integer("priority").notNull().default(0),
     status: text("status").default("active"),

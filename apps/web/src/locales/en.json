@@ -806,6 +806,18 @@
     "copyName": {
       "label": "Copy"
     },
+    "modelProfiles": {
+      "label": "Routing table",
+      "default": "Default table",
+      "add": "New routing table",
+      "rename": "Rename",
+      "remove": "Delete routing table",
+      "namePlaceholder": "Client request model ID",
+      "addHint": "The new table starts as a copy of the current one",
+      "renameHint": "Clients must use the new model ID after renaming",
+      "hint": "Requests whose model ID equals a table name use that table; all others use the default table",
+      "emptyTargets": "Routing table \"{{name}}\" needs at least one layer"
+    },
     "domains": {
       "title": "Domain & Subdomain Configuration",
       "modeLabel": "Domain Matching Mode",

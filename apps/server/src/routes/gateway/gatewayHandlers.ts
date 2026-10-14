@@ -85,6 +85,9 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
     const subdomainResult = await resolveSubdomain(request.hostname, incomingProtocol, reply);
     if (!subdomainResult) return;
 
+    const body: any = request.body || {};
+    const clientModelId = typeof body?.model === "string" ? body.model : null;
+
     const routeResult = await resolveEndpointAndRoute(
       reqPath,
       incomingProtocol,
@@ -93,11 +96,11 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
       reply,
       request.log,
       request.hostname,
+      clientModelId,
     );
     if (!routeResult) return;
 
-    const { endpoint, route } = routeResult;
-    const body: any = request.body || {};
+    const { endpoint, route, modelProfile } = routeResult;
 
     // --- 3. Authorization ---
     const authzResult = await checkRouteAuthorization(
@@ -117,6 +120,7 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
       authzResult.username,
       authzResult.clientIp,
     );
+    if (modelProfile) baseActionLog.routeModelProfile = modelProfile;
 
     let currentAttempt = createInitialAttemptState(route);
     // Pass client-requested model for Client Override mode (L0 name match / General)
@@ -125,7 +129,7 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
       route,
       currentAttempt,
       baseActionLog,
-      typeof body?.model === "string" ? body.model : null,
+      clientModelId,
     );
 
     // --- 5. Request State Init ---

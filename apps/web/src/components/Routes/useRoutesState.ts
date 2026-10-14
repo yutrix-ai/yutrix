@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { fetchApi } from "@/lib/api";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { RouteItem, Provider, ProviderModel, Policy, StrategyRoutingRule } from "./types";
+import { RouteItem, Provider, ProviderModel, Policy, StrategyRoutingRule, RouteModelProfileItem } from "./types";
 import {
   completeStrategyRules,
   createDefaultStrategyRules,
@@ -22,6 +22,8 @@ import {
   parseMainDomains,
   parseRouteDomainBindings,
   validateRouteDomainBindings,
+  validateModelProfileNames,
+  modelProfileNameIssueMessage,
 } from "@promptgate/shared";
 
 interface GroupOption {
@@ -64,6 +66,87 @@ function parseRouteTargets(route: RouteItem): any[] {
   return parsedTargets;
 }
 
+function parseRouteModelProfiles(route: RouteItem): RouteModelProfileItem[] {
+  if (!Array.isArray(route.modelProfiles)) return [];
+  return route.modelProfiles.map((profile) => ({
+    name: profile.name,
+    routingMode: normalizeRoutingModeForForm(profile.routingMode),
+    targets: coerceTargetsForRoutingMode(
+      Array.isArray(profile.targets) ? profile.targets : [],
+      profile.routingMode,
+    ),
+  }));
+}
+
+function targetsForSave(targets: any[], routingMode: string) {
+  return targets.map((t: any) => {
+    const base = {
+      ...t,
+      promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId,
+    };
+    if (routingMode === "classic") {
+      return {
+        ...base,
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      };
+    }
+    return base;
+  });
+}
+
+/** Re-shape funnel layers when switching a table between classic and strategy mode. */
+function remapTargetsForRoutingMode(targets: any[], mode: string) {
+  if (mode === "classic") {
+    return (targets || []).map((target: any) => {
+      const existingRules: any[] = Array.isArray(target.strategyRoutingRules)
+        ? target.strategyRoutingRules
+        : [];
+      const byType = new Map(existingRules.map((r: any) => [r.taskType, r]));
+      const seed = byType.get("general") || existingRules[0] || {
+        providerId: target.providerId || "",
+        providerProtocol: target.providerProtocol || "openai",
+        modelId: target.modelId || "",
+      };
+      return {
+        ...target,
+        providerId: seed.providerId || "",
+        providerProtocol: seed.providerProtocol || "openai",
+        modelId: seed.modelId || "",
+        strategyRoutingEnabled: false,
+        strategyRoutingRules: [],
+      };
+    });
+  }
+
+  const nextTasks = tasksForRoutingMode(mode);
+  // Remap each layer's rules onto the new task set: keep task types shared by
+  // both modes (vision/general), seed the rest from the layer's general/top-level target.
+  return (targets || []).map((target: any) => {
+    const existingRules: any[] = Array.isArray(target.strategyRoutingRules) ? target.strategyRoutingRules : [];
+    const byType = new Map(existingRules.map((r: any) => [r.taskType, r]));
+    const seed = byType.get("general") || existingRules[0] || {
+      providerId: target.providerId || "",
+      providerProtocol: target.providerProtocol || "openai",
+      modelId: target.modelId || "",
+    };
+    const strategyRoutingRules = nextTasks.map(task => {
+      const existing = byType.get(task.type);
+      if (existing?.providerId && existing?.modelId) {
+        return { ...existing, enabled: existing.enabled !== false };
+      }
+      return {
+        taskType: task.type,
+        providerId: seed.providerId || "",
+        providerProtocol: seed.providerProtocol || "openai",
+        modelId: seed.modelId || "",
+        enabled: true,
+      };
+    });
+    return { ...target, strategyRoutingEnabled: true, strategyRoutingRules };
+  });
+}
+
 const emptyFormData = {
   name: "",
   hostInput: "*",
@@ -84,6 +167,9 @@ const emptyFormData = {
   authorizedGroupIds: [] as string[],
   fallbackMatchTarget: false,
   schedules: undefined as unknown,
+  modelProfiles: [] as RouteModelProfileItem[],
+  /** -1 = default table (the route's own routingMode/targets). */
+  activeProfileIndex: -1,
 };
 
 export function useRoutesState() {
@@ -209,59 +295,84 @@ export function useRoutesState() {
 
   const handleRoutingModeChange = (mode: string) => {
     setFormData(prev => {
-      if (prev.routingMode === mode) return prev;
-
-      if (mode === "classic") {
-        const targets = (prev.targets || []).map((target: any) => {
-          const existingRules: any[] = Array.isArray(target.strategyRoutingRules)
-            ? target.strategyRoutingRules
-            : [];
-          const byType = new Map(existingRules.map((r: any) => [r.taskType, r]));
-          const seed = byType.get("general") || existingRules[0] || {
-            providerId: target.providerId || "",
-            providerProtocol: target.providerProtocol || "openai",
-            modelId: target.modelId || "",
-          };
-          return {
-            ...target,
-            providerId: seed.providerId || "",
-            providerProtocol: seed.providerProtocol || "openai",
-            modelId: seed.modelId || "",
-            strategyRoutingEnabled: false,
-            strategyRoutingRules: [],
-          };
-        });
-        return { ...prev, routingMode: mode, targets };
+      const idx = prev.activeProfileIndex ?? -1;
+      if (idx < 0) {
+        if (prev.routingMode === mode) return prev;
+        return { ...prev, routingMode: mode, targets: remapTargetsForRoutingMode(prev.targets, mode) };
       }
-
-      const nextTasks = tasksForRoutingMode(mode);
-      // Remap each layer's rules onto the new task set: keep task types shared by
-      // both modes (vision/general), seed the rest from the layer's general/top-level target.
-      const targets = (prev.targets || []).map((target: any) => {
-        const existingRules: any[] = Array.isArray(target.strategyRoutingRules) ? target.strategyRoutingRules : [];
-        const byType = new Map(existingRules.map((r: any) => [r.taskType, r]));
-        const seed = byType.get("general") || existingRules[0] || {
-          providerId: target.providerId || "",
-          providerProtocol: target.providerProtocol || "openai",
-          modelId: target.modelId || "",
-        };
-        const strategyRoutingRules = nextTasks.map(task => {
-          const existing = byType.get(task.type);
-          if (existing?.providerId && existing?.modelId) {
-            return { ...existing, enabled: existing.enabled !== false };
-          }
-          return {
-            taskType: task.type,
-            providerId: seed.providerId || "",
-            providerProtocol: seed.providerProtocol || "openai",
-            modelId: seed.modelId || "",
-            enabled: true,
-          };
-        });
-        return { ...target, strategyRoutingEnabled: true, strategyRoutingRules };
-      });
-      return { ...prev, routingMode: mode, targets };
+      const profile = prev.modelProfiles[idx];
+      if (!profile || profile.routingMode === mode) return prev;
+      const modelProfiles = [...prev.modelProfiles];
+      modelProfiles[idx] = {
+        ...profile,
+        routingMode: normalizeRoutingModeForForm(mode),
+        targets: remapTargetsForRoutingMode(profile.targets, mode),
+      };
+      return { ...prev, modelProfiles };
     });
+  };
+
+  /** Targets of the table currently shown in the dialog (default or a model profile). */
+  const handleActiveTargetsChange = (targets: any[]) => {
+    setFormData(prev => {
+      const idx = prev.activeProfileIndex ?? -1;
+      if (idx < 0 || !prev.modelProfiles[idx]) return { ...prev, targets };
+      const modelProfiles = [...prev.modelProfiles];
+      modelProfiles[idx] = { ...modelProfiles[idx], targets };
+      return { ...prev, modelProfiles };
+    });
+  };
+
+  const setActiveProfileIndex = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      activeProfileIndex: index >= 0 && index < prev.modelProfiles.length ? index : -1,
+    }));
+  };
+
+  /** New table starts as a copy of the table currently shown. */
+  const addModelProfile = (name: string): string | null => {
+    const trimmed = name.trim();
+    const issue = validateModelProfileNames([...formData.modelProfiles.map(p => p.name), trimmed]);
+    if (!issue.ok) return modelProfileNameIssueMessage(issue);
+    setFormData(prev => {
+      const idx = prev.activeProfileIndex ?? -1;
+      const source = idx >= 0 && prev.modelProfiles[idx]
+        ? prev.modelProfiles[idx]
+        : { routingMode: normalizeRoutingModeForForm(prev.routingMode), targets: prev.targets };
+      const modelProfiles = [
+        ...prev.modelProfiles,
+        {
+          name: trimmed,
+          routingMode: normalizeRoutingModeForForm(source.routingMode),
+          targets: JSON.parse(JSON.stringify(source.targets || [])),
+        },
+      ];
+      return { ...prev, modelProfiles, activeProfileIndex: modelProfiles.length - 1 };
+    });
+    return null;
+  };
+
+  const renameModelProfile = (index: number, name: string): string | null => {
+    const trimmed = name.trim();
+    const names = formData.modelProfiles.map((p, i) => (i === index ? trimmed : p.name));
+    const issue = validateModelProfileNames(names);
+    if (!issue.ok) return modelProfileNameIssueMessage(issue);
+    setFormData(prev => {
+      if (!prev.modelProfiles[index]) return prev;
+      const modelProfiles = [...prev.modelProfiles];
+      modelProfiles[index] = { ...modelProfiles[index], name: trimmed };
+      return { ...prev, modelProfiles };
+    });
+    return null;
+  };
+
+  const removeModelProfile = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      modelProfiles: prev.modelProfiles.filter((_, i) => i !== index),
+      activeProfileIndex: -1,
+    }));
   };
 
   const getSelectableModels = (sourceModels: ProviderModel[]) => getAvailableModels(sourceModels);
@@ -382,15 +493,18 @@ export function useRoutesState() {
       newPath = protocol === "openai" ? "/v1/chat/completions" : "/v1/messages";
     }
 
+    const retarget = (targets: any[]) => targets.map((t: any) => ({
+      ...t,
+      providerProtocol: getProviderProtocolForSelection(protocol, getProviderById(t.providerId)),
+      strategyRoutingRules: updateStrategyRuleProtocols(t.strategyRoutingRules || [], protocol),
+    }));
+
     setFormData(prev => ({
       ...prev,
       incomingProtocol: protocol,
       path: newPath,
-      targets: prev.targets.map((t: any) => ({
-        ...t,
-        providerProtocol: getProviderProtocolForSelection(protocol, getProviderById(t.providerId)),
-        strategyRoutingRules: updateStrategyRuleProtocols(t.strategyRoutingRules || [], protocol),
-      }))
+      targets: retarget(prev.targets),
+      modelProfiles: prev.modelProfiles.map(p => ({ ...p, targets: retarget(p.targets || []) })),
     }));
   };
 
@@ -438,6 +552,18 @@ export function useRoutesState() {
       toast.error(t("routes.toasts.fillRequired", "请填写所有必填项（包含至少一个目标）"));
       return;
     }
+    const profileNameIssue = validateModelProfileNames(formData.modelProfiles.map(p => p.name));
+    if (!profileNameIssue.ok) {
+      toast.error(modelProfileNameIssueMessage(profileNameIssue));
+      return;
+    }
+    const emptyProfile = formData.modelProfiles.find(p => !p.targets || p.targets.length === 0);
+    if (emptyProfile) {
+      toast.error(
+        t("routes.modelProfiles.emptyTargets", "路由表「{{name}}」至少需要一个目标层", { name: emptyProfile.name }),
+      );
+      return;
+    }
 
     const effectiveHosts = formData.hosts && formData.hosts.length > 0 ? formData.hosts : parseRouteHosts(formData.hostInput);
     if (effectiveHosts.length > 1 || (effectiveHosts.length === 1 && effectiveHosts[0] !== "*")) {
@@ -458,20 +584,12 @@ export function useRoutesState() {
         path: formData.path,
         incomingProtocol: formData.incomingProtocol,
         routingMode: formData.routingMode || "classic",
-        targets: formData.targets.map((t: any) => {
-          const base = {
-            ...t,
-            promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId,
-          };
-          if (formData.routingMode === "classic") {
-            return {
-              ...base,
-              strategyRoutingEnabled: false,
-              strategyRoutingRules: [],
-            };
-          }
-          return base;
-        }),
+        targets: targetsForSave(formData.targets, formData.routingMode),
+        modelProfiles: formData.modelProfiles.map(p => ({
+          name: p.name.trim(),
+          routingMode: p.routingMode || "classic",
+          targets: targetsForSave(p.targets || [], p.routingMode),
+        })),
         timeoutMs: formData.timeoutMs,
         timeoutEjectEnabled: !!formData.timeoutEjectEnabled,
         retryCount: formData.retryCount,
@@ -509,7 +627,7 @@ export function useRoutesState() {
   const openCreate = () => {
     setEditingId(null);
     setCopying(false);
-    setFormData({ ...emptyFormData, hosts: ["*"], targets: [] });
+    setFormData({ ...emptyFormData, hosts: ["*"], targets: [], modelProfiles: [], activeProfileIndex: -1 });
     setDialogOpen(true);
   };
 
@@ -548,6 +666,8 @@ export function useRoutesState() {
       targets: coerceTargetsForRoutingMode(draft.targets, route.routingMode),
       routingMode: normalizeRoutingModeForForm(route.routingMode),
       timeoutEjectEnabled: !!route.timeoutEjectEnabled,
+      modelProfiles: parseRouteModelProfiles(route),
+      activeProfileIndex: -1,
     });
     setDialogOpen(true);
   };
@@ -582,6 +702,8 @@ export function useRoutesState() {
       authorizedGroupIds: route.authorizedGroupIds || [],
       fallbackMatchTarget: route.fallbackMatchTarget || false,
       schedules: undefined,
+      modelProfiles: parseRouteModelProfiles(route),
+      activeProfileIndex: -1,
     });
     setDialogOpen(true);
   };
@@ -630,6 +752,7 @@ export function useRoutesState() {
     openScheduleDialog, loadData, getProviderById, getAvailableModels, hasAnthropicEndpoint,
     hasOpenaiEndpoint, getProviderProtocolForSelection, getSelectableModels, getUnavailableMessage, resolveModelSelection,
     fetchProviderModels, loadModels, loadFallbackModels, getDefaultStrategyRules, handleProviderChange, handleFallbackProviderChange, handlePathChange,
-    handleProtocolChange, handleRoutingModeChange, handleSave, closeDialog, openCreate, openCopy, openEdit, handleDelete, toggleEnable, getReadinessBadge
+    handleProtocolChange, handleRoutingModeChange, handleActiveTargetsChange, setActiveProfileIndex,
+    addModelProfile, renameModelProfile, removeModelProfile, handleSave, closeDialog, openCreate, openCopy, openEdit, handleDelete, toggleEnable, getReadinessBadge
   };
 }

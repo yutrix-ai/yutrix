@@ -6,7 +6,7 @@ import { formatError } from "../../utils/gatewayError";
 import { extractAndValidateApiKey } from "./auth";
 
 import { findSubdomainForHost } from "./routing";
-import { normalizeDomain, parseRouteHosts } from "@promptgate/shared";
+import { normalizeDomain, parseRouteHosts, parseRouteModelProfiles } from "@promptgate/shared";
 
 /**
  * Infer `owned_by` from provider protocol and model ID heuristic.
@@ -29,6 +29,7 @@ function inferOwnedBy(providerProtocol: string, modelId: string): string {
  */
 async function buildModelsFromRoutes(
   request: FastifyRequest,
+  options: { includeL0: boolean } = { includeL0: true },
 ): Promise<Array<{ id: string; object: string; created: number; owned_by: string }>> {
   const hostname = normalizeDomain(request.hostname);
 
@@ -98,6 +99,20 @@ async function buildModelsFromRoutes(
         continue;
       }
     }
+
+    // Model profile names are client-selectable model ids on this route.
+    for (const profile of parseRouteModelProfiles(route.modelProfiles)) {
+      if (uniqueModels.has(profile.name)) continue;
+      const profileProtocol = profile.targets[0]?.providerProtocol || "openai";
+      uniqueModels.set(profile.name, {
+        id: profile.name,
+        object: "model",
+        created: 1677610602,
+        owned_by: inferOwnedBy(profileProtocol, profile.name),
+      });
+    }
+
+    if (!options.includeL0) continue;
 
     // Extract L0 model ID
     let l0ModelId = route.modelId;
@@ -261,6 +276,16 @@ export async function modelsHandler(
         } catch {
           // Invalid JSON, skip
         }
+      }
+
+      try {
+        for (const profileModel of await buildModelsFromRoutes(request, { includeL0: false })) {
+          if (uniqueModelIds.has(profileModel.id)) continue;
+          uniqueModelIds.add(profileModel.id);
+          dataList.push(profileModel);
+        }
+      } catch (err) {
+        request.log.error(err, "Error collecting route model profiles for /v1/models");
       }
     } else {
       // Model discovery disabled – derive list from actual route config

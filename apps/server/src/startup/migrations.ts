@@ -29,25 +29,35 @@ export async function columnExists(tableName: string, columnName: string): Promi
   return info.rows.some((row: any) => row[1] === columnName);
 }
 
-/** Nullable text. Existing rows stay NULL and keep matching by subdomainId. */
-export async function ensureRouteHostsColumn(): Promise<void> {
+async function ensureRouteNullableTextColumn(columnName: string): Promise<void> {
   if (!(await tableExists("endpoint_routes"))) return;
   if (getDbDriver() === "postgres") {
     const result = await (client as any).query(
       `SELECT 1 FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'endpoint_routes' AND column_name = 'hosts'
+       WHERE table_schema = 'public' AND table_name = 'endpoint_routes' AND column_name = $1
        LIMIT 1`,
+      [columnName],
     );
     if ((result?.rows?.length ?? 0) > 0) return;
-    await (client as any).query(`ALTER TABLE "endpoint_routes" ADD COLUMN "hosts" text`);
-    console.log("[PromptGate] Added hosts column to endpoint_routes.");
+    await (client as any).query(`ALTER TABLE "endpoint_routes" ADD COLUMN "${columnName}" text`);
+    console.log(`[PromptGate] Added ${columnName} column to endpoint_routes.`);
     return;
   }
   await addColumnIfMissing(
     "endpoint_routes",
-    "hosts",
-    "ALTER TABLE endpoint_routes ADD COLUMN hosts text",
+    columnName,
+    `ALTER TABLE endpoint_routes ADD COLUMN ${columnName} text`,
   );
+}
+
+/**
+ * Nullable text columns on endpoint_routes. Existing rows stay NULL:
+ * - hosts: keep matching by subdomainId.
+ * - modelProfiles: route only has its default funnel table.
+ */
+export async function ensureRouteNullableTextColumns(): Promise<void> {
+  await ensureRouteNullableTextColumn("hosts");
+  await ensureRouteNullableTextColumn("modelProfiles");
 }
 
 export async function addColumnIfMissing(tableName: string, columnName: string, ddl: string) {

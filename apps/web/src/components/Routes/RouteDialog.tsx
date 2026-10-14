@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useRouteForm } from "./RouteFormContext";
 import { RouteTargetsTable } from "./RouteTargetsTable";
 import { RouteDomainConfig } from "./RouteDomainConfig";
+import { RouteModelProfileSelect } from "./RouteModelProfileSelect";
 import { matchingKeySubmitBlocked, ROUTE_IDENTITY_ERROR } from "@promptgate/shared";
 import { cn } from "@/lib/utils";
 
@@ -22,8 +23,10 @@ export function RouteDialog() {
     providers, handlePathChange, handleProtocolChange,
     policies,
     groups, usersForSelect, closeDialog, getProviderProtocolForSelection,
-    allModels, getDefaultStrategyRules, handleRoutingModeChange
+    allModels, getDefaultStrategyRules, handleRoutingModeChange, handleActiveTargetsChange
   } = useRouteForm();
+  const activeProfile =
+    formData.activeProfileIndex >= 0 ? formData.modelProfiles?.[formData.activeProfileIndex] : undefined;
 
   const nameIssue = identityIssues.find((issue: { code: string }) =>
     issue.code === ROUTE_IDENTITY_ERROR.NAME_REQUIRED || issue.code === ROUTE_IDENTITY_ERROR.NAME_CONFLICT
@@ -138,19 +141,23 @@ export function RouteDialog() {
                     <Switch id="global-best-effort" checked={formData.fallbackMatchTarget} onCheckedChange={c => setFormData({...formData, fallbackMatchTarget: c})} />
                     <Label htmlFor="global-best-effort" className="cursor-pointer font-medium text-sm">{t("routes.fields.bestEffort", "尽力而为 (逐级降级时优先使用同名模型)")}</Label>
                   </div>
+                  <div className="sm:ml-auto">
+                    <RouteModelProfileSelect />
+                  </div>
                 </div>
               </div>
 
               {/* 转发目标与路由模式 */}
               <div className="border-t pt-4">
                 <RouteTargetsTable
-                  targets={formData.targets || []}
-                  onChange={targets => setFormData({...formData, targets})}
+                  key={activeProfile ? `profile-${formData.activeProfileIndex}` : "default"}
+                  targets={(activeProfile ? activeProfile.targets : formData.targets) || []}
+                  onChange={handleActiveTargetsChange}
                   providers={providers}
                   allModels={allModels}
                   policies={policies || []}
                   incomingProtocol={formData.incomingProtocol}
-                  routingMode={formData.routingMode || "classic"}
+                  routingMode={(activeProfile ? activeProfile.routingMode : formData.routingMode) || "classic"}
                   onRoutingModeChange={handleRoutingModeChange}
                   getProviderProtocolForSelection={getProviderProtocolForSelection}
                 />

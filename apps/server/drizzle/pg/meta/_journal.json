@@ -15,6 +15,13 @@
       "when": 1790120000000,
       "tag": "0001_route_hosts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0002_route_model_profiles",
+      "breakpoints": true
     }
   ]
 }

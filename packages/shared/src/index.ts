@@ -5,3 +5,4 @@ export * from "./usageStats";
 export * from "./routeIdentity";
 export * from "./domain";
 export * from "./distillation";
+export * from "./routeModelProfiles";

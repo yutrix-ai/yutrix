@@ -28,6 +28,7 @@ import {
 import { parseStrategyRoutingRules } from "../services/strategyRouting";
 import { coerceLegacyRouteForDisplay, resolveRouteRoutingMode } from "../services/opcAgentRouting";
 import { timeoutEjectAdminFields } from "../routes/gateway/timeoutEject";
+import { modelProfilesForDisplay } from "../services/routeModelProfiles";
 import { parseRouteHosts } from "@promptgate/shared";
 
 function routeDisplayShape(route: Record<string, unknown>) {
@@ -154,6 +155,7 @@ export async function getAdminRoutes(request: FastifyRequest, reply: FastifyRepl
       strategyRoutingRules: parseStrategyRoutingRules(route.strategyRoutingRules),
       routingMode: display.routingMode,
       targets: display.targets,
+      modelProfiles: modelProfilesForDisplay(route.modelProfiles),
       schedules: parsedSchedules,
       isScheduleActive: !!activeSchedule,
       activeSchedule,
@@ -267,6 +269,7 @@ export async function getAdminRouteById(request: FastifyRequest, reply: FastifyR
     strategyRoutingRules: parseStrategyRoutingRules(route.strategyRoutingRules),
     routingMode: display.routingMode,
     targets: display.targets,
+    modelProfiles: modelProfilesForDisplay(route.modelProfiles),
     schedules: parsedSchedules,
     ipWhitelist: route.ipWhitelist || "",
     ...timeoutEjectAdminFields(route),

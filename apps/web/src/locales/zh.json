@@ -803,6 +803,18 @@
     "copyName": {
       "label": "副本"
     },
+    "modelProfiles": {
+      "label": "路由表",
+      "default": "默认路由表",
+      "add": "新建路由表",
+      "rename": "重命名",
+      "remove": "删除路由表",
+      "namePlaceholder": "客户端请求的模型 ID",
+      "addHint": "新路由表复制自当前路由表",
+      "renameHint": "修改后客户端需使用新的模型 ID",
+      "hint": "客户端请求的模型 ID 与路由表名一致时使用该路由表，否则使用默认路由表",
+      "emptyTargets": "路由表「{{name}}」至少需要一个目标层"
+    },
     "domains": {
       "title": "域名与二级域名配置",
       "modeLabel": "域名匹配模式",

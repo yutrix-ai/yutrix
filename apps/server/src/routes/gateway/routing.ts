@@ -14,6 +14,7 @@ import {
   resolveActiveRouteProperties,
   getDailyStartTime,
 } from "../../utils/scheduleEvaluator";
+import { applyRouteModelProfile } from "../../services/routeModelProfiles";
 
 import {
   parseMainDomains,
@@ -172,7 +173,8 @@ export async function resolveEndpointAndRoute(
   reply: FastifyReply,
   log?: { error: (...args: any[]) => void },
   requestHostname?: string,
-): Promise<{ endpoint: any; route: any } | null> {
+  clientModelId?: string | null,
+): Promise<{ endpoint: any; route: any; modelProfile: string | null } | null> {
   // Endpoint matching (path + protocol)
   const endpointList = await db
     .select()
@@ -289,9 +291,10 @@ export async function resolveEndpointAndRoute(
   }
 
   routes.sort((a, b) => a.priority - b.priority);
-  let route = routes[0];
+  const profiled = applyRouteModelProfile(routes[0], clientModelId);
+  let route = profiled.route;
 
-  // Evaluate active schedule if configured
+  // Evaluate active schedule if configured (a matched model profile clears schedules)
   if (route.schedules) {
     try {
       const dailyStartStr = await getDailyStartTime();
@@ -306,5 +309,5 @@ export async function resolveEndpointAndRoute(
     }
   }
 
-  return { endpoint, route };
+  return { endpoint, route, modelProfile: profiled.profileName };
 }

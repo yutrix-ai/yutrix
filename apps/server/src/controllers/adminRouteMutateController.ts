@@ -31,6 +31,7 @@ import {
   validateRouteDomainBindings,
 } from "@promptgate/shared";
 import { normalizeRoutingModeInput, resolveRouteRoutingMode } from "../services/opcAgentRouting";
+import { validateModelProfilesInput } from "../services/routeModelProfiles";
 
 export async function createAdminRoute(request: FastifyRequest, reply: FastifyReply) {
   const user = request.user as any;
@@ -111,6 +112,11 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
   const resolvedTargets = validationResult.resolvedTargets!;
   const firstTarget = resolvedTargets[0];
 
+  const profilesResult = await validateModelProfilesInput(body.modelProfiles, incomingProtocol);
+  if (!profilesResult.ok) {
+    return reply.code(400).send({ error: profilesResult.error });
+  }
+
   // Resolve host
   let subdomainId = null;
   let finalHosts: string | null = null;
@@ -177,6 +183,7 @@ export async function createAdminRoute(request: FastifyRequest, reply: FastifyRe
     allowClientModel: allowClientModel || false,
     schedules: schedules ? JSON.stringify(schedules) : null,
     targets: JSON.stringify(resolvedTargets),
+    modelProfiles: profilesResult.stored,
     routingMode: resolvedRoutingMode,
     retryCount: retryCount !== undefined ? retryCount : 3,
     fallbackMatchTarget: !!fallbackMatchTarget,
@@ -286,6 +293,15 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
   }
   const resolvedTargets = validationResult.resolvedTargets!;
   const firstTarget = resolvedTargets[0];
+
+  let patchModelProfiles = route.modelProfiles ?? null;
+  if (body.modelProfiles !== undefined) {
+    const profilesResult = await validateModelProfilesInput(body.modelProfiles, patchIncomingProtocol);
+    if (!profilesResult.ok) {
+      return reply.code(400).send({ error: profilesResult.error });
+    }
+    patchModelProfiles = profilesResult.stored;
+  }
 
   let finalSubdomainId = route.subdomainId;
   const currentHosts = parseRouteHosts(route.hosts, subdomain?.hostname);
@@ -408,6 +424,7 @@ export async function updateAdminRoute(request: FastifyRequest, reply: FastifyRe
     retryCount: patchRetryCount,
     fallbackMatchTarget: patchFallbackMatchTarget,
     targets: JSON.stringify(resolvedTargets),
+    modelProfiles: patchModelProfiles,
     routingMode: body.routingMode !== undefined
       ? normalizeRoutingModeInput(body.routingMode, resolveRouteRoutingMode(route))
       : resolveRouteRoutingMode(route),

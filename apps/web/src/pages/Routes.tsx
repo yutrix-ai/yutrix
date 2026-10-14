@@ -22,7 +22,12 @@ export default function RoutesPage() {
     policies: state.policies,
     groups: state.groups, usersForSelect: state.usersForSelect, closeDialog: state.closeDialog, getProviderProtocolForSelection: state.getProviderProtocolForSelection,
     allModels: state.allModels, getDefaultStrategyRules: state.getDefaultStrategyRules,
-    handleRoutingModeChange: state.handleRoutingModeChange
+    handleRoutingModeChange: state.handleRoutingModeChange,
+    handleActiveTargetsChange: state.handleActiveTargetsChange,
+    setActiveProfileIndex: state.setActiveProfileIndex,
+    addModelProfile: state.addModelProfile,
+    renameModelProfile: state.renameModelProfile,
+    removeModelProfile: state.removeModelProfile,
   };
 
   return (

@@ -27,7 +27,7 @@ import {
 } from "@promptgate/shared";
 import {
   ensureFunnelRoutingColumns,
-  ensureRouteHostsColumn,
+  ensureRouteNullableTextColumns,
   ensureStrategyRoutingColumns,
   ensureProviderModelContextWindowColumn,
   ensureTokenLimitColumns,
@@ -275,12 +275,12 @@ export async function completeSetup(params: CompleteSetupParams): Promise<{
 
   if (params.driver === "postgres") {
     await migratePg(db as PgDb);
-    await ensureRouteHostsColumn();
+    await ensureRouteNullableTextColumns();
     await ensureAnalyticsIndexes();
     await ensureHotPathIndexes();
   } else {
     await migrateSqlite(db as LibSQLDb);
-    await ensureRouteHostsColumn();
+    await ensureRouteNullableTextColumns();
     await ensureFunnelRoutingColumns();
     await ensureStrategyRoutingColumns();
     await ensureProviderModelContextWindowColumn();

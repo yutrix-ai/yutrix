@@ -307,6 +307,7 @@ async function runAutoMigrations() {
     "ALTER TABLE endpoint_routes ADD COLUMN targets text;",
     "ALTER TABLE endpoint_routes ADD COLUMN timeoutEjectEnabled integer DEFAULT 0 NOT NULL;",
     "ALTER TABLE endpoint_routes ADD COLUMN hosts text;",
+    "ALTER TABLE endpoint_routes ADD COLUMN modelProfiles text;",
 
     // ── users ──
     "ALTER TABLE users ADD COLUMN maxInputTokensOverride integer;",

@@ -788,6 +788,11 @@ export const CATALOG: Record<string, CatalogTable> = {
         propName: "targets",
         logicalType: "json_text",
       },
+      "modelProfiles": {
+        name: "modelProfiles",
+        propName: "modelProfiles",
+        logicalType: "json_text",
+      },
       "weight": {
         name: "weight",
         propName: "weight",

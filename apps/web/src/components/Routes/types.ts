@@ -63,9 +63,17 @@ export interface RouteItem {
   schedules?: any[];
   isScheduleActive?: boolean;
   activeSchedule?: any;
+  modelProfiles?: RouteModelProfileItem[];
 }
 
 export type RoutingMode = "classic" | "strategy";
+
+/** Extra funnel table selected by the client's request model id. */
+export interface RouteModelProfileItem {
+  name: string;
+  routingMode: RoutingMode;
+  targets: any[];
+}
 
 export type StrategyTaskType = "vision" | "debug" | "code" | "long_context" | "writing" | "general";
 
