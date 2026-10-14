@@ -10,6 +10,7 @@ import "./services/chatLogService";
 import { scheduleDingTalkJobs } from "./services/dingtalk";
 import { scheduleDistillationJobs } from "./services/distillation/scheduler";
 import { logAction } from "./utils/actionLogger";
+import { startLogCleanupWorker } from "./utils/logCleanup";
 
 const envPath = process.cwd().endsWith("server") ? "../../.env" : ".env";
 dotenv.config({ path: envPath, quiet: true });
@@ -394,6 +395,7 @@ const start = async () => {
 
       await scheduleDingTalkJobs();
       await scheduleDistillationJobs();
+      startLogCleanupWorker();
     }
   } catch (err) {
     fastify.log.error(err);
