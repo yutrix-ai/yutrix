@@ -7,6 +7,46 @@ const MAX_HISTORY = 1000;
 const logHistory: ActionLogEvent[] = [];
 const listeners = new Set<(entry: ActionLogEvent) => void>();
 const LOG_FILE = process.env.ACTION_LOG_FILE || process.env.LOG_FILE_NAME || path.join(process.cwd(), "data/action.log");
+const TAIL_READ_BYTES = 4 * 1024 * 1024;
+const MAX_FILE_BYTES = parsePositiveInt(process.env.ACTION_LOG_MAX_BYTES, 50 * 1024 * 1024);
+const MAX_ROTATED_FILES = parsePositiveInt(process.env.ACTION_LOG_MAX_FILES, 5);
+let currentFileBytes = 0;
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** Reads only the trailing `maxBytes` of the file so startup memory stays flat regardless of log size. */
+export function readLogTail(file: string, maxLines: number, maxBytes = TAIL_READ_BYTES): string[] {
+  const fd = fs.openSync(file, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, size - maxBytes);
+    const buf = Buffer.alloc(size - start);
+    let read = 0;
+    while (read < buf.length) {
+      const n = fs.readSync(fd, buf, read, buf.length - read, start + read);
+      if (n === 0) break;
+      read += n;
+    }
+    let lines = buf.subarray(0, read).toString("utf-8").split("\n");
+    // The first line may be cut mid-way (possibly mid UTF-8 sequence) when not starting at offset 0.
+    if (start > 0) lines = lines.slice(1);
+    return lines.filter(Boolean).slice(-maxLines);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Shifts `file` -> `file.1` -> ... -> `file.<maxFiles>`; the oldest rotated file is overwritten. */
+export function rotateLogFile(file: string, maxFiles: number) {
+  for (let i = maxFiles - 1; i >= 1; i--) {
+    const src = `${file}.${i}`;
+    if (fs.existsSync(src)) fs.renameSync(src, `${file}.${i + 1}`);
+  }
+  fs.renameSync(file, `${file}.1`);
+}
 
 // Ensure log directory exists
 try {
@@ -18,9 +58,8 @@ try {
 // Load history on startup
 try {
   if (fs.existsSync(LOG_FILE)) {
-    const content = fs.readFileSync(LOG_FILE, "utf-8");
-    const lines = content.split("\n").filter(Boolean);
-    logHistory.push(...lines.slice(-MAX_HISTORY).map(parseActionLogLine));
+    currentFileBytes = fs.statSync(LOG_FILE).size;
+    logHistory.push(...readLogTail(LOG_FILE, MAX_HISTORY).map(parseActionLogLine));
   }
 } catch (e) {
   console.warn("警告：加载历史日志失败：", e);
@@ -182,7 +221,18 @@ export function logAction(input: ActionLogEventInput) {
   }
 
   // Persist to file
-  fs.appendFile(LOG_FILE, serverLine + "\n", (err) => {
+  const data = serverLine + "\n";
+  const dataBytes = Buffer.byteLength(data);
+  if (currentFileBytes + dataBytes > MAX_FILE_BYTES && currentFileBytes > 0) {
+    try {
+      rotateLogFile(LOG_FILE, MAX_ROTATED_FILES);
+    } catch (err) {
+      console.warn("警告：轮转日志文件失败", err);
+    }
+    currentFileBytes = 0;
+  }
+  currentFileBytes += dataBytes;
+  fs.appendFile(LOG_FILE, data, (err) => {
     if (err) console.warn("警告：写入日志文件失败", err);
   });
 }

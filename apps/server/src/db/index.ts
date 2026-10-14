@@ -148,6 +148,16 @@ export let client: any = new Proxy({} as any, {
 });
 
 /**
+ * Query logging stringifies every parameter (including full chat bodies), so it is off in production
+ * unless DB_QUERY_LOG=1 is set explicitly.
+ */
+export function shouldLogDbQueries(): boolean {
+  const flag = process.env.DB_QUERY_LOG;
+  if (flag !== undefined && flag !== "") return flag === "1" || flag.toLowerCase() === "true";
+  return process.env.NODE_ENV !== "production";
+}
+
+/**
  * Creates a new DB connection and Drizzle instance without mutating global state.
  */
 export async function createDb(config?: YutrixDbConfig): Promise<CreateDbResult> {
@@ -163,7 +173,7 @@ export async function createDb(config?: YutrixDbConfig): Promise<CreateDbResult>
     const pool = new Pool({
       connectionString: url,
     });
-    const createdDb = drizzlePg(pool, { schema: schemaPg, logger: true });
+    const createdDb = drizzlePg(pool, { schema: schemaPg, logger: shouldLogDbQueries() });
     return { db: createdDb as unknown as AppDb, client: pool, driver: "postgres" };
   }
 
@@ -176,7 +186,7 @@ export async function createDb(config?: YutrixDbConfig): Promise<CreateDbResult>
   }
 
   const createdClient = createClient({ url: "file:" + resolvedPath });
-  const createdDb = drizzleLibsql(createdClient, { schema: schemaSqlite, logger: true });
+  const createdDb = drizzleLibsql(createdClient, { schema: schemaSqlite, logger: shouldLogDbQueries() });
 
   return { db: createdDb as unknown as AppDb, client: createdClient, driver: "sqlite" };
 }
