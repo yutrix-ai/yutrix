@@ -57,7 +57,7 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       watch: false,
-      max_memory_restart: '1G',
+      max_memory_restart: mergedEnv.PM2_MAX_MEMORY || '2G',
       env: finalEnv
     }
   ]
