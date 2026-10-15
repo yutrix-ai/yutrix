@@ -44,6 +44,8 @@ import { classifyUpstreamErrorWithAdapter } from "./streamForwarder";
 import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
 import { overflowHopTaskOrder } from "./overflowContextHop";
+import { findLongContextTarget, isContextOverflowResponse, modelKey, LONG_CONTEXT_TASK_TYPE } from "./longContextChain";
+import { isClassicRoutingMode } from "../../services/opcAgentRouting";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities } from "./inputTokenLimit";
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS, resolveRouteRoutingMode, capacityTaskTypeForMode, strategyRoutingEnabledForLayer, shouldBypassCapabilityRouting } from "../../services/strategyRouting";
 import { getStickyModelForContinuation } from "../../services/chatLogQuery";
@@ -181,6 +183,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
   let strategyRoutingChecked = false;
   let strategyDecisionApplied = false;
   let longContextOverrideApplied = false;
+  const failedModelKeys = new Set<string>();
   let stopEarlyStreamPrelude: (() => void) | undefined;
 
   const continuityEngine = new ContinuityEngine();
@@ -853,6 +856,59 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               });
 
               if (hasImages && isContextExhausted) {
+                  const longContextTarget = await findLongContextTarget({
+                    route,
+                    startIndex: currentAttempt.targetIndex || 0,
+                    incomingProtocol,
+                    estimatedTokens: estimatedTotalTokens,
+                    exclude: new Set([...failedModelKeys, modelKey(currentAttempt.providerId, currentAttempt.modelId)]),
+                    onSkip: (skip) => logAction({
+                      ...baseActionLog,
+                      level: "INFO",
+                      code: "request.fallback_target_skipped",
+                      providerId: skip.providerId,
+                      modelId: skip.modelId,
+                      reason: `long_context_chain_${skip.reason}${skip.detail ? `:${skip.detail}` : ""}`,
+                    }),
+                  });
+                  if (longContextTarget) {
+                    logAction({
+                      ...baseActionLog,
+                      level: "WARN",
+                      code: "request.long_context_override",
+                      originalTaskType: currentAttempt.strategyTaskType || "initial",
+                      originalModelId: currentAttempt.modelId,
+                      targetModelId: longContextTarget.modelId,
+                      estimatedTokens: estimatedTotalTokens,
+                      modelLimit: contextBudget.limit,
+                    });
+                    ctx.routingTrace.push({
+                      fromProviderId: currentAttempt.providerId,
+                      fromModelId: currentAttempt.modelId,
+                      toProviderId: longContextTarget.providerId,
+                      toProviderProtocol: longContextTarget.providerProtocol,
+                      toModelId: longContextTarget.modelId,
+                      reason: `long_context_override:input_${estimatedTotalTokens}>${contextBudget.limit}`,
+                      hop: ctx.routingTrace.length + 1,
+                      latencyMs: 0,
+                      createdAt: new Date().toISOString(),
+                    });
+                    currentAttempt = {
+                      ...currentAttempt,
+                      providerId: longContextTarget.providerId,
+                      providerProtocol: longContextTarget.providerProtocol,
+                      modelId: longContextTarget.modelId,
+                      targetIndex: longContextTarget.index,
+                      strategyTaskType: capacityTaskType,
+                      strategyReason: "override:input_exceeds_model_limit",
+                    };
+                    ctx.currentAttempt = currentAttempt;
+                    longContextOverrideApplied = true;
+                    ctx.overflowHopApplied = true;
+                    attemptCount--;
+                    continue;
+                  }
+
                   let parsedTargets: any[] = [];
                   if (route.targets) {
                     try {
@@ -1083,7 +1139,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                   isStream: false
                 };
                 (ctx as any)._responseData = responseData;
-                const errorFallback = await checkErrorFallback({ status: 429, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
+                const errorFallback = await checkErrorFallback({ failedModelKeys, status: 429, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
                 if (errorFallback) {
                   currentAttempt = errorFallback.newAttempt;
                   ctx.currentAttempt = currentAttempt;
@@ -1158,7 +1214,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               const lastErr = targetState.lastUpstreamError;
               if (lastErr) {
                  responseData = lastErr;
-                 const errorFallback = await checkErrorFallback({
+                 const errorFallback = await checkErrorFallback({ failedModelKeys,
                    status: responseData.status,
                    currentAttempt,
                    route,
@@ -1438,7 +1494,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                     phase: "nonstream"
                   };
                   (ctx as any)._responseData = responseData;
-                  const errorFallback = await checkErrorFallback({ status: 400, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
+                  const errorFallback = await checkErrorFallback({ failedModelKeys, status: 400, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
                   if (errorFallback) {
                     currentAttempt = errorFallback.newAttempt;
                     ctx.currentAttempt = currentAttempt;
@@ -1559,7 +1615,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               if (ejectKey) {
                 noteNoAnswerTimeoutEject({ enabled: true, key: ejectKey });
               }
-              const errorFallback = await checkErrorFallback({
+              const errorFallback = await checkErrorFallback({ failedModelKeys,
                 status: 504,
                 currentAttempt,
                 route,
@@ -1998,7 +2054,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
             // --- 15. Error Fallback Check ---
             if (responseData.terminalError && responseData.terminalError.requiredCapability === "vision") {
-              const errorFallback = await checkErrorFallback({ status: responseData.terminalError.statusCode || responseData.status, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol, forceCapabilityFallback: true });
+              const errorFallback = await checkErrorFallback({ failedModelKeys, status: responseData.terminalError.statusCode || responseData.status, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol, forceCapabilityFallback: true });
               if (errorFallback) {
                 currentAttempt = errorFallback.newAttempt;
                 ctx.currentAttempt = currentAttempt;
@@ -2067,6 +2123,71 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
             }
             
+            if (
+              currentAttempt.strategyTaskType !== LONG_CONTEXT_TASK_TYPE
+              && !isClassicRoutingMode(route)
+              && isContextOverflowResponse(responseData)
+            ) {
+              failedModelKeys.add(modelKey(currentAttempt.providerId, currentAttempt.modelId));
+              const overflowUsage = await estimateMultimodalInputUsage({ body });
+              const overflowTarget = await findLongContextTarget({
+                route,
+                startIndex: currentAttempt.targetIndex || 0,
+                incomingProtocol,
+                estimatedTokens: overflowUsage.totalTokens,
+                exclude: failedModelKeys,
+                onSkip: (skip) => logAction({
+                  ...baseActionLog,
+                  level: "INFO",
+                  code: "request.fallback_target_skipped",
+                  providerId: skip.providerId,
+                  modelId: skip.modelId,
+                  reason: `long_context_chain_${skip.reason}${skip.detail ? `:${skip.detail}` : ""}`,
+                }),
+              });
+              if (overflowTarget) {
+                logAction({
+                  ...baseActionLog,
+                  level: "WARN",
+                  code: "request.long_context_override",
+                  originalTaskType: currentAttempt.strategyTaskType || "initial",
+                  originalModelId: currentAttempt.modelId,
+                  targetModelId: overflowTarget.modelId,
+                  estimatedTokens: overflowUsage.totalTokens,
+                  modelLimit: 0,
+                });
+                ctx.routingTrace.push({
+                  fromProviderId: currentAttempt.providerId,
+                  fromModelId: currentAttempt.modelId,
+                  toProviderId: overflowTarget.providerId,
+                  toProviderProtocol: overflowTarget.providerProtocol,
+                  toModelId: overflowTarget.modelId,
+                  reason: `long_context_override:upstream_context_overflow_${responseData.status}`,
+                  hop: ctx.routingTrace.length + 1,
+                  latencyMs: 0,
+                  createdAt: new Date().toISOString(),
+                });
+                currentAttempt = {
+                  ...currentAttempt,
+                  providerId: overflowTarget.providerId,
+                  providerProtocol: overflowTarget.providerProtocol,
+                  modelId: overflowTarget.modelId,
+                  targetIndex: overflowTarget.index,
+                  isFallback: true,
+                  fallbackReason: "上游上下文超长，切换长上下文模型",
+                  strategyTaskType: LONG_CONTEXT_TASK_TYPE,
+                  strategyReason: "override:upstream_context_overflow",
+                };
+                ctx.currentAttempt = currentAttempt;
+                longContextOverrideApplied = true;
+                ctx.overflowHopApplied = true;
+                responseData = null;
+                releaseAttemptResources();
+                attemptCount = reserveAttemptBudgetForLayerSwitch(attemptCount, maxAttempts);
+                continue;
+              }
+            }
+
             const capacityRetryState = getCapacityRetryState(currentAttempt.providerId, currentAttempt.modelId);
             if (capacityRetryState.retryCount >= capacityRetryState.maxRetries) {
               capacityRetryState.exhausted = true;
@@ -2138,7 +2259,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 message: noAnswerTimeoutMessageFrom(responseData),
                 probeSpec: lastL0TimeoutEjectProbeSpec,
               });
-              const errorFallback = await checkErrorFallback({ status: responseData.status, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
+              const errorFallback = await checkErrorFallback({ failedModelKeys, status: responseData.status, currentAttempt, route, body, provider, responseData, baseActionLog, logAction, incomingProtocol });
               if (errorFallback) {
                 currentAttempt = errorFallback.newAttempt;
                 ctx.currentAttempt = currentAttempt;
@@ -2304,7 +2425,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             message: streamTermErr.message,
             probeSpec: lastL0TimeoutEjectProbeSpec,
           });
-          const errorFallback = await checkErrorFallback({
+          const errorFallback = await checkErrorFallback({ failedModelKeys,
             status: streamAvailabilityStatus,
             currentAttempt,
             route,
@@ -2398,7 +2519,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
           // All keys tried (or capacity exhausted) — attempt Funnel Fallback
           const syntheticStatus = streamTermErr.statusCode || 502;
-          const errorFallback = await checkErrorFallback({
+          const errorFallback = await checkErrorFallback({ failedModelKeys,
             status: syntheticStatus,
             currentAttempt,
             route,
@@ -2435,7 +2556,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         // Priority 3.5: Remaining non-200 (404 model_not_found, 403, 400, 500, …)
         // never entered availability-hop or key-rotation. Hop if another layer exists.
         if (currentAttempt && isErrorFallbackStatus(streamAvailabilityStatus)) {
-          const errorFallback = await checkErrorFallback({
+          const errorFallback = await checkErrorFallback({ failedModelKeys,
             status: streamAvailabilityStatus,
             currentAttempt,
             route,

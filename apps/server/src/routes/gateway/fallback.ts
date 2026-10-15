@@ -12,6 +12,12 @@ import {
   coerceClassicTargetFromLegacy,
   isClassicRoutingMode,
 } from "../../services/opcAgentRouting";
+import {
+  LONG_CONTEXT_TASK_TYPE,
+  findLongContextTarget,
+  findVisionFallbackTarget,
+  modelKey,
+} from "./longContextChain";
 
 export interface FallbackResult {
   newAttempt: AttemptState;
@@ -26,8 +32,24 @@ async function resolveFallbackTarget(
   incomingProtocol: string,
   targetIndex: number,
   logAction?: (log: any) => void,
-  baseActionLog?: BaseActionLog
+  baseActionLog?: BaseActionLog,
+  failedModelKeys?: Set<string>
 ): Promise<{ providerId: string; modelId: string; protocol: string; promptPolicyId?: string | null; strategyTaskType?: string; strategyReason?: string; targetIndex: number } | null> {
+  if (currentAttemptStrategyTaskType === LONG_CONTEXT_TASK_TYPE && !isClassicRoutingMode(route)) {
+    const chainTarget = await resolveLongContextChainTarget({
+      route,
+      currentAttemptProviderId,
+      currentAttemptModelId,
+      body,
+      incomingProtocol,
+      targetIndex,
+      logAction,
+      baseActionLog,
+      failedModelKeys,
+    });
+    if (chainTarget) return chainTarget;
+  }
+
   let parsedTargets: any[] = [];
   if (route.targets) {
     try {
@@ -171,6 +193,73 @@ async function resolveFallbackTarget(
   return null;
 }
 
+/**
+ * Next hop while already on the long-context chain: the next later-layer long_context
+ * target; once exhausted, image requests go back to a vision model (clipped to its window
+ * by the post-hop guard) and text requests fall through to the regular layer fallback.
+ */
+async function resolveLongContextChainTarget(options: {
+  route: any;
+  currentAttemptProviderId: string;
+  currentAttemptModelId: string;
+  body: any;
+  incomingProtocol: string;
+  targetIndex: number;
+  logAction?: (log: any) => void;
+  baseActionLog?: BaseActionLog;
+  failedModelKeys?: Set<string>;
+}): Promise<{ providerId: string; modelId: string; protocol: string; promptPolicyId?: string | null; strategyTaskType?: string; strategyReason?: string; targetIndex: number } | null> {
+  const exclude = new Set(options.failedModelKeys ?? []);
+  exclude.add(modelKey(options.currentAttemptProviderId, options.currentAttemptModelId));
+  const tokenEst = await estimateMultimodalInputUsage({ body: options.body });
+
+  const next = await findLongContextTarget({
+    route: options.route,
+    startIndex: options.targetIndex + 1,
+    incomingProtocol: options.incomingProtocol,
+    estimatedTokens: tokenEst.totalTokens,
+    exclude,
+    onSkip: (skip) => {
+      if (!options.logAction || !options.baseActionLog) return;
+      options.logAction({
+        ...options.baseActionLog,
+        level: "INFO",
+        code: "request.fallback_target_skipped",
+        providerId: skip.providerId,
+        modelId: skip.modelId,
+        reason: `long_context_chain_${skip.reason}${skip.detail ? `:${skip.detail}` : ""}`,
+      });
+    },
+  });
+  if (next) {
+    return {
+      providerId: next.providerId,
+      modelId: next.modelId,
+      protocol: next.providerProtocol,
+      promptPolicyId: next.promptPolicyId,
+      strategyTaskType: LONG_CONTEXT_TASK_TYPE,
+      strategyReason: "long_context_chain_fallback",
+      targetIndex: next.index,
+    };
+  }
+
+  if (tokenEst.imageCount > 0) {
+    const vision = findVisionFallbackTarget({ route: options.route, exclude });
+    if (vision) {
+      return {
+        providerId: vision.providerId,
+        modelId: vision.modelId,
+        protocol: vision.providerProtocol,
+        promptPolicyId: vision.promptPolicyId,
+        strategyTaskType: "vision",
+        strategyReason: "long_context_chain_exhausted_vision_clip",
+        targetIndex: vision.index,
+      };
+    }
+  }
+  return null;
+}
+
 export async function checkConcurrencyFallback(
   currentAttempt: AttemptState,
   route: any,
@@ -238,6 +327,8 @@ export interface CheckErrorFallbackOptions {
   logAction: (log: any) => void;
   incomingProtocol: string;
   forceCapabilityFallback?: boolean;
+  /** Models already failed in this request; the current attempt is added before resolving. */
+  failedModelKeys?: Set<string>;
 }
 
 /** Funnel hops on any unsuccessful upstream status; only HTTP 200 is a terminal success. */
@@ -260,7 +351,8 @@ export async function checkErrorFallback(
     baseActionLog,
     logAction,
     incomingProtocol,
-    forceCapabilityFallback
+    forceCapabilityFallback,
+    failedModelKeys
   } = options;
 
   const isVisionCapabilityError = responseData?.terminalError?.requiredCapability === "vision" || forceCapabilityFallback;
@@ -270,6 +362,7 @@ export async function checkErrorFallback(
     return null;
   }
 
+  failedModelKeys?.add(modelKey(currentAttempt.providerId, currentAttempt.modelId));
   const nextTarget = await resolveFallbackTarget(
     route,
     currentAttempt.providerId,
@@ -279,7 +372,8 @@ export async function checkErrorFallback(
     incomingProtocol,
     currentAttempt.targetIndex || 0,
     logAction,
-    baseActionLog
+    baseActionLog,
+    failedModelKeys
   );
   if (!nextTarget) return null;
 
