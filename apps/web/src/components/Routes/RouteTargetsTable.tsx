@@ -255,7 +255,7 @@ export function RouteTargetsTable({
                       {t("routes.targets.overflowAction", "超限处理")}
                     </span>
                     <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
-                      {t("routes.targets.overflowActionHint", "达到窗口 80% 时：转到长上下文，或留在原模型上压缩历史。")}
+                      {t("routes.targets.overflowActionHint", "达到窗口 80% 时：转到长上下文，或留在原模型上压缩历史。压缩时最近两轮（含图片）原样保留，更早的图片由本层视觉模型写成描述。")}
                     </span>
                   </div>
                 </TableHead>

@@ -885,7 +885,7 @@
       "noResults": "未找到匹配的供应商或模型",
       "clearSelection": "清空所选目标",
       "overflowAction": "超限处理",
-      "overflowActionHint": "达到窗口 80% 时：转到长上下文，或留在原模型上压缩历史。",
+      "overflowActionHint": "达到窗口 80% 时：转到长上下文，或留在原模型上压缩历史。压缩时最近两轮（含图片）原样保留，更早的图片由本层视觉模型写成描述。",
       "overflowLong": "走长上下文",
       "overflowCompress": "就地压缩"
     },

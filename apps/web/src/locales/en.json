@@ -888,7 +888,7 @@
       "noResults": "No matching providers or models found",
       "clearSelection": "Clear Selection",
       "overflowAction": "When over limit",
-      "overflowActionHint": "At 80% of the window: hop to the long-context model, or compress history and stay on this model.",
+      "overflowActionHint": "At 80% of the window: hop to the long-context model, or compress history and stay on this model. Compression keeps the last two turns, images included, and asks this layer's vision model to describe older images.",
       "overflowLong": "Use long context",
       "overflowCompress": "Compress in place"
     },

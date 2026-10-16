@@ -7,10 +7,13 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import {
   applyContextSummary,
   buildCompressorTranscript,
+  listImageParts,
   planContextCompression,
   reachesCompressFill,
   readLayerOverflowAction,
+  selectImagesForCaption,
   SUMMARY_MARKER,
+  toCaptionPart,
 } from "../src/routes/gateway/contextCompression";
 
 describe("context compression plan", () => {
@@ -78,6 +81,33 @@ describe("context compression plan", () => {
     expect(next.messages[next.messages.length - 1].content).toBe("done");
     expect(JSON.stringify(next.messages)).not.toContain("base64,abc");
     expect(body.messages[0].content[1].image_url.url).toContain("base64,abc");
+  });
+
+  it("captions only the newest older images and keeps their bytes out of the text transcript", () => {
+    const image = (id: string) => ({ type: "image_url", image_url: { url: `data:image/png;base64,${id}` } });
+    const older = [1, 2, 3, 4, 5, 6].map((n) => ({
+      role: n % 2 === 0 ? "assistant" : "user",
+      content: [{ type: "text", text: `shot ${n}` }, image(`IMG${n}`)],
+    }));
+    const listed = listImageParts(older);
+    expect(listed.map((item) => item.index)).toEqual([1, 2, 3, 4, 5, 6]);
+    const chosen = selectImagesForCaption(listed, 4);
+    expect(chosen.map((item) => item.index)).toEqual([3, 4, 5, 6]);
+
+    const transcript = buildCompressorTranscript(older, {
+      captioned: new Set(chosen.map((item) => item.index)),
+      text: "[image 6]\nError: ENOENT src/auth/login.ts",
+    });
+    expect(transcript).toContain("[image omitted]");
+    expect(transcript).toContain("[image 6 described below]");
+    expect(transcript).toContain("ENOENT src/auth/login.ts");
+    expect(transcript).not.toContain("IMG1");
+    expect(transcript).not.toContain("IMG6");
+
+    const openaiPart = toCaptionPart(image("IMG6"), false);
+    expect(openaiPart.image_url.url).toContain("IMG6");
+    const anthropicPart = toCaptionPart({ type: "image", source: { type: "base64", media_type: "image/png", data: "QQQ" } }, true);
+    expect(anthropicPart.source.data).toBe("QQQ");
   });
 
   it("triggers at 80% of the configured window and defaults the layer switch to long context", () => {
@@ -278,5 +308,77 @@ describe("context compression gateway", () => {
     expect(JSON.stringify(forwarded.messages)).toContain("image_url");
     expect(forwarded.messages.length).toBeLessThan(9);
     expect(requests[0].messages[0].content).not.toContain("base64,mock");
+  });
+
+  it("describes an older image with the vision model, then summarizes without the image bytes", async () => {
+    const requests: any[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      const reqBody = JSON.parse(String(init?.body || "{}"));
+      requests.push(reqBody);
+      const firstContent = reqBody.messages?.[0]?.content;
+      const isCaption = Array.isArray(firstContent)
+        && JSON.stringify(firstContent).includes("Describe each attached image");
+      if (isCaption) {
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "[image 1]\nTerminal shows Error: ENOENT src/auth/login.ts" } }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (reqBody.model === "lc-a") {
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "## Errors\nENOENT src/auth/login.ts" } }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        id: "chatcmpl-c",
+        object: "chat.completion",
+        created: Date.now(),
+        model: reqBody.model,
+        choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: {
+        model: "vis-1",
+        stream: false,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "first screenshot" },
+              { type: "image_url", image_url: { url: "data:image/png;base64,OLDIMG" } },
+            ],
+          },
+          ...Array.from({ length: 7 }, (_, i) => ({
+            role: i % 2 === 0 ? "assistant" : "user",
+            content: `turn ${i} ` + "x".repeat(2000),
+          })),
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "current screen" },
+              { type: "image_url", image_url: { url: "data:image/png;base64,NEWIMG" } },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[0])).toContain("OLDIMG");
+    expect(JSON.stringify(requests[0])).not.toContain("NEWIMG");
+    expect(requests[1].model).toBe("lc-a");
+    expect(JSON.stringify(requests[1])).toContain("ENOENT src/auth/login.ts");
+    expect(JSON.stringify(requests[1])).not.toContain("OLDIMG");
+    expect(JSON.stringify(requests[1])).not.toContain("NEWIMG");
+    expect(requests[2].model).toBe("vis-1");
+    expect(JSON.stringify(requests[2])).toContain(SUMMARY_MARKER);
+    expect(JSON.stringify(requests[2])).toContain("NEWIMG");
+    expect(JSON.stringify(requests[2])).not.toContain("OLDIMG");
   });
 });
