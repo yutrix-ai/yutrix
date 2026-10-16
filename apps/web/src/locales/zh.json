@@ -883,7 +883,11 @@
       "configureTarget": "配置目标",
       "searchPlaceholder": "搜索供应商或模型名称...",
       "noResults": "未找到匹配的供应商或模型",
-      "clearSelection": "清空所选目标"
+      "clearSelection": "清空所选目标",
+      "overflowAction": "超限处理",
+      "overflowActionHint": "达到窗口 80% 时：转到长上下文，或留在原模型上压缩历史。",
+      "overflowLong": "走长上下文",
+      "overflowCompress": "就地压缩"
     },
     "placeholders": {
       "name": "例如：默认 OpenAI 路由",

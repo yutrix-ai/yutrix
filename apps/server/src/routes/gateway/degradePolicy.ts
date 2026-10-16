@@ -8,6 +8,8 @@
  * text → long_context. Image requests ignore the size gate; when they exceed the
  * window (or the upstream rejects them as too long) they also hop to long_context
  * and degrade along that chain (see longContextChain.ts), ending on a clipped vision model.
+ * A strategy layer may set overflowAction "compress" instead: at 80% of its window
+ * the history is summarized in place and the request stays on the same model.
  */
 
 export const LONG_CONTEXT_SIZE_GATE_TOKENS = 256 * 1024;

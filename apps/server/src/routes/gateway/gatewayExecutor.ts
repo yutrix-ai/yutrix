@@ -45,6 +45,7 @@ import { checkAndServeCachedResponse } from "./cache";
 import { enforceInputTokenLimit, applyForcedInputTokenLimit } from "./inputTokenLimitGuard";
 import { overflowHopTaskOrder } from "./overflowContextHop";
 import { findLongContextTarget, isContextOverflowResponse, modelKey, LONG_CONTEXT_TASK_TYPE } from "./longContextChain";
+import { compressGatewayContext, readLayerOverflowAction, reachesCompressFill } from "./contextCompression";
 import { isClassicRoutingMode } from "../../services/opcAgentRouting";
 import { estimateMultimodalInputUsage, inspectOutboundCapabilities } from "./inputTokenLimit";
 import { resolveStrategyRoutingDecision, parseStrategyRoutingRules, validateOneStrategyRule, computeRoutingRequirements, shouldAttemptLongContextOverride, meetsLongContextSizeGate, LONG_CONTEXT_SIZE_GATE_TOKENS, resolveRouteRoutingMode, capacityTaskTypeForMode, strategyRoutingEnabledForLayer, shouldBypassCapabilityRouting } from "../../services/strategyRouting";
@@ -854,8 +855,92 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 estimatedTotalTokens,
                 hasImages,
               });
+              const overflowAction = readLayerOverflowAction(route, currentAttempt.targetIndex || 0);
 
-              if (hasImages && isContextExhausted) {
+              if (
+                overflowAction === "compress"
+                && reachesCompressFill(estimatedTotalTokens, contextBudget.limit)
+                && !ctx.contextCompressed
+              ) {
+                const compressed = await compressGatewayContext({
+                  route,
+                  body,
+                  incomingProtocol,
+                  layerIndex: currentAttempt.targetIndex || 0,
+                  currentProviderId: currentAttempt.providerId,
+                  currentModelId: currentAttempt.modelId,
+                  currentProtocol: currentAttempt.providerProtocol,
+                  currentContextLimit: contextBudget.limit,
+                });
+                if (compressed.ok) {
+                  body = compressed.body;
+                  ctx.contextCompressed = true;
+                  logAction({
+                    ...baseActionLog,
+                    level: "WARN",
+                    code: "request.context_compressed",
+                    modelId: currentAttempt.modelId,
+                    compressorModelId: compressed.compressorModelId,
+                    estimatedTokens: estimatedTotalTokens,
+                    modelLimit: contextBudget.limit,
+                    olderTurns: compressed.olderTurns,
+                  });
+                  const after = await estimateMultimodalInputUsage({ body });
+                  if (!fitsContextBudget({
+                    inputTokens: after.totalTokens,
+                    requestedOutputTokens: 0,
+                    safetyMargin,
+                    budget: contextBudget,
+                  })) {
+                    body = await applyForcedInputTokenLimit({
+                      ctx,
+                      modifiedBody: body,
+                      provider,
+                      currentAttempt,
+                      activeModelConfig,
+                      baseActionLog,
+                      logAction,
+                      maxInputTokens: contextBudget.limit,
+                      limitSource: "model_window_after_compress",
+                      limitSourceLabel: currentAttempt.modelId,
+                    });
+                  }
+                } else if (isContextExhausted && contextBudget.limit > 0) {
+                  logAction({
+                    ...baseActionLog,
+                    level: "WARN",
+                    code: "request.context_compress_failed",
+                    modelId: currentAttempt.modelId,
+                    reason: compressed.reason,
+                    estimatedTokens: estimatedTotalTokens,
+                    modelLimit: contextBudget.limit,
+                  });
+                  body = await applyForcedInputTokenLimit({
+                    ctx,
+                    modifiedBody: body,
+                    provider,
+                    currentAttempt,
+                    activeModelConfig,
+                    baseActionLog,
+                    logAction,
+                    maxInputTokens: contextBudget.limit,
+                    limitSource: "model_window",
+                    limitSourceLabel: currentAttempt.modelId,
+                  });
+                } else if (compressed.reason !== "nothing_to_summarize") {
+                  logAction({
+                    ...baseActionLog,
+                    level: "WARN",
+                    code: "request.context_compress_failed",
+                    modelId: currentAttempt.modelId,
+                    reason: compressed.reason,
+                    estimatedTokens: estimatedTotalTokens,
+                    modelLimit: contextBudget.limit,
+                  });
+                }
+              }
+
+              if (overflowAction !== "compress" && hasImages && isContextExhausted) {
                   const longContextTarget = await findLongContextTarget({
                     route,
                     startIndex: currentAttempt.targetIndex || 0,
@@ -1022,6 +1107,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
               // Non-vision: model-window overflow or post-clip 256Ki size gate → long_context.
               if (
+                overflowAction !== "compress" &&
                 !hasImages &&
                 !longContextOverrideApplied &&
                 hopOrder.includes("long_context")
@@ -2124,7 +2210,49 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
             }
             
             if (
-              currentAttempt.strategyTaskType !== LONG_CONTEXT_TASK_TYPE
+              readLayerOverflowAction(route, currentAttempt.targetIndex || 0) === "compress"
+              && !ctx.contextCompressed
+              && isContextOverflowResponse(responseData)
+            ) {
+              const compressed = await compressGatewayContext({
+                route,
+                body,
+                incomingProtocol,
+                layerIndex: currentAttempt.targetIndex || 0,
+                currentProviderId: currentAttempt.providerId,
+                currentModelId: currentAttempt.modelId,
+                currentProtocol: currentAttempt.providerProtocol,
+                currentContextLimit: resolveModelContextWindow(activeModelConfig).limit,
+              });
+              if (compressed.ok) {
+                body = compressed.body;
+                ctx.contextCompressed = true;
+                logAction({
+                  ...baseActionLog,
+                  level: "WARN",
+                  code: "request.context_compressed",
+                  modelId: currentAttempt.modelId,
+                  compressorModelId: compressed.compressorModelId,
+                  reason: "upstream_context_overflow",
+                  olderTurns: compressed.olderTurns,
+                });
+                responseData = null;
+                releaseAttemptResources();
+                attemptCount--;
+                continue;
+              }
+              logAction({
+                ...baseActionLog,
+                level: "WARN",
+                code: "request.context_compress_failed",
+                modelId: currentAttempt.modelId,
+                reason: compressed.reason,
+              });
+            }
+
+            if (
+              readLayerOverflowAction(route, currentAttempt.targetIndex || 0) !== "compress"
+              && currentAttempt.strategyTaskType !== LONG_CONTEXT_TASK_TYPE
               && !isClassicRoutingMode(route)
               && isContextOverflowResponse(responseData)
             ) {

@@ -91,6 +91,7 @@ export function RouteTargetsTable({
           promptPolicyId: "none",
           bestEffort: false,
           strategyRoutingEnabled: true,
+          overflowAction: "long_context",
           strategyRoutingRules: routeTasks.map(task => ({
             taskType: task.type,
             providerId: "",
@@ -147,6 +148,17 @@ export function RouteTargetsTable({
         providerProtocol: firstRule.providerProtocol,
         modelId: firstRule.modelId,
         strategyRoutingRules: updatedRules
+      };
+    });
+    onChange(newTargets);
+  };
+
+  const handleOverflowAction = (rowIdx: number, overflowAction: string) => {
+    const newTargets = targets.map((row, idx) => {
+      if (idx !== rowIdx) return row;
+      return {
+        ...normalizeTarget(row),
+        overflowAction: overflowAction === "compress" ? "compress" : "long_context",
       };
     });
     onChange(newTargets);
@@ -236,6 +248,18 @@ export function RouteTargetsTable({
                   </TableHead>
                 ))
               )}
+              {!isClassic && (
+                <TableHead className="min-w-[132px] py-3.5 px-2">
+                  <div className="flex flex-col space-y-0.5">
+                    <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
+                      {t("routes.targets.overflowAction", "超限处理")}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
+                      {t("routes.targets.overflowActionHint", "达到窗口 80% 时：转到长上下文，或留在原模型上压缩历史。")}
+                    </span>
+                  </div>
+                </TableHead>
+              )}
               <TableHead className="w-24 text-center font-medium text-xs text-muted-foreground uppercase tracking-wider">{t("routes.targets.actions", "操作")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -277,6 +301,19 @@ export function RouteTargetsTable({
                         </TableCell>
                       );
                     })
+                  )}
+                  {!isClassic && (
+                    <TableCell className="p-1.5 align-middle">
+                      <select
+                        aria-label={t("routes.targets.overflowAction", "超限处理")}
+                        value={normalized.overflowAction === "compress" ? "compress" : "long_context"}
+                        onChange={(event) => handleOverflowAction(idx, event.target.value)}
+                        className="h-12 w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-2 text-xs text-zinc-900 shadow-xs outline-hidden dark:border-zinc-800 dark:bg-zinc-900/10 dark:text-zinc-100"
+                      >
+                        <option value="long_context">{t("routes.targets.overflowLong", "走长上下文")}</option>
+                        <option value="compress">{t("routes.targets.overflowCompress", "就地压缩")}</option>
+                      </select>
+                    </TableCell>
                   )}
                   <TableCell className="p-2 align-middle">
                     <div className="flex items-center justify-center gap-0.5">

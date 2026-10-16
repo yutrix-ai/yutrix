@@ -886,7 +886,11 @@
       "configureTarget": "Configure Target",
       "searchPlaceholder": "Search provider or model...",
       "noResults": "No matching providers or models found",
-      "clearSelection": "Clear Selection"
+      "clearSelection": "Clear Selection",
+      "overflowAction": "When over limit",
+      "overflowActionHint": "At 80% of the window: hop to the long-context model, or compress history and stay on this model.",
+      "overflowLong": "Use long context",
+      "overflowCompress": "Compress in place"
     },
     "placeholders": {
       "name": "e.g., Default OpenAI Route",

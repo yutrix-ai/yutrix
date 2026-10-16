@@ -191,6 +191,8 @@ export interface GatewayRequestContext {
   emptyOutputLayerHopApplied?: boolean;
   /** A long_context or later-vision overflow hop already ran; skip re-applying group/user clip. */
   overflowHopApplied?: boolean;
+  /** Older turns were summarized in place; do not compress this request again. */
+  contextCompressed?: boolean;
 
   // Provider Adapter State
   activeProviderAdapter?: any;
