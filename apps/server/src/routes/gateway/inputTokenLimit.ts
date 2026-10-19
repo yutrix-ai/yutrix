@@ -1,5 +1,6 @@
 import { exactEstimateTokens, estimateTokensFallback } from "../../utils/tokenizer";
 import { isImageNode } from "../../utils/multimodal";
+import { cloneJsonSharingStrings } from "../../utils/shareClone";
 
 type ChatMessage = Record<string, any> & {
   role?: string;
@@ -42,7 +43,7 @@ const TOOL_CALL_PADDING_TOKENS = 12;
 const TRUNCATION_MARKER = "\n\n[PromptGate: content truncated to fit input token limit]\n\n";
 
 function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value));
+  return cloneJsonSharingStrings(value);
 }
 
 function isSystemLikeMessage(message: ChatMessage): boolean {

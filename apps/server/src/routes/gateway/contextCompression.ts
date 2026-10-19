@@ -16,6 +16,7 @@ import { db } from "../../db";
 import { providerApiKeys, providerModels, providers } from "../../db/schema";
 import { and, eq } from "drizzle-orm";
 import { decryptText } from "../../utils/crypto";
+import { cloneJsonSharingStrings } from "../../utils/shareClone";
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { findLongContextTarget } from "./longContextChain";
 import { estimateMultimodalInputUsage, ROUTING_IMAGE_TOKEN_BUDGET } from "./inputTokenLimit";
@@ -250,7 +251,7 @@ export function toCaptionPart(part: any, anthropic: boolean): any | null {
 }
 
 export function applyContextSummary(body: any, summary: string, plan: CompressionPlan): any {
-  const next = JSON.parse(JSON.stringify(body));
+  const next = cloneJsonSharingStrings(body);
   const summaryMessage = { role: "user", content: `${SUMMARY_MARKER}\n${summary.trim()}` };
   const ack = { role: "assistant", content: "Understood. Continuing from the summary and the recent turns that follow." };
   next.messages = [...plan.systemMessages, summaryMessage, ack, ...plan.kept];

@@ -2,6 +2,7 @@ import { db } from "../../db";
 import { providers, providerModels, providerApiKeys, apiKeys, requestLogs } from "../../db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { decryptText } from "../../utils/crypto";
+import { cloneJsonSharingStrings } from "../../utils/shareClone";
 import { exactEstimateTokens, estimateTokensFallback } from "../../utils/tokenizer";
 import { logEmitter } from "../../utils/events";
 import { formatError, truncateErrorDetail, describeFetchError, mapErrorTypeToAnthropic } from "../../utils/gatewayError";
@@ -1617,7 +1618,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               providerProtocol: currentAttempt.providerProtocol,
             });
             const upstreamBody = googleNativeRequest ? googleNativeRequest.body : finalBody;
-            usageRequestBody = JSON.parse(JSON.stringify(upstreamBody));
+            usageRequestBody = cloneJsonSharingStrings(upstreamBody);
             ctx.usageRequestBody = usageRequestBody;
 
             // --- Vision Guard (strategy mode only; classic sends blind to layer model) ---
@@ -1936,7 +1937,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
               }
             };
             if (responseData) {
-              responseData.roundRequestBody = JSON.parse(JSON.stringify(usageRequestBody));
+              responseData.roundRequestBody = cloneJsonSharingStrings(usageRequestBody);
               responseData.roundId = currentRoundId;
               responseData.activeKeyId = activeKeyId;
               responseData.availableKeys = activeKeysList;

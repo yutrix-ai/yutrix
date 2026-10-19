@@ -2,6 +2,7 @@ import { db } from "../../db";
 import { promptPolicies, promptInjectionRecords } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
+import { cloneJsonSharingStrings } from "../../utils/shareClone";
 
 /**
  * Result of transforming the raw request body for upstream dispatch.
@@ -38,7 +39,7 @@ export function transformRequestBody(
   options?: TransformRequestBodyOptions,
 ): TransformResult {
   // Payload transformations
-  let modifiedBody = JSON.parse(JSON.stringify(body));
+  let modifiedBody = cloneJsonSharingStrings(body);
 
   // Normalize array body (e.g. Claude Code content blocks) into standard Anthropic messages
   // object. Array bodies lose non-index properties (.tools, .system) on JSON.stringify.

@@ -3,6 +3,7 @@
  * Window size is ignored here — capacity (long_context) runs after landing.
  */
 
+import { cloneJsonSharingStrings } from "../../utils/shareClone";
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { coerceClassicTargetFromLegacy, isClassicRoutingMode } from "../../services/opcAgentRouting";
 import { estimateMultimodalInputUsage } from "./inputTokenLimit";
@@ -27,7 +28,7 @@ export type EmptyOutputLayerHop = {
 };
 
 export function snapshotUncutInboundBody(body: any): any {
-  return JSON.parse(JSON.stringify(body ?? {}));
+  return cloneJsonSharingStrings(body ?? {});
 }
 
 /** Deep clone that hop/restore always read. Never assign this object to `body`. */
