@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import {
   NormalizedLogInfo,
+  isImageNode,
   normalizeImageBlock,
   normalizeOpenAIContentParts,
 } from "../../utils/multimodal";
@@ -287,6 +288,7 @@ export function adaptRequestProtocol(
 
         if (Array.isArray(msg.content)) {
           let finalContentParts: any[] = [];
+          const deferredToolResultParts: any[] = [];
           let toolCalls: any[] = [];
           let hasToolResult = false;
           let keptAnyBlock = false;
@@ -343,9 +345,33 @@ export function adaptRequestProtocol(
               if (typeof block.content === "string") {
                 resultStr = block.content;
               } else if (Array.isArray(block.content)) {
-                resultStr = block.content
-                  .map((c: any) => c.text || "")
-                  .join("\n");
+                const textParts: string[] = [];
+                let extractedImageCount = 0;
+                for (const c of block.content) {
+                  if (!c) continue;
+                  if (typeof c === "string") {
+                    if (c) textParts.push(c);
+                  } else if (
+                    c.type === "image_url" ||
+                    c.type === "image" ||
+                    c.type === "file" ||
+                    c.type === "input_image" ||
+                    c.type === "input-image" ||
+                    isImageNode(c)
+                  ) {
+                    deferredToolResultParts.push(normalizeImageBlock(c, logInfo));
+                    extractedImageCount++;
+                  } else if (typeof c.text === "string" && c.text) {
+                    textParts.push(c.text);
+                  }
+                }
+                resultStr = textParts.join("\n");
+                if (!resultStr && extractedImageCount > 0) {
+                  resultStr = "[Image content attached in following user message]";
+                }
+              } else if (block.content && isImageNode(block.content)) {
+                deferredToolResultParts.push(normalizeImageBlock(block.content, logInfo));
+                resultStr = "[Image content attached in following user message]";
               } else {
                 resultStr = JSON.stringify(block.content || "");
               }
@@ -357,6 +383,10 @@ export function adaptRequestProtocol(
             } else {
               finalContentParts.push(normalizeImageBlock(block, logInfo));
             }
+          }
+
+          if (deferredToolResultParts.length > 0) {
+            finalContentParts = [...deferredToolResultParts, ...finalContentParts];
           }
 
           // Entire message was Anthropic-only server-tool noise — drop it.

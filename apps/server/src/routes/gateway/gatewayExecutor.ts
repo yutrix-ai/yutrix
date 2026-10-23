@@ -399,9 +399,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 for (const idx in anthropicState.activeToolCalls) {
                   const state = anthropicState.activeToolCalls[idx];
                   if (state.emittedStart && !state.closed) {
-                     reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: anthropicState.activeBlockIndex })}\n\n`);
+                     const stopIdx = state.blockIndex ?? anthropicState.activeBlockIndex;
+                     reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: stopIdx })}\n\n`);
                      state.closed = true;
-                     anthropicState.activeBlockIndex++;
+                     if (state.blockIndex === undefined) anthropicState.activeBlockIndex++;
                   }
                 }
                 if (anthropicState.isInsideTextBlock) {

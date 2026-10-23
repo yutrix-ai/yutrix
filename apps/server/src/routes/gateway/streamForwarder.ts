@@ -403,15 +403,6 @@ function logStreamCatchError(
 ) {
   if (!logAction || !baseActionLog) return;
   if (transportKind === "client_closed") {
-    logAction({
-      ...baseActionLog,
-      level: "INFO",
-      code: "request.client_closed",
-      adapterId: adapter?.id || "transparent",
-      errorCode: classified.code,
-      errorType: classified.errorType,
-      message: classified.message,
-    });
     return;
   }
   logAction({
@@ -1176,6 +1167,7 @@ export async function forwardSSEStreamAdapted(
     name: string;
     emittedStart: boolean;
     closed: boolean;
+    blockIndex?: number;
   }>;
 
   let hadLengthCutoff = false;
@@ -1349,7 +1341,7 @@ export async function forwardSSEStreamAdapted(
             observer.onParsedChunk(JSON.parse(JSON.stringify(data)));
           }
 
-          // ─── Content text deltas → Anthropic text_delta ───
+          // ─── Content text deltas & Tool call deltas → Anthropic blocks ───
           // Visible content is forwarded after protocol compatibility
           // translators have moved hidden reasoning into reasoning_content.
           let deltaText = "";
@@ -1358,9 +1350,27 @@ export async function forwardSSEStreamAdapted(
           } else if (data.choices?.[0]?.message?.content) {
             deltaText = data.choices[0].message.content;
           }
+          const toolCallsDelta = data.choices?.[0]?.delta?.tool_calls;
 
-          if (deltaText) {
-            if (!isInsideTextBlock && Object.keys(activeToolCalls).length === 0) {
+          const closeOpenToolCalls = () => {
+            for (const tcIndexStr in activeToolCalls) {
+              const tcIndex = parseInt(tcIndexStr);
+              const tool = activeToolCalls[tcIndex];
+              if (tool && !tool.closed && tool.emittedStart) {
+                const blockIdx = tool.blockIndex ?? (anthropicBlockIndex + tcIndex);
+                wroteDownstream = downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                  type: "content_block_stop",
+                  index: blockIdx,
+                })}\n\n`) || wroteDownstream;
+                tool.closed = true;
+              }
+            }
+          };
+
+          const emitDeltaText = (text: string) => {
+            if (!text) return;
+            if (!isInsideTextBlock) {
+              closeOpenToolCalls();
               wroteDownstream = downstream.write(`event: content_block_start\ndata: ${JSON.stringify({
                 type: "content_block_start",
                 index: anthropicBlockIndex,
@@ -1371,16 +1381,21 @@ export async function forwardSSEStreamAdapted(
             wroteDownstream = downstream.write(`event: content_block_delta\ndata: ${JSON.stringify({
               type: "content_block_delta",
               index: anthropicBlockIndex,
-              delta: { type: "text_delta", text: deltaText },
+              delta: { type: "text_delta", text },
             })}\n\n`) || wroteDownstream;
             meaningfulClientOutputSent = true;
-          }
+          };
 
-          // ─── Tool call deltas → Anthropic tool_use blocks ───
-          const toolCallsDelta = data.choices?.[0]?.delta?.tool_calls;
-          if (toolCallsDelta && Array.isArray(toolCallsDelta)) {
-            for (const tc of toolCallsDelta) {
-              if (!activeToolCalls[tc.index]) {
+          const emitToolCallsDelta = (tcs: any[]) => {
+            for (const tc of tcs) {
+              const tcIndex = typeof tc.index === "number" ? tc.index : 0;
+              const existingTool = activeToolCalls[tcIndex];
+              const isNewToolAtSameIndex = existingTool && (
+                existingTool.closed ||
+                (tc.id && existingTool.id && tc.id !== existingTool.id)
+              );
+
+              if (!existingTool || isNewToolAtSameIndex) {
                 // Close text block if open
                 if (isInsideTextBlock) {
                   wroteDownstream = downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
@@ -1391,22 +1406,33 @@ export async function forwardSSEStreamAdapted(
                   anthropicBlockIndex++;
                 }
 
+                // Close replaced tool call at same index if still open
+                if (existingTool && !existingTool.closed && existingTool.emittedStart) {
+                  const prevBlockIdx = existingTool.blockIndex ?? (anthropicBlockIndex + tcIndex);
+                  wroteDownstream = downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                    type: "content_block_stop",
+                    index: prevBlockIdx,
+                  })}\n\n`) || wroteDownstream;
+                  existingTool.closed = true;
+                }
+
                 // Close previous tool calls
                 for (const prevIndexStr in activeToolCalls) {
                   const prevIndex = parseInt(prevIndexStr);
-                  if (prevIndex < tc.index) {
+                  if (prevIndex < tcIndex) {
                     const prevTool = activeToolCalls[prevIndex];
-                    if (!prevTool.closed && prevTool.emittedStart) {
+                    if (prevTool && !prevTool.closed && prevTool.emittedStart) {
+                      const prevBlockIdx = prevTool.blockIndex ?? (anthropicBlockIndex + prevIndex);
                       wroteDownstream = downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
                         type: "content_block_stop",
-                        index: anthropicBlockIndex + prevIndex,
+                        index: prevBlockIdx,
                       })}\n\n`) || wroteDownstream;
                       prevTool.closed = true;
                     }
                   }
                 }
 
-                activeToolCalls[tc.index] = {
+                activeToolCalls[tcIndex] = {
                   id: tc.id || `call_${crypto.randomUUID()}`,
                   name: tc.function?.name || "",
                   emittedStart: false,
@@ -1414,26 +1440,50 @@ export async function forwardSSEStreamAdapted(
                 };
               }
 
-              const tool = activeToolCalls[tc.index];
+              const tool = activeToolCalls[tcIndex];
+              if (tc.id && !tool.id) tool.id = tc.id;
               if (tc.function?.name && !tool.name) tool.name = tc.function.name;
 
               if (!tool.emittedStart && tool.name) {
+                if (isInsideTextBlock) {
+                  wroteDownstream = downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                    type: "content_block_stop",
+                    index: anthropicBlockIndex,
+                  })}\n\n`) || wroteDownstream;
+                  isInsideTextBlock = false;
+                  anthropicBlockIndex++;
+                }
+                tool.blockIndex = anthropicBlockIndex++;
                 wroteDownstream = downstream.write(`event: content_block_start\ndata: ${JSON.stringify({
                   type: "content_block_start",
-                  index: anthropicBlockIndex + tc.index,
+                  index: tool.blockIndex,
                   content_block: { type: "tool_use", id: tool.id, name: tool.name, input: {} },
                 })}\n\n`) || wroteDownstream;
                 tool.emittedStart = true;
               }
 
               if (tc.function?.arguments && tool.emittedStart) {
+                const blockIdx = tool.blockIndex ?? (anthropicBlockIndex + tcIndex);
                 wroteDownstream = downstream.write(`event: content_block_delta\ndata: ${JSON.stringify({
                   type: "content_block_delta",
-                  index: anthropicBlockIndex + tc.index,
+                  index: blockIdx,
                   delta: { type: "input_json_delta", partial_json: tc.function.arguments },
                 })}\n\n`) || wroteDownstream;
                 meaningfulClientOutputSent = true;
               }
+            }
+          };
+
+          const hasOpenToolCall = !isInsideTextBlock && Object.values(activeToolCalls).some(
+            (t: any) => t && t.emittedStart && !t.closed
+          );
+          if (hasOpenToolCall && toolCallsDelta && Array.isArray(toolCallsDelta)) {
+            emitToolCallsDelta(toolCallsDelta);
+            if (deltaText) emitDeltaText(deltaText);
+          } else {
+            if (deltaText) emitDeltaText(deltaText);
+            if (toolCallsDelta && Array.isArray(toolCallsDelta)) {
+              emitToolCallsDelta(toolCallsDelta);
             }
           }
 
@@ -1500,7 +1550,7 @@ export async function forwardSSEStreamAdapted(
       if (!tool.closed && tool.emittedStart) {
         downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
           type: "content_block_stop",
-          index: anthropicBlockIndex + tcIndex,
+          index: tool.blockIndex ?? (anthropicBlockIndex + tcIndex),
         })}\n\n`);
         tool.closed = true;
       }
@@ -1541,7 +1591,7 @@ export async function forwardSSEStreamAdapted(
       const tcIndex = parseInt(tcIndexStr);
       const tool = activeToolCalls[tcIndex];
       if (!tool.closed && tool.emittedStart) {
-        sentinel += `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: anthropicBlockIndex + tcIndex })}\n\n`;
+        sentinel += `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: tool.blockIndex ?? (anthropicBlockIndex + tcIndex) })}\n\n`;
       }
     }
     finalClosingSentinel = sentinel;
