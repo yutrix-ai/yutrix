@@ -8,6 +8,9 @@ export default async function (fastify: FastifyInstance) {
   fastify.get("/models", modelsHandler);
   fastify.post("/v1/chat/completions", proxyHandler);
   fastify.post("/api/paas/v4/chat/completions", proxyHandler);
+  fastify.post("/v1/responses", proxyHandler);
+  fastify.post("/v0/responses", proxyHandler);
+  fastify.post("/responses", proxyHandler);
   fastify.post("/v1/messages", proxyHandler);
   fastify.post("/v1/complete", proxyHandler);
   fastify.post("/v0/chat/completions", proxyHandler);

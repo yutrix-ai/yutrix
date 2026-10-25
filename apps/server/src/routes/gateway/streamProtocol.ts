@@ -1,9 +1,14 @@
 import type { FastifyReply } from "fastify";
+import { formatResponsesStreamErrorEvents } from "./responsesAdapter";
 
 export type GatewayStreamProtocol = string | undefined;
 
 export function isAnthropicStreamProtocol(protocol?: GatewayStreamProtocol): boolean {
   return protocol === "anthropic";
+}
+
+export function isResponsesStreamProtocol(protocol?: GatewayStreamProtocol): boolean {
+  return protocol === "responses";
 }
 
 export function streamHeaders() {
@@ -44,6 +49,13 @@ export function formatStreamErrorEvent(
         ...(options.canonicalErrorType ? { error_type: options.canonicalErrorType } : {}),
       },
     })}\n\n`;
+  }
+
+  if (isResponsesStreamProtocol(protocol)) {
+    return formatResponsesStreamErrorEvents(statusCode, message, {
+      type: options.type || options.canonicalErrorType || "server_error",
+      code: options.code || String(statusCode),
+    });
   }
 
   return `data: ${JSON.stringify({

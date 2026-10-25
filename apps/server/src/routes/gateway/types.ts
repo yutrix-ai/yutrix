@@ -1,4 +1,8 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import type {
+  ResponsesRequestMeta,
+  ResponsesStreamState,
+} from "./responsesAdapter";
 
 /**
  * Auth context produced by API key extraction & validation.
@@ -224,6 +228,10 @@ export interface GatewayRequestContext {
   // Helpers
   calculateCostForTokens: (inputTokens: number, outputTokens: number) => number | null;
   logAction?: any;
+
+  // OpenAI Responses API metadata & stream state (when reqPath is /v1/responses or /v0/responses)
+  responsesMeta?: ResponsesRequestMeta;
+  responsesStreamState?: ResponsesStreamState;
 }
 
 export interface AnthropicStreamEnvelopeState {

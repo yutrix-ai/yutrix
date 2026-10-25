@@ -11,6 +11,11 @@ import type { AuthContext, RoutingContext, AttemptState, BaseActionLog } from ".
 import { isAuditExemptUser } from "./logging";
 import { writeStreamHeaders } from "./streamProtocol";
 import { shouldSkipResponseCacheServe } from "../../services/loopGuard";
+import {
+  adaptChatResponseToResponses,
+  isResponsesApiPath,
+  writeResponsesSseFromText,
+} from "./responsesAdapter";
 
 /**
  * Check the response cache and serve a cached response if available.
@@ -140,6 +145,17 @@ export async function checkAndServeCachedResponse(
             mainContent = cached.responseText.slice(thinkMatch[0].length);
           }
 
+          if (isResponsesApiPath(reqPath)) {
+            writeResponsesSseFromText(
+              reply,
+              cached.model || currentAttempt.modelId,
+              mainContent,
+              thinkContent,
+            );
+            reply.raw.end();
+            return true;
+          }
+
           const streamId = `chatcmpl-cache-${cached.id.slice(0, 8)}`;
 
           if (thinkContent) {
@@ -200,6 +216,17 @@ export async function checkAndServeCachedResponse(
             }],
             usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
           };
+          if (isResponsesApiPath(reqPath)) {
+            reply
+              .code(200)
+              .send(
+                adaptChatResponseToResponses(
+                  cachedResponse,
+                  cached.model || currentAttempt.modelId,
+                ),
+              );
+            return true;
+          }
           reply.code(200).send(cachedResponse);
           return true;
         }

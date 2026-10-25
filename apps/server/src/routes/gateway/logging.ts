@@ -132,14 +132,19 @@ export function extractClientSessionId(request: FastifyRequest, body?: any): str
   const fromHeader = (
     request.headers["x-client-session-id"] ||
     request.headers["x-conversation-id"] ||
-    request.headers["x-session-id"]
+    request.headers["x-session-id"] ||
+    request.headers["session_id"]
   ) as string;
 
   if (fromHeader) return fromHeader;
 
-  if (body && typeof body === "object") {
-    if (typeof body.session_id === "string" && body.session_id) return body.session_id;
-    if (typeof body.conversation_id === "string" && body.conversation_id) return body.conversation_id;
+  const rawReqBody = (request as any)?.body;
+  for (const candidate of [body, rawReqBody]) {
+    if (candidate && typeof candidate === "object") {
+      if (typeof candidate.session_id === "string" && candidate.session_id) return candidate.session_id;
+      if (typeof candidate.conversation_id === "string" && candidate.conversation_id) return candidate.conversation_id;
+      if (typeof candidate.prompt_cache_key === "string" && candidate.prompt_cache_key) return candidate.prompt_cache_key;
+    }
   }
 
   return "";

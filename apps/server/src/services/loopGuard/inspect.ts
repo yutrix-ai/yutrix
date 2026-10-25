@@ -2,6 +2,7 @@ import { extractConversationRoot, getMessagesFromParsedRequest } from "../../uti
 import { detectLoopStop } from "./detect";
 import { fingerprintCurrentTurn } from "./fingerprint";
 import { serveLoopStopResponse } from "./stopResponse";
+import { isResponsesApiPath } from "../../routes/gateway/responsesAdapter";
 import { defaultLoopGuardStore } from "./store";
 import { peekLoopGuardRuntime } from "./runtime";
 import type { LoopGuardConfig, LoopGuardInspection, LoopGuardStore, LoopStopReason } from "./types";
@@ -64,9 +65,10 @@ export function maybeServeContinuationLoopStop(options: {
     message: inspection.message,
     modelId: options.modelId,
   });
+  const isResponses = isResponsesApiPath(options.baseActionLog?.path);
   serveLoopStopResponse({
     reply: options.reply,
-    protocol: options.incomingProtocol,
+    protocol: isResponses ? "responses" : options.incomingProtocol,
     streaming: options.body?.stream === true,
     modelId: options.modelId,
     reason: inspection.reason,

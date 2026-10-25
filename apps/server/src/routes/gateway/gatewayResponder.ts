@@ -13,6 +13,7 @@ import { forwardStream } from "./streaming";
 import { finalizeStreamLog, isAuditExemptUser, appendRoutingTraceToOutput } from "./logging";
 import { writeStreamErrorResponse, writeStreamHeaders } from "./streamProtocol";
 import { buildSafeNonStreamAuditOutput } from "./auditSanitizer";
+import { adaptChatResponseToResponses, isResponsesApiPath } from "./responsesAdapter";
 
 export async function handleGatewayResponse(ctx: GatewayRequestContext, responseData: any, logAction: any, isStitching = false, anthropicState?: any): Promise<{ isLengthTruncated: boolean, lastToolCallState?: any, closingSentinel?: string, anthropicState?: any, terminalError?: any, terminalEventSent?: boolean, meaningfulClientOutputSent?: boolean, visibleClientOutputSent?: boolean, withheldEmptyTerminal?: boolean }> {
   if (!ctx.continuity) {
@@ -202,7 +203,11 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
             : undefined;
 
           if (reply.raw.headersSent) {
-            writeStreamErrorResponse(reply, incomingProtocol, responseData.status, errorMessage, { type: anthropicType, canonicalErrorType });
+            const streamProtocol =
+              ctx.responsesMeta || isResponsesApiPath(reqPath)
+                ? "responses"
+                : incomingProtocol;
+            writeStreamErrorResponse(reply, streamProtocol, responseData.status, errorMessage, { type: anthropicType, canonicalErrorType });
           } else {
             if (preserveOriginalError) {
               reply.code(responseData.status).send(responseData.data);
@@ -267,8 +272,17 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
           }
         })();
 
-        // Send the response to the client UNCHANGED
-        reply.code(responseData.status).send(responseData.data);
+        // Send the response to the client (adapted to Responses API if /v1/responses)
+        const clientPayload =
+          ctx.responsesMeta || isResponsesApiPath(reqPath)
+            ? adaptChatResponseToResponses(
+                responseData.data,
+                currentAttempt.modelId,
+                ctx.responsesMeta,
+                responseData.observation,
+              )
+            : responseData.data;
+        reply.code(responseData.status).send(clientPayload);
         return { isLengthTruncated: false };
       } else {
         // --- 17. Stream Forwarding ---

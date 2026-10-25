@@ -89,7 +89,10 @@ export function buildUpstreamHeaders(
   if (reqPath.startsWith("/v0/messages")) {
     upstreamHeaders["x-anthropic-client"] = "claude-code";
     upstreamHeaders["user-agent"] = "claude-code/1.0.0";
-  } else if (reqPath.startsWith("/v0/chat/completions")) {
+  } else if (
+    reqPath.startsWith("/v0/chat/completions") ||
+    reqPath.startsWith("/v0/responses")
+  ) {
     upstreamHeaders["user-agent"] = "Codex-CLI";
   }
 

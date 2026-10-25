@@ -31,6 +31,10 @@ import {
   type StreamForwardObserver,
   type StitchState,
 } from "./streamForwarder";
+import {
+  forwardSSEStreamResponsesAdapted,
+  isResponsesApiPath,
+} from "./responsesAdapter";
 import { TranslatorContext } from "./translators/types";
 import type { StreamTerminalError } from "./providerAdapters/types";
 
@@ -325,6 +329,8 @@ export async function forwardStream(
   const isAnthropicAdaptation =
     routing.incomingProtocol !== responseData.streamProtocol &&
     routing.incomingProtocol === "anthropic";
+  const isResponsesAdaptation =
+    !!ctx.responsesMeta || isResponsesApiPath(routing.reqPath);
 
   // Create the audit observer — works on COPIES, does not affect forwarding
   const observer = new StreamAuditObserver(
@@ -384,6 +390,34 @@ export async function forwardStream(
     visibleClientOutputSent = result.visibleClientOutputSent || false;
     withheldEmptyTerminal = result.withheldEmptyTerminal || false;
     anthropicState = (result as any).anthropicState;
+  } else if (isResponsesAdaptation) {
+    const result = await forwardSSEStreamResponsesAdapted(
+      reply,
+      responseData.stream,
+      currentAttempt.modelId,
+      ctx.responsesMeta,
+      observer,
+      stitchState,
+      streamTimeoutMs,
+      translatorContext,
+      ctx.activeProviderAdapter,
+      ctx.activeProviderAdapterState,
+      ctx.activeProviderAdapterContext,
+      ctx.logAction,
+      { ...ctx.baseActionLog, providerName: ctx.activeProvider?.name },
+      ctx.responsesStreamState,
+      firstChunkTimeoutMs,
+    );
+    gotFirstChunk = result.gotFirstChunk;
+    isLengthTruncated = result.isLengthTruncated || false;
+    closingSentinel = result.closingSentinel;
+    terminalEventSent = result.terminalEventSent || false;
+    meaningfulClientOutputSent = result.meaningfulClientOutputSent || false;
+    visibleClientOutputSent = result.visibleClientOutputSent || false;
+    withheldEmptyTerminal = result.withheldEmptyTerminal || false;
+    if (result.responsesStreamState) {
+      ctx.responsesStreamState = result.responsesStreamState;
+    }
   } else {
     // ─── Same-protocol path ───
     // Forward SSE data transparently, allowing scoped protocol compatibility

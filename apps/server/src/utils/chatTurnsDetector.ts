@@ -382,6 +382,9 @@ export function detectAIClient(
   if (path.startsWith("/v0/messages")) {
     return "Claude Code";
   }
+  if (path.startsWith("/v0/responses") || path.startsWith("/v1/responses") || path === "/responses") {
+    return "Codex CLI";
+  }
 
   // 3. Inspect request body / prompt contents
   const messages = getMessagesFromParsedRequest(body);

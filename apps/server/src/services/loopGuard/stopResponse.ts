@@ -1,5 +1,10 @@
 import type { FastifyReply } from "fastify";
 import type { LoopStopReason } from "./types";
+import {
+  adaptChatResponseToResponses,
+  createInitialResponsesStreamState,
+  finalizeResponsesStreamClose,
+} from "../../routes/gateway/responsesAdapter";
 
 export function buildLoopStopHttpPayload(options: {
   protocol: string;
@@ -15,10 +20,44 @@ export function buildLoopStopHttpPayload(options: {
   sseChunks: string[];
 } {
   const isAnthropic = options.protocol === "anthropic";
+  const isResponses = options.protocol === "responses";
   const finishReason = isAnthropic ? "end_turn" : "stop";
   const headers = {
     "x-yutrix-loop-stop": options.reason,
   };
+
+  if (isResponses) {
+    const chatBody = {
+      id: `chatcmpl-loop-${options.reason}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: options.modelId,
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: options.message },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+    const body = adaptChatResponseToResponses(chatBody, options.modelId);
+    const sseChunks: string[] = [];
+    if (options.streaming) {
+      const state = createInitialResponsesStreamState(options.modelId);
+      finalizeResponsesStreamClose(
+        (chunk) => sseChunks.push(chunk),
+        state,
+        undefined,
+        {
+          fallbackText: options.message,
+          promptTokens: 0,
+          completionTokens: 0,
+        },
+      );
+    }
+    return { status: 200, finishReason, headers, body, sseChunks };
+  }
 
   if (isAnthropic) {
     const body = {

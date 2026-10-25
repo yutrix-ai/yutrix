@@ -158,6 +158,18 @@ export async function resolveSubdomain(
   };
 }
 
+function resolveCandidateEndpointPaths(reqPath: string): string[] {
+  if (reqPath === "/v1/responses" || reqPath === "/responses") {
+    return reqPath === "/v1/responses"
+      ? ["/v1/responses", "/v1/chat/completions"]
+      : ["/responses", "/v1/responses", "/v1/chat/completions"];
+  }
+  if (reqPath === "/v0/responses") {
+    return ["/v0/responses", "/v0/chat/completions", "/v1/chat/completions"];
+  }
+  return [reqPath];
+}
+
 /**
  * Resolves the endpoint and best-matching route for the given request path,
  * protocol, and (optional) subdomain.
@@ -175,19 +187,104 @@ export async function resolveEndpointAndRoute(
   requestHostname?: string,
   clientModelId?: string | null,
 ): Promise<{ endpoint: any; route: any; modelProfile: string | null } | null> {
-  // Endpoint matching (path + protocol)
-  const endpointList = await db
-    .select()
-    .from(endpoints)
-    .where(
-      and(
-        eq(endpoints.path, reqPath),
-        eq(endpoints.incomingProtocol, incomingProtocol),
-        eq(endpoints.status, "active"),
-      ),
-    );
+  const candidatePaths = resolveCandidateEndpointPaths(reqPath);
+  const normHost = requestHostname ? normalizeDomain(requestHostname) : (subdomainRecord?.hostname || "");
 
-  if (endpointList.length === 0) {
+  let foundAnyEndpoint = false;
+  let selectedEndpoint: any = null;
+  let selectedRoutes: any[] = [];
+  let selectedMatchedAllRoutes: any[] = [];
+
+  for (const candidatePath of candidatePaths) {
+    const endpointList = await db
+      .select()
+      .from(endpoints)
+      .where(
+        and(
+          eq(endpoints.path, candidatePath),
+          eq(endpoints.incomingProtocol, incomingProtocol),
+          eq(endpoints.status, "active"),
+        ),
+      );
+
+    if (endpointList.length === 0) {
+      continue;
+    }
+
+    foundAnyEndpoint = true;
+    const endpoint = endpointList[0];
+
+    const allRoutes = await db
+      .select()
+      .from(endpointRoutes)
+      .where(
+        and(
+          eq(endpointRoutes.endpointId, endpoint.id),
+          eq(endpointRoutes.status, "active"),
+        ),
+      );
+
+    const enabledRoutes = allRoutes.filter((r) => r.enabled);
+
+    // Match routes against hosts or subdomainId
+    const specificRoutes = enabledRoutes.filter((r) => {
+      if (r.hosts) {
+        const hList = parseRouteHosts(r.hosts);
+        if (hList.includes("*")) return false;
+        return (
+          (normHost && hList.includes(normHost)) ||
+          (subdomainRecord && hList.includes(subdomainRecord.hostname))
+        );
+      }
+      return subdomainRecord && r.subdomainId === subdomainRecord.id;
+    });
+
+    const wildcardRoutes = enabledRoutes.filter((r) => {
+      if (r.hosts) {
+        return parseRouteHosts(r.hosts).includes("*");
+      }
+      return !r.subdomainId;
+    });
+
+    const routes = specificRoutes.length > 0 ? specificRoutes : wildcardRoutes;
+
+    const allSpecificRoutes = allRoutes.filter((r) => {
+      if (r.hosts) {
+        const hList = parseRouteHosts(r.hosts);
+        if (hList.includes("*")) return false;
+        return (
+          (normHost && hList.includes(normHost)) ||
+          (subdomainRecord && hList.includes(subdomainRecord.hostname))
+        );
+      }
+      return subdomainRecord && r.subdomainId === subdomainRecord.id;
+    });
+
+    const allWildcardRoutes = allRoutes.filter((r) => {
+      if (r.hosts) {
+        return parseRouteHosts(r.hosts).includes("*");
+      }
+      return !r.subdomainId;
+    });
+
+    const matchedAllRoutes =
+      allSpecificRoutes.length > 0 ? allSpecificRoutes : allWildcardRoutes;
+
+    if (!selectedEndpoint) {
+      selectedEndpoint = endpoint;
+      selectedRoutes = routes;
+      selectedMatchedAllRoutes = matchedAllRoutes;
+    }
+
+    if (routes.length > 0 || matchedAllRoutes.length > 0) {
+      selectedEndpoint = endpoint;
+      selectedRoutes = routes;
+      selectedMatchedAllRoutes = matchedAllRoutes;
+      break;
+    }
+  }
+
+  if (!foundAnyEndpoint || !selectedEndpoint) {
     reply
       .code(404)
       .send(
@@ -200,68 +297,10 @@ export async function resolveEndpointAndRoute(
       );
     return null;
   }
-  const endpoint = endpointList[0];
 
-  let allRoutes = await db
-    .select()
-    .from(endpointRoutes)
-    .where(
-      and(
-        eq(endpointRoutes.endpointId, endpoint.id),
-        eq(endpointRoutes.status, "active")
-      ),
-    );
-
-  let routes = allRoutes.filter(r => r.enabled);
-  const normHost = requestHostname ? normalizeDomain(requestHostname) : (subdomainRecord?.hostname || "");
-
-  // Match routes against hosts or subdomainId
-  const specificRoutes = routes.filter((r) => {
-    if (r.hosts) {
-      const hList = parseRouteHosts(r.hosts);
-      if (hList.includes("*")) return false;
-      return (
-        (normHost && hList.includes(normHost)) ||
-        (subdomainRecord && hList.includes(subdomainRecord.hostname))
-      );
-    }
-    return subdomainRecord && r.subdomainId === subdomainRecord.id;
-  });
-
-  const wildcardRoutes = routes.filter((r) => {
-    if (r.hosts) {
-      return parseRouteHosts(r.hosts).includes("*");
-    }
-    return !r.subdomainId;
-  });
-
-  if (specificRoutes.length > 0) {
-    routes = specificRoutes;
-  } else {
-    routes = wildcardRoutes;
-  }
-
-  const allSpecificRoutes = allRoutes.filter((r) => {
-    if (r.hosts) {
-      const hList = parseRouteHosts(r.hosts);
-      if (hList.includes("*")) return false;
-      return (
-        (normHost && hList.includes(normHost)) ||
-        (subdomainRecord && hList.includes(subdomainRecord.hostname))
-      );
-    }
-    return subdomainRecord && r.subdomainId === subdomainRecord.id;
-  });
-
-  const allWildcardRoutes = allRoutes.filter((r) => {
-    if (r.hosts) {
-      return parseRouteHosts(r.hosts).includes("*");
-    }
-    return !r.subdomainId;
-  });
-
-  const matchedAllRoutes =
-    allSpecificRoutes.length > 0 ? allSpecificRoutes : allWildcardRoutes;
+  const endpoint = selectedEndpoint;
+  const routes = selectedRoutes;
+  const matchedAllRoutes = selectedMatchedAllRoutes;
 
   if (routes.length === 0) {
     if (matchedAllRoutes.length > 0) {

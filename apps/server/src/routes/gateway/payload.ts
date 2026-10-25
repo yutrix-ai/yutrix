@@ -196,7 +196,10 @@ export async function resolvePromptPolicyPlan(
         .from(promptPolicies)
         .where(eq(promptPolicies.id, "builtin-claude-code"));
       if (builtinList.length > 0) policy = builtinList[0];
-    } else if (reqPath.startsWith("/v0/chat/completions")) {
+    } else if (
+      reqPath.startsWith("/v0/chat/completions") ||
+      reqPath.startsWith("/v0/responses")
+    ) {
       const builtinList = await db
         .select()
         .from(promptPolicies)

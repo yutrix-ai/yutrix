@@ -57,6 +57,11 @@ import { checkConcurrencyFallback, checkErrorFallback } from "./fallback";
 import { modelsHandler } from "./models";
 import { executeGatewayRequest } from "./gatewayExecutor";
 import { resolveEffectiveMaxInputTokens } from "../../services/userTokenLimits";
+import {
+  isResponsesApiPath,
+  adaptResponsesRequestToChat,
+  type ResponsesRequestMeta,
+} from "./responsesAdapter";
 
 export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
@@ -85,7 +90,21 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
     const subdomainResult = await resolveSubdomain(request.hostname, incomingProtocol, reply);
     if (!subdomainResult) return;
 
-    const body: any = request.body || {};
+    const rawBody: any = request.body || {};
+    let body: any = rawBody;
+    let responsesMeta: ResponsesRequestMeta | undefined;
+
+    if (isResponsesApiPath(reqPath)) {
+      const adapted = adaptResponsesRequestToChat(rawBody);
+      if (!adapted.ok) {
+        return reply
+          .code(adapted.statusCode)
+          .send(formatError(incomingProtocol, adapted.statusCode, adapted.message, adapted.code));
+      }
+      body = adapted.chatBody;
+      responsesMeta = adapted.responsesMeta;
+    }
+
     const clientModelId = typeof body?.model === "string" ? body.model : null;
 
     const routeResult = await resolveEndpointAndRoute(
@@ -212,6 +231,7 @@ export const proxyHandler = async (request: FastifyRequest, reply: FastifyReply)
         streamRoundCount: 1,
       } as any,
       calculateCostForTokens,
+      responsesMeta,
     };
 
     // --- 6. Abort/Disconnect Handling ---

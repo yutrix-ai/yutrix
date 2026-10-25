@@ -20,6 +20,11 @@ import { checkConcurrencyFallback, checkErrorFallback, isErrorFallbackStatus } f
 import { handleGatewayResponse } from "./gatewayResponder";
 import { startStreamPrelude } from "./streamPrelude";
 import { writeStreamErrorResponse } from "./streamProtocol";
+import {
+  createInitialResponsesStreamState,
+  finalizeResponsesStreamClose,
+  isResponsesApiPath,
+} from "./responsesAdapter";
 import { processErrorRetryLogic, selectProviderKey, isOpenRouterCapacityError, resolveModelContextWindow, fitsContextBudget, reserveAttemptBudgetForLayerSwitch, isUpstreamCredentialUnavailableError, isAvailabilityHopStatus, resolveAttemptTimeoutMs } from "./gatewayExecutorUtils";
 import {
   CLIENT_CLOSED_CODE,
@@ -305,6 +310,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
 
   const ensureEarlyStreamPrelude = (isAnthropicAdaptationPrelude = false) => {
     if (!isStreaming || stopEarlyStreamPrelude || reply.raw.destroyed || reply.raw.writableEnded) return;
+    if (ctx.responsesMeta || isResponsesApiPath(reqPath)) return;
     const anthropicMessage =
       isAnthropicAdaptationPrelude && incomingProtocol === "anthropic"
         ? {
@@ -332,7 +338,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       try {
         const isTruncated = lastStreamResult?.isLengthTruncated || false;
 
+        const isResponsesRequest = !!ctx.responsesMeta || isResponsesApiPath(reqPath);
+
         const isOrdinaryTransparentSameProtocol = 
+          !isResponsesRequest &&
           ctx.activeProviderAdapter?.id === "transparent" &&
           incomingProtocol === (ctx.activeEffectiveUpstreamProtocol || "openai") &&
           !ctx.continuity?.hasStartedContinuity &&
@@ -340,6 +349,41 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
           !lastStreamResult?.withheldEmptyTerminal;
 
         if (isOrdinaryTransparentSameProtocol) {
+          reply.raw.end();
+          (ctx as any).streamEventsFinalized = true;
+          return;
+        }
+
+        if (isResponsesRequest) {
+          if (!ctx.responsesStreamState) {
+            ctx.responsesStreamState = createInitialResponsesStreamState(
+              currentAttempt.modelId || "default",
+              ctx.responsesMeta,
+            );
+          }
+          if (!ctx.responsesStreamState.completedEmitted) {
+            const fallbackText =
+              (typeof responseData?.zeroCompletionFallback === "string" &&
+                responseData.zeroCompletionFallback) ||
+              responseData?.data?.choices?.[0]?.message?.content;
+            finalizeResponsesStreamClose(
+              (payload) => reply.raw.write(payload),
+              ctx.responsesStreamState,
+              ctx.responsesMeta,
+              {
+                isTruncated,
+                fallbackText:
+                  lastStreamResult?.withheldEmptyTerminal &&
+                  typeof fallbackText === "string" &&
+                  fallbackText.trim()
+                    ? fallbackText
+                    : undefined,
+                promptTokens: ctx.continuity.promptTokens || 0,
+                completionTokens: ctx.continuity.completionTokens || 0,
+                cachedTokens: ctx.continuity.cacheReadTokens || 0,
+              },
+            );
+          }
           reply.raw.end();
           (ctx as any).streamEventsFinalized = true;
           return;
@@ -2463,6 +2507,10 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       if (respResult.anthropicState) anthropicState = respResult.anthropicState;
 
       if (respResult.terminalError) {
+        if (!responseData?.isStream && respResult.terminalEventSent) {
+          keepContinuity = false;
+          return;
+        }
         const streamTermErr = respResult.terminalError;
         const canRetry = !respResult.terminalEventSent && !respResult.meaningfulClientOutputSent;
         const isCapacityError = isOpenRouterCapacityError(streamTermErr);
@@ -2890,7 +2938,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         updateRequestLog(reqLogId, errLog, { id: reqLogId, userId: authCtx.userId, ...errLog });
         logAction({ ...baseActionLog, level: "ERROR", code: "request.timeout", providerName: upstreamContext.providerName, modelId: upstreamContext.modelId, statusCode: 504, errorCode: "504", fallback: upstreamContext.fallback, fallbackText: upstreamContext.fallbackReason, message: runtimeErrorDetail || "上游请求超时", latencyMs: Date.now() - startTime });
         if (reply.raw.headersSent) {
-          writeStreamErrorResponse(reply, incomingProtocol, 504, runtimeErrorDetail || "上游请求超时");
+          writeStreamErrorResponse(
+            reply,
+            ctx.responsesMeta || isResponsesApiPath(reqPath) ? "responses" : incomingProtocol,
+            504,
+            runtimeErrorDetail || "上游请求超时",
+          );
           return;
         }
         return reply.code(504).send(formatError(incomingProtocol, 504, runtimeErrorDetail || "上游请求超时"));
@@ -2900,7 +2953,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
       updateRequestLog(reqLogId, errLog, { id: reqLogId, userId: authCtx.userId, ...errLog });
       logAction({ ...baseActionLog, level: "ERROR", code: "request.error", providerName: upstreamContext.providerName, modelId: upstreamContext.modelId, statusCode: 500, errorCode: "500", fallback: upstreamContext.fallback, fallbackText: upstreamContext.fallbackReason, message: runtimeErrorDetail || err.message, latencyMs: Date.now() - startTime });
       if (reply.raw.headersSent) {
-        writeStreamErrorResponse(reply, incomingProtocol, 500, runtimeErrorDetail || err.message);
+        writeStreamErrorResponse(
+          reply,
+          ctx.responsesMeta || isResponsesApiPath(reqPath) ? "responses" : incomingProtocol,
+          500,
+          runtimeErrorDetail || err.message,
+        );
         return;
       }
       return reply.code(500).send(formatError(incomingProtocol, 500, runtimeErrorDetail || err.message));
@@ -2955,7 +3013,15 @@ export async function finalizeGatewayTerminalFailure(ctx: GatewayRequestContext,
       ));
     }
   } else if (ctx.isStreaming && !streamResult?.terminalEventSent && !streamResult?.meaningfulClientOutputSent) {
-     writeStreamErrorResponse(reply, incomingProtocol, statusCode, errorMessage);
+     const streamProtocol =
+       ctx.responsesMeta || isResponsesApiPath(ctx.routing.reqPath)
+         ? "responses"
+         : incomingProtocol;
+     writeStreamErrorResponse(reply, streamProtocol, statusCode, errorMessage, {
+       code: termErr?.code,
+       type: anthropicType,
+       canonicalErrorType,
+     });
   } else {
      reply.raw.end();
   }
