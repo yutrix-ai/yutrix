@@ -192,34 +192,37 @@ describe("classic route target shape", () => {
     expect(attempt.modelId).toBe("m1");
   });
 
-  it("splits initial traffic across funnel layers when L1 < 100% and falls through to last layer", () => {
-    const twoLayerTargets = [
-      { providerId: "p1", modelId: "m1", providerProtocol: "openai", weight: 70 },
-      { providerId: "p2", modelId: "m2", providerProtocol: "openai", weight: 0 },
+  it("splits initial traffic by cumulative ratio and never routes initial traffic to 0% fallback layers", () => {
+    // Exact production case: L1=90%, L2=10%, L3=0% (GROK fallback only)
+    const threeLayerTargets = [
+      { providerId: "antigravity", modelId: "gemini-3.8-flash-high", providerProtocol: "openai", weight: 90 },
+      { providerId: "ali", modelId: "qwen3.7-plus", providerProtocol: "openai", weight: 10 },
+      { providerId: "grok", modelId: "grok-4.5", providerProtocol: "openai", weight: 0 },
     ];
-    expect(selectClassicInitialTargetIndex(twoLayerTargets, () => 0.69)).toBe(0);
-    expect(selectClassicInitialTargetIndex(twoLayerTargets, () => 0.7)).toBe(1);
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => 0)).toBe(0);
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => 0.89)).toBe(0);
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => 0.9)).toBe(1);
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => 0.99)).toBe(1);
 
     const attemptL2 = createInitialAttemptState(
-      { routingMode: "classic", targets: JSON.stringify(twoLayerTargets) },
-      () => 0.85,
+      { routingMode: "classic", targets: JSON.stringify(threeLayerTargets) },
+      () => 0.95,
     );
     expect(attemptL2.targetIndex).toBe(1);
-    expect(attemptL2.providerId).toBe("p2");
-    expect(attemptL2.modelId).toBe("m2");
+    expect(attemptL2.providerId).toBe("ali");
+    expect(attemptL2.modelId).toBe("qwen3.7-plus");
 
-    const threeLayerTargets = [
+    // 3-way split with 4th layer at 0% fallback
+    const fourLayerTargets = [
       { providerId: "p1", modelId: "m1", providerProtocol: "openai", weight: 50 },
-      { providerId: "p2", modelId: "m2", providerProtocol: "openai", weight: 60 },
-      { providerId: "p3", modelId: "m3", providerProtocol: "openai", weight: 0 },
+      { providerId: "p2", modelId: "m2", providerProtocol: "openai", weight: 30 },
+      { providerId: "p3", modelId: "m3", providerProtocol: "openai", weight: 20 },
+      { providerId: "p4", modelId: "m4", providerProtocol: "openai", weight: 0 },
     ];
-    // Roll 0.4 < 0.5 -> L1
-    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => 0.4)).toBe(0);
-    // Roll 0.8 >= 0.5 (misses L1), then 0.5 < 0.6 (hits L2)
-    const rollsHitL2 = [0.8, 0.5];
-    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => rollsHitL2.shift()!)).toBe(1);
-    // Roll 0.8 >= 0.5 (misses L1), then 0.7 >= 0.6 (misses L2 -> falls through to L3)
-    const rollsHitL3 = [0.8, 0.7];
-    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => rollsHitL3.shift()!)).toBe(2);
+    expect(selectClassicInitialTargetIndex(fourLayerTargets, () => 0.49)).toBe(0);
+    expect(selectClassicInitialTargetIndex(fourLayerTargets, () => 0.5)).toBe(1);
+    expect(selectClassicInitialTargetIndex(fourLayerTargets, () => 0.79)).toBe(1);
+    expect(selectClassicInitialTargetIndex(fourLayerTargets, () => 0.8)).toBe(2);
+    expect(selectClassicInitialTargetIndex(fourLayerTargets, () => 0.99)).toBe(2);
   });
 });

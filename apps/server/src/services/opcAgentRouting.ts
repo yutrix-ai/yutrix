@@ -30,14 +30,13 @@ export function normalizeClassicTargetWeight(value: unknown, index = 0): number 
 }
 
 /**
- * Select the initial funnel layer index for a classic route using per-layer
+ * Select the initial funnel layer index for a classic route using cumulative
  * percentage ratios (10% increments).
- * - Layer i with weight >= 100 takes all remaining traffic (so L1=100% takes
- *   100% of requests unless degraded).
- * - Layer i with weight <= 0 takes 0% initial traffic (fallback only, unless
- *   it is the final layer catching unallocated traffic).
- * - Otherwise layer i takes traffic with probability weight / 100, and misses
- *   flow down to the next layer, with the final layer acting as catch-all.
+ * - Layers with weight <= 0 (0%) are pure fallback layers and never receive
+ *   initial traffic (unless all layers are 0%, in which case L1 is used).
+ * - If L1 is 100%, it immediately receives 100% of initial requests.
+ * - Otherwise a single roll in [0, 100) is matched against cumulative positive
+ *   weights (e.g. L1=90%, L2=10%, L3=0% -> 90% L1, 10% L2, 0% L3).
  */
 export function selectClassicInitialTargetIndex(
   targets: any[],
@@ -46,20 +45,28 @@ export function selectClassicInitialTargetIndex(
   if (!Array.isArray(targets) || targets.length <= 1) {
     return 0;
   }
-  const lastIndex = targets.length - 1;
-  for (let i = 0; i < lastIndex; i++) {
+  const firstWeight = normalizeClassicTargetWeight(targets[0]?.weight, 0);
+  if (firstWeight >= 100) {
+    return 0;
+  }
+
+  const roll = random() * 100;
+  let cumulative = 0;
+  let lastPositiveIndex = -1;
+
+  for (let i = 0; i < targets.length; i++) {
     const weight = normalizeClassicTargetWeight(targets[i]?.weight, i);
-    if (weight >= 100) {
-      return i;
-    }
     if (weight <= 0) {
       continue;
     }
-    if (random() * 100 < weight) {
+    lastPositiveIndex = i;
+    cumulative += weight;
+    if (cumulative >= 100 || roll < cumulative) {
       return i;
     }
   }
-  return lastIndex;
+
+  return lastPositiveIndex >= 0 ? lastPositiveIndex : 0;
 }
 
 const LEGACY_OPC_MODE = "opc_agent";
