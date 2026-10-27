@@ -8,6 +8,7 @@ import {
   createDefaultStrategyRules,
   coerceTargetsForRoutingMode,
   firstModelForProvider,
+  normalizeClassicTargetWeight,
   normalizeRoutingModeForForm,
   providerProtocolForRule,
   tasksForRoutingMode,
@@ -79,7 +80,7 @@ function parseRouteModelProfiles(route: RouteItem): RouteModelProfileItem[] {
 }
 
 function targetsForSave(targets: any[], routingMode: string) {
-  return targets.map((t: any) => {
+  return targets.map((t: any, idx: number) => {
     const base = {
       ...t,
       promptPolicyId: t.promptPolicyId === "none" ? null : t.promptPolicyId,
@@ -87,6 +88,7 @@ function targetsForSave(targets: any[], routingMode: string) {
     if (routingMode === "classic") {
       return {
         ...base,
+        weight: normalizeClassicTargetWeight(t.weight, idx),
         strategyRoutingEnabled: false,
         strategyRoutingRules: [],
       };
@@ -98,7 +100,7 @@ function targetsForSave(targets: any[], routingMode: string) {
 /** Re-shape funnel layers when switching a table between classic and strategy mode. */
 function remapTargetsForRoutingMode(targets: any[], mode: string) {
   if (mode === "classic") {
-    return (targets || []).map((target: any) => {
+    return (targets || []).map((target: any, idx: number) => {
       const existingRules: any[] = Array.isArray(target.strategyRoutingRules)
         ? target.strategyRoutingRules
         : [];
@@ -113,6 +115,7 @@ function remapTargetsForRoutingMode(targets: any[], mode: string) {
         providerId: seed.providerId || "",
         providerProtocol: seed.providerProtocol || "openai",
         modelId: seed.modelId || "",
+        weight: normalizeClassicTargetWeight(target.weight, idx),
         strategyRoutingEnabled: false,
         strategyRoutingRules: [],
       };

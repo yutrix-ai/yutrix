@@ -102,11 +102,31 @@ export function seedModelFromLegacyTarget(target: any): {
   };
 }
 
-export function coerceClassicTargetFromLegacy(target: any) {
+export const CLASSIC_WEIGHT_OPTIONS = [
+  0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+] as const;
+
+export function defaultClassicTargetWeight(index = 0): number {
+  return index === 0 ? 100 : 0;
+}
+
+export function normalizeClassicTargetWeight(value: unknown, index = 0): number {
+  if (value === undefined || value === null || value === "") {
+    return defaultClassicTargetWeight(index);
+  }
+  const num = typeof value === "number" ? value : Number(value);
+  if (Number.isInteger(num) && num >= 0 && num <= 100 && num % 10 === 0) {
+    return num;
+  }
+  return defaultClassicTargetWeight(index);
+}
+
+export function coerceClassicTargetFromLegacy(target: any, index = 0) {
   const seed = seedModelFromLegacyTarget(target);
   return {
     ...target,
     ...seed,
+    weight: normalizeClassicTargetWeight(target?.weight, index),
     strategyRoutingEnabled: false,
     strategyRoutingRules: [],
   };
@@ -118,7 +138,7 @@ export function coerceTargetsForRoutingMode(
 ): any[] {
   const normalizedMode = normalizeRoutingModeForForm(mode);
   if (normalizedMode !== "classic") return targets;
-  return targets.map(coerceClassicTargetFromLegacy);
+  return targets.map((target, index) => coerceClassicTargetFromLegacy(target, index));
 }
 
 export function isClassicRoutingMode(mode: string | undefined): boolean {

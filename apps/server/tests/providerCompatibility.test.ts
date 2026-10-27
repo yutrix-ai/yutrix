@@ -307,6 +307,59 @@ describe("sanitizeGeminiSchema", () => {
     expect(() => sanitizeGeminiSchema(cyclic)).not.toThrow();
   });
 
+  it("populates missing or empty array items so Gemini never fails with items: missing field", () => {
+    const schema = sanitizeGeminiSchema({
+      type: "object",
+      properties: {
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              args: {
+                type: "array",
+                description: "Command arguments without items",
+              },
+              emptyItems: {
+                type: "array",
+                items: {},
+              },
+              unionItems: {
+                type: "array",
+                items: {
+                  anyOf: [{ type: "string" }, { type: "number" }],
+                },
+              },
+              nullableArray: {
+                anyOf: [{ type: "array" }, { type: "null" }],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const stepProps = schema.properties.steps.items.properties;
+    expect(stepProps.args).toEqual({
+      type: "array",
+      description: "Command arguments without items",
+      items: { type: "string" },
+    });
+    expect(stepProps.emptyItems).toEqual({
+      type: "array",
+      items: { type: "string" },
+    });
+    expect(stepProps.unionItems).toEqual({
+      type: "array",
+      items: { type: "string" },
+    });
+    expect(stepProps.nullableArray).toEqual({
+      type: "array",
+      nullable: true,
+      items: { type: "string" },
+    });
+  });
+
   it("drops malformed enums and unsupported string formats without throwing", () => {
     expect(sanitizeGeminiSchema({ type: "string", enum: "true" }).enum).toBeUndefined();
     expect(sanitizeGeminiSchema({ type: "string", enum: [] }).enum).toBeUndefined();

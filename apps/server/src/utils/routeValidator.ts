@@ -10,6 +10,7 @@ export interface RouteTarget {
   promptPolicyId?: string | null;
   strategyRoutingEnabled?: boolean;
   strategyRoutingRules?: any[];
+  weight?: number;
 }
 
 export interface ValidateRouteConfigInput {

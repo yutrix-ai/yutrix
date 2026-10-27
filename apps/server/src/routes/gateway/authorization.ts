@@ -21,6 +21,7 @@ import type {
 import {
   coerceClassicTargetFromLegacy,
   isClassicRoutingMode,
+  selectClassicInitialTargetIndex,
 } from "../../services/opcAgentRouting";
 
 /**
@@ -142,21 +143,30 @@ export function createBaseActionLog(
 /**
  * Create the initial attempt state from the resolved route.
  */
-export function createInitialAttemptState(route: any): AttemptState {
+export function createInitialAttemptState(
+  route: any,
+  random: () => number = Math.random,
+): AttemptState {
   let firstTarget = {
     providerId: route.providerId,
     providerProtocol: route.providerProtocol,
     modelId: route.modelId,
     promptPolicyId: route.promptPolicyId,
   };
+  let targetIndex = 0;
 
   if (route.targets) {
     try {
       const parsedTargets = typeof route.targets === 'string' ? JSON.parse(route.targets) : route.targets;
       if (Array.isArray(parsedTargets) && parsedTargets.length > 0) {
-        firstTarget = isClassicRoutingMode(route)
-          ? coerceClassicTargetFromLegacy(parsedTargets[0])
-          : parsedTargets[0];
+        const classic = isClassicRoutingMode(route);
+        targetIndex = classic
+          ? selectClassicInitialTargetIndex(parsedTargets, random)
+          : 0;
+        const rawTarget = parsedTargets[targetIndex] ?? parsedTargets[0];
+        firstTarget = classic
+          ? coerceClassicTargetFromLegacy(rawTarget, targetIndex)
+          : rawTarget;
       }
     } catch (e) {
       // Ignored
@@ -170,7 +180,7 @@ export function createInitialAttemptState(route: any): AttemptState {
     promptPolicyId: firstTarget.promptPolicyId || null,
     isFallback: false,
     fallbackReason: "",
-    targetIndex: 0,
+    targetIndex,
   };
 }
 

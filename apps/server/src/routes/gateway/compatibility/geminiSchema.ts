@@ -115,16 +115,92 @@ function sanitizeGeminiStringFormat(out: Record<string, any>): void {
   out.format = format;
 }
 
+function sanitizeGeminiArray(out: Record<string, any>): void {
+  if (!out.type && out.items !== undefined) {
+    out.type = "array";
+  }
+  if (out.type !== "array") return;
+
+  if (
+    out.items === undefined ||
+    out.items === null ||
+    typeof out.items !== "object"
+  ) {
+    out.items = { type: "string" };
+    return;
+  }
+
+  if (!Array.isArray(out.items) && !out.items.type) {
+    out.items = {
+      ...out.items,
+      type: out.items.properties ? "object" : "string",
+    };
+  }
+}
+
 const POST_SANITIZERS: Array<(out: Record<string, any>) => void> = [
   sanitizeGeminiEnum,
   sanitizeGeminiStringFormat,
+  sanitizeGeminiArray,
 ];
 
-function liftConstToEnum(schema: Record<string, any>): Record<string, any> {
-  if (schema.const !== undefined && schema.enum === undefined) {
-    return { ...schema, enum: [schema.const] };
+function liftSchemaCombinators(schema: Record<string, any>): Record<string, any> {
+  const combinator = schema.anyOf ?? schema.oneOf ?? schema.allOf;
+  if (!Array.isArray(combinator) || combinator.length === 0) {
+    return schema;
   }
-  return schema;
+
+  const branches = combinator.filter(
+    (item): item is Record<string, any> =>
+      Boolean(item && typeof item === "object" && !Array.isArray(item)),
+  );
+  if (branches.length === 0) return schema;
+
+  const hasNull = branches.some((branch) => branch.type === "null");
+  const primary =
+    branches.find(
+      (branch) =>
+        branch.type !== "null" &&
+        (branch.type !== undefined ||
+          branch.properties !== undefined ||
+          branch.items !== undefined ||
+          branch.enum !== undefined ||
+          branch.const !== undefined),
+    ) ??
+    branches.find((branch) => branch.type !== "null") ??
+    null;
+
+  const merged: Record<string, any> = { ...schema };
+  if (primary) {
+    for (const [key, value] of Object.entries(primary)) {
+      if (merged[key] === undefined) {
+        merged[key] = value;
+      }
+    }
+  }
+  if (hasNull && merged.nullable === undefined) {
+    merged.nullable = true;
+  }
+  return merged;
+}
+
+function liftConstToEnum(schema: Record<string, any>): Record<string, any> {
+  const lifted = liftSchemaCombinators(schema);
+  if (
+    lifted.items === undefined &&
+    Array.isArray(lifted.prefixItems) &&
+    lifted.prefixItems.length > 0
+  ) {
+    return {
+      ...lifted,
+      items: lifted.prefixItems[0],
+      ...(lifted.const !== undefined && lifted.enum === undefined ? { enum: [lifted.const] } : {}),
+    };
+  }
+  if (lifted.const !== undefined && lifted.enum === undefined) {
+    return { ...lifted, enum: [lifted.const] };
+  }
+  return lifted;
 }
 
 /**

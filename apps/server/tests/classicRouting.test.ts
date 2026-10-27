@@ -1,19 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLASSIC_TARGET_WEIGHT_OPTIONS,
   DEFAULT_ROUTING_MODE,
   ROUTING_MODES,
   coerceClassicTargetFromLegacy,
   coerceLegacyRouteForDisplay,
+  defaultClassicTargetWeight,
   isClassicRoutingMode,
   isLegacyOpcRoutingMode,
   isRoutingMode,
+  normalizeClassicTargetWeight,
   normalizeRoutingModeInput,
   resolveRouteRoutingMode,
   resolveEffectiveLayerTarget,
   seedModelFromLegacyTarget,
+  selectClassicInitialTargetIndex,
   shouldBypassCapabilityRouting,
   strategyRoutingEnabledForLayer,
 } from "../src/services/opcAgentRouting";
+import { createInitialAttemptState } from "../src/routes/gateway/authorization";
 
 describe("classic routing mode", () => {
   it("registers classic as a first-class routing mode", () => {
@@ -153,5 +158,68 @@ describe("classic route target shape", () => {
     expect(classicTarget.strategyRoutingRules).toEqual([]);
     expect(classicTarget.providerId).toBeTruthy();
     expect(classicTarget.modelId).toBeTruthy();
+  });
+
+  it("normalizes classic per-layer weights in 10% increments with L1=100% and subsequent=0% defaults", () => {
+    expect(CLASSIC_TARGET_WEIGHT_OPTIONS).toEqual([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+    expect(defaultClassicTargetWeight(0)).toBe(100);
+    expect(defaultClassicTargetWeight(1)).toBe(0);
+    expect(defaultClassicTargetWeight(2)).toBe(0);
+
+    expect(normalizeClassicTargetWeight(undefined, 0)).toBe(100);
+    expect(normalizeClassicTargetWeight(undefined, 1)).toBe(0);
+    expect(normalizeClassicTargetWeight(70, 0)).toBe(70);
+    expect(normalizeClassicTargetWeight("30", 1)).toBe(30);
+    expect(normalizeClassicTargetWeight(0, 0)).toBe(0);
+    expect(normalizeClassicTargetWeight(15, 0)).toBe(100);
+    expect(normalizeClassicTargetWeight(15, 1)).toBe(0);
+  });
+
+  it("routes 100% of requests to L1 when L1 is 100% regardless of subsequent layer weights", () => {
+    const targets = [
+      { providerId: "p1", modelId: "m1", providerProtocol: "openai", weight: 100 },
+      { providerId: "p2", modelId: "m2", providerProtocol: "openai", weight: 50 },
+    ];
+    expect(selectClassicInitialTargetIndex(targets, () => 0)).toBe(0);
+    expect(selectClassicInitialTargetIndex(targets, () => 0.99)).toBe(0);
+
+    const attempt = createInitialAttemptState(
+      { routingMode: "classic", targets: JSON.stringify(targets) },
+      () => 0.99,
+    );
+    expect(attempt.targetIndex).toBe(0);
+    expect(attempt.providerId).toBe("p1");
+    expect(attempt.modelId).toBe("m1");
+  });
+
+  it("splits initial traffic across funnel layers when L1 < 100% and falls through to last layer", () => {
+    const twoLayerTargets = [
+      { providerId: "p1", modelId: "m1", providerProtocol: "openai", weight: 70 },
+      { providerId: "p2", modelId: "m2", providerProtocol: "openai", weight: 0 },
+    ];
+    expect(selectClassicInitialTargetIndex(twoLayerTargets, () => 0.69)).toBe(0);
+    expect(selectClassicInitialTargetIndex(twoLayerTargets, () => 0.7)).toBe(1);
+
+    const attemptL2 = createInitialAttemptState(
+      { routingMode: "classic", targets: JSON.stringify(twoLayerTargets) },
+      () => 0.85,
+    );
+    expect(attemptL2.targetIndex).toBe(1);
+    expect(attemptL2.providerId).toBe("p2");
+    expect(attemptL2.modelId).toBe("m2");
+
+    const threeLayerTargets = [
+      { providerId: "p1", modelId: "m1", providerProtocol: "openai", weight: 50 },
+      { providerId: "p2", modelId: "m2", providerProtocol: "openai", weight: 60 },
+      { providerId: "p3", modelId: "m3", providerProtocol: "openai", weight: 0 },
+    ];
+    // Roll 0.4 < 0.5 -> L1
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => 0.4)).toBe(0);
+    // Roll 0.8 >= 0.5 (misses L1), then 0.5 < 0.6 (hits L2)
+    const rollsHitL2 = [0.8, 0.5];
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => rollsHitL2.shift()!)).toBe(1);
+    // Roll 0.8 >= 0.5 (misses L1), then 0.7 >= 0.6 (misses L2 -> falls through to L3)
+    const rollsHitL3 = [0.8, 0.7];
+    expect(selectClassicInitialTargetIndex(threeLayerTargets, () => rollsHitL3.shift()!)).toBe(2);
   });
 });

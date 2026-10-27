@@ -883,6 +883,8 @@
       "emptyDescriptionClassic": "Add L1, L2… layers — one model each; failures auto-fallback to the next layer.",
       "classicModel": "Forward Model",
       "classicModelDescription": "All requests on this layer use the selected model; failures degrade to the next layer.",
+      "classicWeight": "Ratio",
+      "classicWeightDescription": "100% handles all traffic unless degraded",
       "configureTarget": "Configure Target",
       "searchPlaceholder": "Search provider or model...",
       "noResults": "No matching providers or models found",

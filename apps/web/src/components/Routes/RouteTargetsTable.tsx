@@ -2,7 +2,14 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Trash2, Plus, ArrowUp, ArrowDown, Search, Check, ChevronDown } from "lucide-react";
-import { ROUTING_MODES, isClassicRoutingMode, tasksForRoutingMode } from "./strategyRoutingConfig";
+import {
+  CLASSIC_WEIGHT_OPTIONS,
+  ROUTING_MODES,
+  defaultClassicTargetWeight,
+  isClassicRoutingMode,
+  normalizeClassicTargetWeight,
+  tasksForRoutingMode,
+} from "./strategyRoutingConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -34,10 +41,11 @@ export function RouteTargetsTable({
   const routeTasks = tasksForRoutingMode(routingMode);
   const activeRoutingMode = routingMode || "classic";
 
-  const normalizeTarget = (target: any) => {
+  const normalizeTarget = (target: any, idx = 0) => {
     if (isClassic) {
       return {
         ...target,
+        weight: normalizeClassicTargetWeight(target.weight, idx),
         strategyRoutingEnabled: false,
         strategyRoutingRules: [],
       };
@@ -81,6 +89,7 @@ export function RouteTargetsTable({
           providerProtocol: "openai",
           promptPolicyId: "none",
           bestEffort: false,
+          weight: defaultClassicTargetWeight(targets.length),
           strategyRoutingEnabled: false,
           strategyRoutingRules: [],
         }
@@ -114,12 +123,25 @@ export function RouteTargetsTable({
     patch: { providerId: string; modelId: string; providerProtocol: string },
   ) => {
     const newTargets = targets.map((row, idx) => {
-      if (idx !== rowIdx) return row;
+      const normalized = normalizeTarget(row, idx);
+      if (idx !== rowIdx) return normalized;
       return {
-        ...row,
+        ...normalized,
         ...patch,
         strategyRoutingEnabled: false,
         strategyRoutingRules: [],
+      };
+    });
+    onChange(newTargets);
+  };
+
+  const handleClassicWeightChange = (rowIdx: number, weight: number) => {
+    const newTargets = targets.map((row, idx) => {
+      const normalized = normalizeTarget(row, idx);
+      if (idx !== rowIdx) return normalized;
+      return {
+        ...normalized,
+        weight: normalizeClassicTargetWeight(weight, idx),
       };
     });
     onChange(newTargets);
@@ -224,16 +246,28 @@ export function RouteTargetsTable({
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-20 text-center font-medium text-xs text-muted-foreground uppercase tracking-wider">{t("routes.targets.priority", "优先级")}</TableHead>
               {isClassic ? (
-                <TableHead className="min-w-[240px] py-3.5 px-2">
-                  <div className="flex flex-col space-y-0.5">
-                    <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
-                      {t("routes.targets.classicModel", "转发模型")}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
-                      {t("routes.targets.classicModelDescription", "本层所有请求统一转发到所选模型；失败时降级到下一层。")}
-                    </span>
-                  </div>
-                </TableHead>
+                <>
+                  <TableHead className="min-w-[240px] py-3.5 px-2">
+                    <div className="flex flex-col space-y-0.5">
+                      <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
+                        {t("routes.targets.classicModel", "转发模型")}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
+                        {t("routes.targets.classicModelDescription", "本层所有请求统一转发到所选模型；失败时降级到下一层。")}
+                      </span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="w-36 py-3.5 px-2">
+                    <div className="flex flex-col space-y-0.5">
+                      <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-50">
+                        {t("routes.targets.classicWeight", "配比")}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground/80 leading-normal font-normal">
+                        {t("routes.targets.classicWeightDescription", "100% 承载全部请求（除非降级）")}
+                      </span>
+                    </div>
+                  </TableHead>
+                </>
               ) : (
                 routeTasks.map(task => (
                   <TableHead key={task.type} className="min-w-[155px] py-3.5 px-2">
@@ -265,7 +299,7 @@ export function RouteTargetsTable({
           </TableHeader>
           <TableBody>
             {targets.map((target, idx) => {
-              const normalized = normalizeTarget(target);
+              const normalized = normalizeTarget(target, idx);
               return (
                 <TableRow key={idx} className="hover:bg-zinc-50/10 dark:hover:bg-zinc-900/5 border-b border-zinc-100 dark:border-zinc-800/30">
                   <TableCell className="text-center py-4">
@@ -274,15 +308,31 @@ export function RouteTargetsTable({
                     </span>
                   </TableCell>
                   {isClassic ? (
-                    <TableCell className="p-1.5 align-middle">
-                      <TargetCellPopover
-                        providerId={normalized.providerId || ""}
-                        modelId={normalized.modelId || ""}
-                        providers={providers}
-                        allModels={allModels}
-                        onChange={(patch) => handleClassicCellChange(idx, patch)}
-                      />
-                    </TableCell>
+                    <>
+                      <TableCell className="p-1.5 align-middle">
+                        <TargetCellPopover
+                          providerId={normalized.providerId || ""}
+                          modelId={normalized.modelId || ""}
+                          providers={providers}
+                          allModels={allModels}
+                          onChange={(patch) => handleClassicCellChange(idx, patch)}
+                        />
+                      </TableCell>
+                      <TableCell className="p-1.5 align-middle">
+                        <select
+                          aria-label={t("routes.targets.classicWeight", "配比")}
+                          value={normalized.weight}
+                          onChange={(event) => handleClassicWeightChange(idx, Number(event.target.value))}
+                          className="h-12 w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 text-xs font-medium text-zinc-900 shadow-xs outline-hidden dark:border-zinc-800 dark:bg-zinc-900/10 dark:text-zinc-100"
+                        >
+                          {CLASSIC_WEIGHT_OPTIONS.map((w) => (
+                            <option key={w} value={w}>
+                              {w}%
+                            </option>
+                          ))}
+                        </select>
+                      </TableCell>
+                    </>
                   ) : (
                     routeTasks.map(task => {
                       const rule = normalized.strategyRoutingRules.find((r: any) => r.taskType === task.type) || {

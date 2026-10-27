@@ -880,6 +880,8 @@
       "emptyDescriptionClassic": "点击右上角「添加目标层」配置 L1、L2… 每层一个模型，失败时自动降级。",
       "classicModel": "转发模型",
       "classicModelDescription": "本层所有请求统一转发到所选模型；失败时降级到下一层。",
+      "classicWeight": "配比",
+      "classicWeightDescription": "100% 承载全部请求（除非降级）",
       "configureTarget": "配置目标",
       "searchPlaceholder": "搜索供应商或模型名称...",
       "noResults": "未找到匹配的供应商或模型",
