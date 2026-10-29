@@ -1520,4 +1520,170 @@ describe("Empty Output Auto-Continuation Integration", () => {
     expect(firstContent).toBeGreaterThan(-1);
     expect(firstStop).toBeGreaterThan(firstContent);
   });
+
+  it("stream=true retries and hops L0->L1 when reasoning-only stream reports completion_tokens > 0", async () => {
+    await setupFunnelEnvironment(2);
+    let callCount = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      callCount++;
+      if (String(url).includes("l0.empty.test")) {
+        const streamText =
+          `data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning":"User approved the plan.\\n<dots_function_call>{\\"name\\":\\"glob\\"}</dots_function_call>"}}]}\n\n` +
+          `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+          `data: {"usage":{"prompt_tokens":34968,"completion_tokens":75,"total_tokens":35043}}\n\n` +
+          `data: [DONE]\n\n`;
+        return new Response(streamText, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      const recovered =
+        `data: {"choices":[{"index":0,"delta":{"content":"L1 recovered after reasoning-only"}}]}\n\n` +
+        `data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+        `data: [DONE]\n\n`;
+      return new Response(recovered, { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      payload: { model: "gemini-3.6-flash", messages: [{ role: "user", content: "execute step 1" }], stream: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(callCount).toBe(3);
+    expect(res.body).toContain("L1 recovered after reasoning-only");
+    expect(res.body).not.toContain("0 输出 token");
+    const firstStop = res.body.indexOf("\"finish_reason\":\"stop\"");
+    const firstContent = res.body.indexOf("L1 recovered after reasoning-only");
+    expect(firstContent).toBeGreaterThan(-1);
+    expect(firstStop).toBeGreaterThan(firstContent);
+  });
+
+  it("getStickyModelForContinuation preserves sticky model on tool_continuation after image clipping", async () => {
+    const { getStickyModelForContinuation } = await import("../src/services/chatLogQuery");
+    const { normalizeChatLogTurn } = await import("../src/utils/chatTurns");
+
+    const sessionId = "session-sticky-clip-1";
+    const turn1Body = {
+      model: "stepfun/step-3.5-flash:free",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "添加审核状态字段" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA" } },
+          ],
+        },
+      ],
+    };
+    const turn1Out = '<think>User wants audit status</think>\n[tool_call: list]\n<routing_trace>[{"hop":1,"toModelId":"xiaomi/mimo-v2-omni"}]</routing_trace>';
+    const norm1 = normalizeChatLogTurn(JSON.stringify(turn1Body), turn1Out);
+
+    await db.insert(chatLogs).values({
+      id: "log-turn-1",
+      requestId: "req-turn-1",
+      serverSessionId: sessionId,
+      clientSessionId: "",
+      turnId: 1,
+      userId,
+      clientName: "API Client",
+      detectedClient: "OpenCode",
+      model: "xiaomi/mimo-v2-omni",
+      inputText: norm1.inputText || JSON.stringify(turn1Body),
+      outputText: turn1Out,
+      inputFingerprint: norm1.inputFingerprint,
+      conversationRootHash: norm1.conversationRootHash,
+      previousAssistantHash: norm1.previousAssistantHash,
+      responseHash: norm1.responseHash,
+      inputTokens: 162796,
+      outputTokens: 699,
+      latencyMs: 1000,
+      ttftMs: 200,
+      status: "success",
+      createdAt: new Date(Date.now() - 10_000),
+    });
+
+    const turn2Body = {
+      model: "stepfun/step-3.5-flash:free",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "添加审核状态字段" },
+            { type: "text", text: "[IMAGE_CLIPPED:user_input_limit]" },
+          ],
+        },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_function_k473p0hfdj5a_1",
+              type: "function",
+              function: { name: "list", arguments: '{"path":"/Users/tomwu/IdeaProjects/yudao-cloud"}' },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_function_k473p0hfdj5a_1",
+          content: "<path>/Users/tomwu/IdeaProjects/yudao-cloud</path>\n<entries>yudao-module-Insu/</entries>",
+        },
+      ],
+    };
+    const stickyModel2 = await getStickyModelForContinuation(turn2Body, userId, undefined);
+    expect(stickyModel2).toBe("xiaomi/mimo-v2-omni");
+
+    const turn2Out = '<think>Check git status</think>\n[tool_call: bash]';
+    const norm2 = normalizeChatLogTurn(JSON.stringify(turn2Body), turn2Out);
+
+    await db.insert(chatLogs).values({
+      id: "log-turn-2",
+      requestId: "req-turn-2",
+      serverSessionId: sessionId,
+      clientSessionId: "",
+      turnId: 2,
+      userId,
+      clientName: "API Client",
+      detectedClient: "OpenCode",
+      model: stickyModel2!,
+      inputText: norm2.inputText || JSON.stringify(turn2Body),
+      outputText: turn2Out,
+      inputFingerprint: norm2.inputFingerprint,
+      conversationRootHash: norm2.conversationRootHash,
+      previousAssistantHash: norm2.previousAssistantHash,
+      responseHash: norm2.responseHash,
+      inputTokens: 161807,
+      outputTokens: 438,
+      latencyMs: 1000,
+      ttftMs: 200,
+      status: "success",
+      createdAt: new Date(Date.now() - 5_000),
+    });
+
+    const turn3Body = {
+      model: "stepfun/step-3.5-flash:free",
+      messages: [
+        ...turn2Body.messages,
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_function_y85n8q4m569r_1",
+              type: "function",
+              function: { name: "bash", arguments: '{"command":"git status"}' },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_function_y85n8q4m569r_1",
+          content: "On branch master\nnothing to commit",
+        },
+      ],
+    };
+
+    const stickyModel3 = await getStickyModelForContinuation(turn3Body, userId, undefined);
+    expect(stickyModel3).toBe("xiaomi/mimo-v2-omni");
+  });
 });

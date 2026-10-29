@@ -553,7 +553,9 @@ export const openRouterAdapter: ProviderAdapter = {
         hasReasoning = true;
       }
       if (typeof delta.reasoning === "string" && delta.reasoning) {
-        text += delta.reasoning;
+        if (delta.reasoning !== delta.reasoning_content) {
+          text += delta.reasoning;
+        }
         hasReasoning = true;
       }
       if (delta.reasoning_details) {
@@ -564,7 +566,12 @@ export const openRouterAdapter: ProviderAdapter = {
         if (isDetailsNotEmpty) {
           hasReasoning = true;
           const readable = extractTextFromReasoningDetails(delta.reasoning_details);
-          if (readable) {
+          if (
+            readable
+            && readable !== delta.reasoning
+            && readable !== delta.reasoning_content
+            && readable !== text
+          ) {
             text += readable;
           }
         }
@@ -662,7 +669,9 @@ export const openRouterAdapter: ProviderAdapter = {
         hasReasoning = true;
       }
       if (typeof msg.reasoning === "string" && msg.reasoning) {
-        text += msg.reasoning;
+        if (msg.reasoning !== msg.reasoning_content) {
+          text += msg.reasoning;
+        }
         hasReasoning = true;
       }
       if (msg.reasoning_details) {
@@ -673,7 +682,12 @@ export const openRouterAdapter: ProviderAdapter = {
         if (isDetailsNotEmpty) {
           hasReasoning = true;
           const readable = extractTextFromReasoningDetails(msg.reasoning_details);
-          if (readable) {
+          if (
+            readable
+            && readable !== msg.reasoning
+            && readable !== msg.reasoning_content
+            && readable !== text
+          ) {
             text += readable;
           }
         }

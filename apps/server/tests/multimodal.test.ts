@@ -700,6 +700,24 @@ describe("chat turn normalization", () => {
     expect(normalizeAssistantResponseToComparableText(response)).toBe(previousAssistant);
   });
 
+  it("strips <routing_trace> and [tool_call: ...] markers from assistant responseHash", () => {
+    const previousAssistant = "我将先检查目录结构。";
+    const request = {
+      messages: [
+        { role: "user", content: "开始修改" },
+        { role: "assistant", content: previousAssistant },
+        { role: "tool", tool_call_id: "call_function_k473p0hfdj5a_1", content: "ok" }
+      ]
+    };
+    const response = `<think>thinking</think>\n${previousAssistant}\n[tool_call: list]\n<routing_trace>[{"hop":1,"toModelId":"xiaomi/mimo-v2-omni"}]</routing_trace>`;
+
+    const normalized = normalizeChatLogTurn(JSON.stringify(request), response);
+
+    expect(normalized.previousAssistantHash).toBe(computeContentHash(previousAssistant));
+    expect(normalized.responseHash).toBe(computeContentHash(previousAssistant));
+    expect(normalizeAssistantResponseToComparableText(response)).toBe(previousAssistant);
+  });
+
   it("extracts the original user prompt from Cursor-style title requests", () => {
     const titleRequest = [
       { role: "user", content: "Generate a title for this conversation:\n" },

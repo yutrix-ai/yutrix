@@ -195,4 +195,40 @@ describe("observation audit wiring — reasoning data reaches observer", () => {
     // But should still be meaningful (has reasoning_details)
     expect(observation?.meaningful).toBe(true);
   });
+
+  it("deduplicates identical text across reasoning and reasoning_details in stream and non-stream", () => {
+    const chunk = {
+      choices: [{
+        delta: {
+          reasoning: "<dots_function_call>",
+          reasoning_details: [
+            { type: "reasoning.text", text: "<dots_function_call>" }
+          ]
+        }
+      }]
+    };
+    const state = openRouterAdapter.createAttemptState!(context);
+    const streamObs = openRouterAdapter.observeStreamChunk!(
+      JSON.parse(JSON.stringify(chunk)), state, context
+    );
+    expect(streamObs?.reasoningText).toBe("<dots_function_call>");
+
+    const nonStreamResp = {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: "",
+          reasoning: "User approved the plan.",
+          reasoning_details: [
+            { type: "reasoning.text", text: "User approved the plan." }
+          ]
+        },
+        finish_reason: "stop"
+      }]
+    };
+    const nonStreamObs = openRouterAdapter.observeNonStreamResponse!(
+      JSON.parse(JSON.stringify(nonStreamResp)), state, context
+    );
+    expect(nonStreamObs?.reasoningText).toBe("User approved the plan.");
+  });
 });

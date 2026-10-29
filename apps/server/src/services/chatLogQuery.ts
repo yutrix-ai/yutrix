@@ -296,16 +296,36 @@ async function findSessionByContextOverlap(payload: ChatLogPayload, inputText: s
   const parsedInput = tryParseJson(inputText);
   const messages = getMessagesFromParsedRequest(parsedInput);
 
-  let signatureText: string | null = null;
+  const signatureTexts: string[] = [];
+  const pushSignature = (val: string | null | undefined) => {
+    if (!val) return;
+    const trimmed = val.trim();
+    if (!trimmed || signatureTexts.includes(trimmed)) return;
+    signatureTexts.push(trimmed);
+  };
 
   if (messages.length > 1) {
-    for (let i = messages.length - 2; i >= 0; i--) {
+    for (let i = messages.length - 2; i >= 0 && signatureTexts.length < 6; i--) {
       const msg = messages[i];
-      if (msg?.role === "user" || msg?.role === "assistant") {
+      if (msg?.role === "tool") {
+        if (typeof msg.tool_call_id === "string" && msg.tool_call_id.length >= 8) {
+          pushSignature(msg.tool_call_id);
+        }
+        const toolText = extractTextFromContent(msg.content);
+        if (toolText && toolText.length > 30) {
+          pushSignature(toolText.slice(0, 120));
+        }
+      } else if (msg?.role === "user" || msg?.role === "assistant") {
         const text = extractTextFromContent(msg.content);
         if (text && text.length > 30) {
-          signatureText = text;
-          break;
+          pushSignature(text);
+        }
+        if (Array.isArray(msg?.tool_calls)) {
+          for (const tc of msg.tool_calls) {
+            if (typeof tc?.id === "string" && tc.id.length >= 8) {
+              pushSignature(tc.id);
+            }
+          }
         }
       }
     }
@@ -313,18 +333,18 @@ async function findSessionByContextOverlap(payload: ChatLogPayload, inputText: s
     const msg = messages[0];
     const content = msg?.content;
     if (Array.isArray(content) && content.length > 1) {
-      for (let i = content.length - 2; i >= 0; i--) {
+      for (let i = content.length - 2; i >= 0 && signatureTexts.length < 6; i--) {
         const block = content[i];
         const text = typeof block === "string" ? block : (block?.text || block?.content || "");
         if (typeof text === "string" && text.length > 20 && !text.startsWith("[Request interrupted")) {
-          signatureText = text;
+          pushSignature(text);
           break;
         }
       }
     }
   }
 
-  if (!signatureText) return null;
+  if (signatureTexts.length === 0) return null;
 
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours
   const conditions = [
@@ -340,26 +360,26 @@ async function findSessionByContextOverlap(payload: ChatLogPayload, inputText: s
       serverSessionId: chatLogs.serverSessionId,
       inputText: chatLogs.inputText,
       outputText: chatLogs.outputText,
-      maxTurnId: sql<number>`MAX(${chatLogs.turnId})`,
-      lastCreatedAt: sql<Date>`MAX(${chatLogs.createdAt})`,
     })
     .from(chatLogs)
     .where(and(...conditions))
-    .groupBy(chatLogs.serverSessionId)
-    .orderBy(desc(sql`MAX(${chatLogs.createdAt})`))
-    .limit(100);
+    .orderBy(desc(chatLogs.createdAt))
+    .limit(200);
 
   for (const cand of candidates) {
     if (!cand.serverSessionId) continue;
     if (cand.serverSessionId === payload.serverSessionId) continue;
 
-    if (
-      (cand.inputText && cand.inputText.includes(signatureText)) ||
-      (cand.outputText && cand.outputText.includes(signatureText))
-    ) {
+    const matched = signatureTexts.some(
+      (sig) =>
+        (cand.inputText && cand.inputText.includes(sig)) ||
+        (cand.outputText && cand.outputText.includes(sig)),
+    );
+    if (matched) {
+      const stats = await getSessionTurnStats(cand.serverSessionId);
       return {
         serverSessionId: cand.serverSessionId,
-        maxTurnId: cand.maxTurnId || 0,
+        maxTurnId: stats.maxTurnId || 0,
         reason: "context-overlap",
       };
     }
@@ -520,15 +540,17 @@ export async function getStickyModelForContinuation(
 ): Promise<string | null> {
   const rawInputText = JSON.stringify(body);
   const normalizedTurn = normalizeChatLogTurn(rawInputText, null);
+  const finalInputText = normalizedTurn.inputText || rawInputText;
 
   const payload: ChatLogPayload = {
     userId,
     serverSessionId: undefined,
     clientSessionId,
     clientName: undefined,
+    inputText: rawInputText,
   };
 
-  const match = await resolveSessionMatch(payload, normalizedTurn, rawInputText);
+  const match = await resolveSessionMatch(payload, normalizedTurn, finalInputText);
   if (!match || !match.serverSessionId) return null;
 
   const rows = await db
@@ -548,15 +570,17 @@ export async function getStickyTurnForContinuation(
 ): Promise<{ model: string; inputText: string } | null> {
   const rawInputText = JSON.stringify(body);
   const normalizedTurn = normalizeChatLogTurn(rawInputText, null);
+  const finalInputText = normalizedTurn.inputText || rawInputText;
 
   const payload: ChatLogPayload = {
     userId,
     serverSessionId: undefined,
     clientSessionId,
     clientName: undefined,
+    inputText: rawInputText,
   };
 
-  const match = await resolveSessionMatch(payload, normalizedTurn, rawInputText);
+  const match = await resolveSessionMatch(payload, normalizedTurn, finalInputText);
   if (!match || !match.serverSessionId) return null;
 
   const rows = await db

@@ -20,6 +20,8 @@ export interface ContinuityContext {
     terminalError?: any;
     terminalEventSent?: boolean;
     withheldEmptyTerminal?: boolean;
+    accumulatedReasoningText?: string;
+    accumulatedToolArgs?: Record<string, { name: string; arguments: string }>;
   };
   accumulatedCompletionText: string;
   baseActionLog: any;

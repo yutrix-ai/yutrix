@@ -1,10 +1,37 @@
 import { ContinuityStrategy, ContinuityContext, ContinuityDecision } from "../types";
 import {
   ZERO_COMPLETION_FALLBACK,
+  requestHasBillableInput,
   wouldLogZeroEmptyCompletion,
 } from "../emptyCompletionDecision";
 
 export { wouldLogZeroEmptyCompletion as providerReportedZeroOutput } from "../emptyCompletionDecision";
+
+function hasReasoningInPayload(parsedData: any, responseData?: any): boolean {
+  if (
+    typeof responseData?.observation?.reasoningText === "string"
+    && responseData.observation.reasoningText.trim().length > 0
+  ) {
+    return true;
+  }
+  if (!parsedData || typeof parsedData !== "object") return false;
+  const message = parsedData.choices?.[0]?.message;
+  if (typeof message?.reasoning_content === "string" && message.reasoning_content.trim().length > 0) return true;
+  if (typeof message?.reasoning === "string" && message.reasoning.trim().length > 0) return true;
+  if (Array.isArray(message?.reasoning_details) && message.reasoning_details.length > 0) return true;
+  const blocks = Array.isArray(parsedData.content)
+    ? parsedData.content
+    : Array.isArray(message?.content)
+      ? message.content
+      : [];
+  return blocks.some(
+    (b: any) =>
+      b
+      && (b.type === "thinking"
+        || b.type === "redacted_thinking"
+        || (typeof b.thinking === "string" && b.thinking.trim().length > 0)),
+  );
+}
 
 function hasToolCallInPayload(parsedData: any): boolean {
   if (!parsedData || typeof parsedData !== "object") return false;
@@ -105,7 +132,17 @@ export class EmptyOutputStrategy implements ContinuityStrategy {
       return { shouldIntervene: false };
     }
 
-    if (!wouldLogZeroEmptyCompletion(responseData, context.roundUsage, originalBody)) {
+    const isReasoningOnlyResponse =
+      (streamResult?.visibleClientOutputSent === false
+        && (streamResult?.meaningfulClientOutputSent === true
+          || Boolean(streamResult?.accumulatedReasoningText && streamResult.accumulatedReasoningText.trim().length > 0)))
+      || hasReasoningInPayload(parsedData, responseData)
+      || /<(reasoning|think)>[\s\S]*?<\/\1>/i.test(textToCheck);
+
+    if (
+      !wouldLogZeroEmptyCompletion(responseData, context.roundUsage, originalBody)
+      && !(isReasoningOnlyResponse && requestHasBillableInput(originalBody || responseData?.roundRequestBody))
+    ) {
       return { shouldIntervene: false };
     }
 

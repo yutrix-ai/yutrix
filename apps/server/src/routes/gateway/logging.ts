@@ -168,7 +168,7 @@ export async function emitAuditEvent(
       ctx.body,
       ctx.routing.reqPath,
     );
-    const clientSessionIdVal = extractClientSessionId(ctx.request);
+    const clientSessionIdVal = extractClientSessionId(ctx.request, ctx.body);
 
     logEmitter.emit("chatLogInsert", {
       id: ctx.reqLogId,

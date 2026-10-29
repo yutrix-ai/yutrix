@@ -634,6 +634,32 @@ describe("EmptyOutputStrategy Unit Tests", () => {
     expect(decision.shouldIntervene).toBe(true);
   });
 
+  it("intervenes on reasoning-only live stream even when upstream trailer reports completion_tokens > 0 from reasoning", async () => {
+    const context = baseContext({
+      responseData: {
+        status: 200,
+        isStream: true,
+        roundStreamUsage: {
+          usage: { prompt_tokens: 34968, completion_tokens: 75, total_tokens: 35043 },
+        },
+      },
+      roundUsage: { inputTokens: 34968, outputTokens: 75 },
+      streamResult: {
+        isLengthTruncated: false,
+        meaningfulClientOutputSent: true,
+        visibleClientOutputSent: false,
+        withheldEmptyTerminal: true,
+        accumulatedReasoningText:
+          'User approved the plan.\n<dots_function_call>{"name": "glob", "arguments": {"pattern": "**/yudao-module-Insu/**"}}</dots_function_call>',
+      },
+      accumulatedCompletionText: "",
+    });
+
+    const decision = await strategy.evaluate(context);
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("EmptyOutput");
+  });
+
   it("should NOT intervene when fakeStreamText carries non-empty content", async () => {
     const context = baseContext({
       responseData: {
@@ -834,5 +860,32 @@ describe("Sibling continuity strategies stream guards (anti-regression)", () => 
       })
     );
     expect(decision.shouldIntervene).toBe(false);
+  });
+
+  it("ReasoningExhaustion intervenes on OpenRouter message.reasoning-only non-stream payloads", async () => {
+    const strategy = new ReasoningExhaustionStrategy();
+    const decision = await strategy.evaluate(
+      baseContext({
+        responseData: {
+          status: 200,
+          data: {
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: "",
+                  reasoning: '<dots_function_call>{"name":"glob"}</dots_function_call>',
+                },
+                finish_reason: "stop",
+              },
+            ],
+          },
+        },
+        accumulatedCompletionText: "",
+      })
+    );
+    expect(decision.shouldIntervene).toBe(true);
+    expect(decision.strategyName).toBe("ReasoningExhaustion");
   });
 });

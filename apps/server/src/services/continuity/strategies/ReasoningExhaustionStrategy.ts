@@ -7,8 +7,10 @@ export class ReasoningExhaustionStrategy implements ContinuityStrategy {
   async evaluate(context: ContinuityContext): Promise<ContinuityDecision> {
     const { responseData, originalBody, accumulatedCompletionText, streamResult } = context;
 
-    // Defer only for live native streams mid-flight. Fake streams have a complete payload.
-    if (responseData?.isStream && !responseData?.isFakeStream && !streamResult) {
+    // Defer for live native streams: EmptyOutputStrategy owns live-stream
+    // reasoning-only recovery so the gateway retries the uncut body and walks
+    // down funnel layers before closing the SSE stream.
+    if (responseData?.isStream && !responseData?.isFakeStream) {
       return { shouldIntervene: false };
     }
 
@@ -48,9 +50,23 @@ export class ReasoningExhaustionStrategy implements ContinuityStrategy {
       cleanVisibleText = cleanVisibleText.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
     }
 
-    // Check native reasoning_content field (from OpenAI models like deepseek-reasoner or glm-5)
+    // Check native reasoning_content / OpenRouter reasoning fields
     if (parsedData?.choices?.[0]?.message?.reasoning_content) {
       reasoningText += parsedData.choices[0].message.reasoning_content;
+    }
+    if (
+      typeof parsedData?.choices?.[0]?.message?.reasoning === "string" &&
+      parsedData.choices[0].message.reasoning &&
+      parsedData.choices[0].message.reasoning !== parsedData?.choices?.[0]?.message?.reasoning_content
+    ) {
+      reasoningText += parsedData.choices[0].message.reasoning;
+    }
+    if (
+      !reasoningText &&
+      typeof responseData?.observation?.reasoningText === "string" &&
+      responseData.observation.reasoningText
+    ) {
+      reasoningText += responseData.observation.reasoningText;
     }
 
     // Conditions: visible content is empty, reasoning content is present, and there are NO tool calls.

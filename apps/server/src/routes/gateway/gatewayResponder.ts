@@ -10,12 +10,12 @@ import { updateRequestLog } from "../../services/requestLogService";
 import type { GatewayRequestContext } from "./types";
 import { pickFirstAnswerTimeoutMs, remainingFirstChunkTimeoutMs } from "./gatewayExecutorUtils";
 import { forwardStream } from "./streaming";
-import { finalizeStreamLog, isAuditExemptUser, appendRoutingTraceToOutput } from "./logging";
+import { finalizeStreamLog, isAuditExemptUser, appendRoutingTraceToOutput, extractClientSessionId } from "./logging";
 import { writeStreamErrorResponse, writeStreamHeaders } from "./streamProtocol";
 import { buildSafeNonStreamAuditOutput } from "./auditSanitizer";
 import { adaptChatResponseToResponses, isResponsesApiPath } from "./responsesAdapter";
 
-export async function handleGatewayResponse(ctx: GatewayRequestContext, responseData: any, logAction: any, isStitching = false, anthropicState?: any): Promise<{ isLengthTruncated: boolean, lastToolCallState?: any, closingSentinel?: string, anthropicState?: any, terminalError?: any, terminalEventSent?: boolean, meaningfulClientOutputSent?: boolean, visibleClientOutputSent?: boolean, withheldEmptyTerminal?: boolean }> {
+export async function handleGatewayResponse(ctx: GatewayRequestContext, responseData: any, logAction: any, isStitching = false, anthropicState?: any): Promise<{ isLengthTruncated: boolean, lastToolCallState?: any, closingSentinel?: string, anthropicState?: any, terminalError?: any, terminalEventSent?: boolean, meaningfulClientOutputSent?: boolean, visibleClientOutputSent?: boolean, withheldEmptyTerminal?: boolean, accumulatedCompletionText?: string, accumulatedReasoningText?: string, accumulatedToolArgs?: Record<string, { name: string; arguments: string }>, isEmptyStream?: boolean, promptTokens?: number, completionTokens?: number }> {
   if (!ctx.continuity) {
     ctx.continuity = {
       accumulatedCompletionText: "",
@@ -166,7 +166,7 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
               if (!isExempt) {
                 const auditOutputForLog = appendRoutingTraceToOutput(null, ctx.routingTrace);
                 const detectedClientVal = detectAIClient(request.headers, body, reqPath);
-                const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
+                const clientSessionIdVal = extractClientSessionId(request, body);
                 logEmitter.emit("chatLogInsert", {
                   id: reqLogId,
                   requestId: reqLogId,
@@ -241,7 +241,7 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
                 ctx.routingTrace,
               );
               const detectedClientVal = detectAIClient(request.headers, body, reqPath);
-              const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string;
+              const clientSessionIdVal = extractClientSessionId(request, body);
               logEmitter.emit("chatLogInsert", {
                 id: reqLogId,
                 requestId: reqLogId,
@@ -338,6 +338,7 @@ export async function handleGatewayResponse(ctx: GatewayRequestContext, response
         (ctx as any)._accumulatedReasoningText = ctx.stream.accumulatedReasoningText;
 
         return {
+          ...streamResult,
           isLengthTruncated: streamResult.isLengthTruncated || false,
           lastToolCallState: streamResult.lastToolCallState,
           closingSentinel: streamResult.closingSentinel,

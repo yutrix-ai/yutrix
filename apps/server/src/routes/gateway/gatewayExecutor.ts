@@ -14,7 +14,7 @@ import { transformRequestBody, applyPromptPolicy, resolvePromptPolicyPlan } from
 import { getStrategyRuleForLayer } from "../../services/strategyRouting";
 import { adaptRequestProtocol } from "./protocolAdapter";
 import { buildUpstreamHeaders, determineUpstreamPath, executeUpstreamFetch, createFakeStreamFromData } from "./upstream";
-import { buildBaseLog, insertInitialRequestLog, finalizeStreamLog } from "./logging";
+import { buildBaseLog, insertInitialRequestLog, finalizeStreamLog, extractClientSessionId } from "./logging";
 import { getGlobalQueue, getApiKeyQueue, getProviderQueue } from "./concurrency";
 import { checkConcurrencyFallback, checkErrorFallback, isErrorFallbackStatus } from "./fallback";
 import { handleGatewayResponse } from "./gatewayResponder";
@@ -720,11 +720,7 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 const requestClass = classifyGatewayRequestClass(body);
                 const isContinuation = requestClass.requestClass === "tool_continuation";
                 try {
-                  const loopClientSessionId = (
-                    request.headers["x-client-session-id"] ||
-                    request.headers["x-conversation-id"] ||
-                    request.headers["x-session-id"]
-                  ) as string | undefined;
+                  const loopClientSessionId = extractClientSessionId(request, body) || undefined;
                   if (maybeServeContinuationLoopStop({
                     userId: authCtx.userId,
                     body,
@@ -749,8 +745,12 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
                 }
                 let previousModelId: string | null = null;
                 if (isContinuation) {
-                  const clientSessionIdVal = (request.headers["x-client-session-id"] || request.headers["x-conversation-id"] || request.headers["x-session-id"]) as string | undefined;
-                  previousModelId = await getStickyModelForContinuation(body, authCtx.userId, clientSessionIdVal);
+                  const clientSessionIdVal = extractClientSessionId(request, body) || undefined;
+                  previousModelId =
+                    (await getStickyModelForContinuation(body, authCtx.userId, clientSessionIdVal)) ||
+                    (frozenInboundBody && frozenInboundBody !== body
+                      ? await getStickyModelForContinuation(frozenInboundBody, authCtx.userId, clientSessionIdVal)
+                      : null);
                 }
                 const strategyDecision = await resolveStrategyRoutingDecision({
                   route,
