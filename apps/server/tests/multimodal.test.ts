@@ -718,6 +718,37 @@ describe("chat turn normalization", () => {
     expect(normalizeAssistantResponseToComparableText(response)).toBe(previousAssistant);
   });
 
+  it("matches previousAssistantHash and responseHash when assistant message has both text and tool_use/tool_calls", () => {
+    const previousAssistant = "让我查看 UserSubsidyRecordController 的实现：";
+    const anthropicNextTurnRequest = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "排查列表为空的问题" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: previousAssistant },
+            { type: "tool_use", id: "toolu_01abc", name: "Read", input: { file_path: "UserSubsidyRecordController.java" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "toolu_01abc", content: "public class UserSubsidyRecordController {}" },
+          ],
+        },
+      ],
+    };
+    const streamResponse = `<think>thinking</think>\n${previousAssistant}\n[tool_call: Read]`;
+    const nonStreamResponse = `${previousAssistant}\n\n[tool_use: Read]`;
+
+    const normalizedStream = normalizeChatLogTurn(JSON.stringify(anthropicNextTurnRequest), streamResponse);
+    const normalizedNonStream = normalizeChatLogTurn(JSON.stringify(anthropicNextTurnRequest), nonStreamResponse);
+
+    expect(normalizedStream.previousAssistantHash).toBe(computeContentHash(previousAssistant));
+    expect(normalizedStream.responseHash).toBe(computeContentHash(previousAssistant));
+    expect(normalizedNonStream.responseHash).toBe(computeContentHash(previousAssistant));
+  });
+
   it("extracts the original user prompt from Cursor-style title requests", () => {
     const titleRequest = [
       { role: "user", content: "Generate a title for this conversation:\n" },

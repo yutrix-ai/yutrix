@@ -1686,4 +1686,266 @@ describe("Empty Output Auto-Continuation Integration", () => {
     const stickyModel3 = await getStickyModelForContinuation(turn3Body, userId, undefined);
     expect(stickyModel3).toBe("xiaomi/mimo-v2-omni");
   });
+
+  it("getStickyModelForContinuation preserves sticky model on Anthropic tool_result continuations after context compaction and ignores failed rows", async () => {
+    const { getStickyModelForContinuation } = await import("../src/services/chatLogQuery");
+    const { normalizeChatLogTurn } = await import("../src/utils/chatTurns");
+    const sessionId = "session-anthropic-sticky-1";
+
+    const turn1Body = {
+      model: "claude-sonnet-4-5",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "排查补贴记录页面报错" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "我来读取控制器代码。" },
+            { type: "tool_use", id: "toolu_read_subsidy_ctrl_01", name: "Read", input: { file_path: "UserSubsidyRecordController.java" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_read_subsidy_ctrl_01",
+              content: "public class UserSubsidyRecordController { @GetMapping(\"/list\") public Result list() {} }",
+            },
+          ],
+        },
+      ],
+    };
+    const turn1Out = "[tool_call: Read]";
+    const norm1 = normalizeChatLogTurn(JSON.stringify(turn1Body), turn1Out);
+
+    await db.insert(chatLogs).values({
+      id: "log-anth-turn-1",
+      requestId: "req-anth-turn-1",
+      serverSessionId: sessionId,
+      clientSessionId: "",
+      turnId: 1,
+      userId,
+      clientName: "API Client",
+      detectedClient: "Claude Code",
+      model: "claude-opus-4-6",
+      inputText: norm1.inputText || JSON.stringify(turn1Body),
+      outputText: turn1Out,
+      inputFingerprint: norm1.inputFingerprint,
+      conversationRootHash: norm1.conversationRootHash,
+      previousAssistantHash: norm1.previousAssistantHash,
+      responseHash: norm1.responseHash,
+      inputTokens: 50000,
+      outputTokens: 200,
+      latencyMs: 1000,
+      ttftMs: 200,
+      status: "success",
+      createdAt: new Date(Date.now() - 15_000),
+    });
+
+    // Simulate a failed attempt row in the same session with a different model
+    await db.insert(chatLogs).values({
+      id: "log-anth-turn-2-failed",
+      requestId: "req-anth-turn-2-failed",
+      serverSessionId: sessionId,
+      clientSessionId: "",
+      turnId: 2,
+      userId,
+      clientName: "API Client",
+      detectedClient: "Claude Code",
+      model: "broken-fallback-model",
+      inputText: norm1.inputText || JSON.stringify(turn1Body),
+      outputText: null,
+      inputFingerprint: norm1.inputFingerprint,
+      conversationRootHash: norm1.conversationRootHash,
+      previousAssistantHash: norm1.previousAssistantHash,
+      responseHash: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: 500,
+      ttftMs: 500,
+      status: "failed",
+      createdAt: new Date(Date.now() - 10_000),
+    });
+
+    // Next turn after context compaction (root user message changed to <summary>) and tool-only assistant message
+    const turn2CompactedBody = {
+      model: "claude-sonnet-4-5",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "<summary>Compacted conversation summary</summary>" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_read_subsidy_ctrl_01", name: "Read", input: { file_path: "UserSubsidyRecordController.java" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_read_subsidy_ctrl_01",
+              content: "public class UserSubsidyRecordController { @GetMapping(\"/list\") public Result list() {} }",
+            },
+          ],
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_edit_subsidy_ctrl_02", name: "Edit", input: { file_path: "UserSubsidyRecordController.java" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_edit_subsidy_ctrl_02",
+              content: "The file UserSubsidyRecordController.java has been updated.",
+            },
+          ],
+        },
+      ],
+    };
+
+    const stickyModel = await getStickyModelForContinuation(turn2CompactedBody, userId, undefined);
+    expect(stickyModel).toBe("claude-opus-4-6");
+  });
+
+  it("closes open tool_use content_block_stop and emits max_tokens without duplicate message_start when adapted stream hits finish_reason=length", async () => {
+    await db.insert(providers).values({
+      id: "emp-prov-anth-len",
+      name: "OpenAI Upstream For Anthropic",
+      openaiBaseUrl: "https://api.openai.com/v1",
+      enabled: true,
+      concurrencyLimit: 10,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(providerApiKeys).values({
+      id: "emp-prov-anth-len-key",
+      providerId: "emp-prov-anth-len",
+      keyEncrypted: encryptText("sk-dummy"),
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(providerModels).values({
+      id: crypto.randomUUID(),
+      providerId: "emp-prov-anth-len",
+      modelId: "gpt-4o",
+      displayName: "GPT-4o",
+      enabled: true,
+      createdAt: new Date(),
+    });
+    await db.insert(endpoints).values({
+      id: "emp-ep-anth-len",
+      userId,
+      name: "Anthropic Messages Endpoint",
+      path: "/v1/messages",
+      incomingProtocol: "anthropic",
+      enabled: true,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(endpointRoutes).values({
+      id: "emp-route-anth-len",
+      endpointId: "emp-ep-anth-len",
+      name: "Anthropic to OpenAI Route",
+      providerId: "emp-prov-anth-len",
+      providerProtocol: "openai",
+      modelId: "gpt-4o",
+      strategyRoutingEnabled: false,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(routeAuthorizations).values({
+      id: crypto.randomUUID(),
+      routeId: "emp-route-anth-len",
+      userId,
+      createdAt: new Date(),
+    });
+
+    const sseFrames = [
+      `data: ${JSON.stringify({
+        id: "chatcmpl-len-1",
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta: { content: "让我全面修复 UserSubsidyRecordController：" }, finish_reason: null }],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        id: "chatcmpl-len-1",
+        object: "chat.completion.chunk",
+        choices: [{
+          index: 0,
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: "toolu_tool_edit_99",
+              type: "function",
+              function: { name: "Edit", arguments: '{"file_path":"UserSubsidyRecordController.java",' },
+            }],
+          },
+          finish_reason: null,
+        }],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        id: "chatcmpl-len-1",
+        object: "chat.completion.chunk",
+        choices: [{
+          index: 0,
+          delta: {
+            tool_calls: [{
+              index: 0,
+              function: { arguments: '"old_string":"broken"' },
+            }],
+          },
+          finish_reason: "length",
+        }],
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+      })}\n\n`,
+      "data: [DONE]\n\n",
+    ];
+
+    vi.stubGlobal("fetch", async () => {
+      const encoder = new TextEncoder();
+      let idx = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(c) {
+          if (idx < sseFrames.length) {
+            c.enqueue(encoder.encode(sseFrames[idx++]));
+          } else {
+            c.close();
+          }
+        },
+      });
+      return new Response(body as any, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/v1/messages",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        model: "gpt-4o",
+        stream: true,
+        messages: [{ role: "user", content: "修复控制器" }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const sseBody = response.body;
+    expect(sseBody.match(/event: message_start/g) || []).toHaveLength(1);
+    expect(sseBody).toContain('\\"old_string\\":\\"broken\\"');
+    expect(sseBody).toContain('event: content_block_stop\ndata: {"type":"content_block_stop","index":0}');
+    expect(sseBody).toContain('event: content_block_stop\ndata: {"type":"content_block_stop","index":1}');
+    expect(sseBody).toContain('"stop_reason":"max_tokens"');
+    expect(sseBody).toContain('event: message_stop');
+  });
 });

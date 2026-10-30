@@ -606,6 +606,12 @@ export async function forwardSSEStreamTransparent(
   downstream.write = (chunk: string) => {
     const success = originalWrite(chunk);
     if (success && chunk) {
+      if (
+        incomingProtocol === "anthropic" &&
+        (/(?:^|\n)event:\s*message_start\b/.test(chunk) || /"type"\s*:\s*"message_start"/.test(chunk))
+      ) {
+        (reply.raw as any).__promptgateAnthropicMessageStarted = true;
+      }
       if (hasMeaningfulOutputEvent(chunk, incomingProtocol)) {
         meaningfulClientOutputSent = true;
       }
@@ -934,6 +940,12 @@ export async function forwardSSEStreamTransparent(
          }
       }
 
+      const resolvedAnthropicEventType = eventAnthropicType || eventParsedPayload?.type || null;
+      const isDuplicateAnthropicMessageStart =
+        incomingProtocol === "anthropic"
+        && resolvedAnthropicEventType === "message_start"
+        && (reply.raw as any).__promptgateAnthropicMessageStarted === true;
+
       // OpenRouter: before any visible tokens, do not commit stop/[DONE] so a
       // zero-completion retry can reuse the same SSE response.
       const holdEmptyTerminal =
@@ -943,10 +955,12 @@ export async function forwardSSEStreamTransparent(
           eventHasSemanticContent: false,
           isDone: eventIsDone,
           finishReason: eventChunkFinishReason,
-          anthropicEventType: eventAnthropicType || eventParsedPayload?.type || null,
+          anthropicEventType: resolvedAnthropicEventType,
           anthropicStopReason: eventParsedPayload?.delta?.stop_reason || eventParsedPayload?.stop_reason || null,
         });
-      if (holdEmptyTerminal) {
+      if (isDuplicateAnthropicMessageStart) {
+        shouldSkipWrite = true;
+      } else if (holdEmptyTerminal) {
         shouldSkipWrite = true;
         withheldEmptyTerminal = true;
         nativePreludeBuffer = [];
@@ -958,7 +972,7 @@ export async function forwardSSEStreamTransparent(
         && shouldBufferNativeAnthropicPrelude({
           visibleClientOutputSent,
           eventHasSemanticContent,
-          anthropicEventType: eventAnthropicType || eventParsedPayload?.type || null,
+          anthropicEventType: resolvedAnthropicEventType,
         })
       ) {
         shouldSkipWrite = true;
@@ -1244,7 +1258,6 @@ export async function forwardSSEStreamAdapted(
             isLengthCutoff = true;
             hadLengthCutoff = true;
             shouldSkipWriteInside = true;
-            shouldSkipWrite = true;
           }
 
           // Run active translators
@@ -1487,6 +1500,10 @@ export async function forwardSSEStreamAdapted(
             }
           }
 
+          if (isLengthCutoff) {
+            shouldSkipWrite = true;
+          }
+
           if (!wroteDownstream) {
             downstream.pingIfIdle(HIDDEN_PROGRESS_KEEP_ALIVE_MS);
           }
@@ -1537,7 +1554,7 @@ export async function forwardSSEStreamAdapted(
 
   if (holdAdaptedEmptyClose) {
     withheldEmptyTerminal = true;
-  } else if (!stitchState?.isStitching || stitchState?.isLastCycle || visibleClientOutputSent) {
+  } else if (!hadLengthCutoff && (!stitchState?.isStitching || stitchState?.isLastCycle || visibleClientOutputSent)) {
     if (isInsideTextBlock) {
       downstream.write(`event: content_block_stop\ndata: ${JSON.stringify({
         type: "content_block_stop",

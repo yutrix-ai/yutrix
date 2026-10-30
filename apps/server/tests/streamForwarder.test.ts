@@ -124,6 +124,52 @@ describe("streamForwarder keep-alive", () => {
     expect(output).toContain("event: message_stop");
   });
 
+  it("does not duplicate Anthropic message_start on transparent stream after early prelude", async () => {
+    const encoder = new TextEncoder();
+    const rawEvents = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_2", type: "message", role: "assistant", content: [] } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hi" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } })}\n\n`,
+      `event: message_stop\ndata: {"type":"message_stop"}\n\n`,
+    ];
+    let idx = 0;
+    const customStream = new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (idx < rawEvents.length) {
+          c.enqueue(encoder.encode(rawEvents[idx++]));
+        } else {
+          c.close();
+        }
+      },
+    });
+
+    const { reply, writes } = createReply();
+    (reply.raw as any).__promptgateAnthropicMessageStarted = true;
+    await forwardSSEStreamTransparent(
+      reply,
+      customStream,
+      undefined,
+      undefined,
+      undefined,
+      "anthropic",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "anthropic",
+    );
+
+    const output = writes.join("");
+    expect(output.match(/event: message_start/g) || []).toHaveLength(0);
+    expect(output).toContain("event: content_block_delta");
+    expect(output).toContain("hi");
+    expect(output).toContain("event: message_stop");
+  });
+
   it("pings during hidden reasoning chunks that produce no Anthropic content block", async () => {
     vi.useFakeTimers();
     const { reply, writes } = createReply();

@@ -390,7 +390,11 @@ export async function executeGatewayRequest(ctx: GatewayRequestContext, controll
         }
 
         if (incomingProtocol === "anthropic") {
-          const isAnthropicAdaptation = ctx.activeEffectiveUpstreamProtocol === "openai";
+          const isAnthropicAdaptation =
+            Boolean(anthropicState) ||
+            (responseData?.streamProtocol
+              ? responseData.streamProtocol !== "anthropic"
+              : ctx.activeEffectiveUpstreamProtocol !== "anthropic");
           const writeAnthropicEmptyClose = (stopReason: string) => {
             const fallbackText =
               (typeof responseData?.zeroCompletionFallback === "string" && responseData.zeroCompletionFallback)

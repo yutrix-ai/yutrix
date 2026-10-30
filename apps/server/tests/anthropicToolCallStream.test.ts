@@ -216,4 +216,82 @@ describe('Anthropic Native Tool Calling from OpenAI Stream', () => {
       ],
     });
   });
+
+  test('Preserves final tool_calls delta and leaves open tool_use unclosed for closingSentinel when finish_reason=length', async () => {
+    const chunks = [
+      {
+        choices: [
+          {
+            delta: {
+              content: "让我全面修复 UserSubsidyRecordController：",
+              tool_calls: [{ index: 0, id: "toolu_edit_1", function: { name: "Edit" } }],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [{ index: 0, function: { arguments: '{"file_path":"UserSubsidyRecordController.java",' } }],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [{ index: 0, function: { arguments: '"old_string":"foo"' } }],
+            },
+            finish_reason: "length",
+          },
+        ],
+      },
+    ];
+
+    const encoder = new TextEncoder();
+    let chunkIndex = 0;
+    const readerMock = {
+      read: vi.fn().mockImplementation(async () => {
+        if (chunkIndex < chunks.length) {
+          const chunk = chunks[chunkIndex++];
+          return { done: false, value: encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`) };
+        }
+        return { done: true, value: undefined };
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const writes: string[] = [];
+    const reply: any = {
+      raw: {
+        write: vi.fn().mockImplementation((str) => {
+          writes.push(str);
+          return true;
+        }),
+        end: vi.fn(),
+      },
+    };
+
+    const result = await forwardSSEStreamAdapted(
+      reply,
+      { getReader: () => readerMock } as any,
+      { modelId: "test-model", targetProtocol: "anthropic", messageId: "msg_len", promptTokens: 10 } as any,
+      undefined,
+      undefined,
+      5000,
+    );
+
+    const fullOutput = writes.join("");
+    expect(result.isLengthTruncated).toBe(true);
+    // Final delta on the finish_reason=length chunk must not be dropped
+    expect(fullOutput).toContain('\\"old_string\\":\\"foo\\"');
+    // Open tool_use block must remain unclosed in anthropicState so finalizeGatewayStreamEvents / closingSentinel can close it
+    expect(result.anthropicState?.activeToolCalls?.[0]?.emittedStart).toBe(true);
+    expect(result.anthropicState?.activeToolCalls?.[0]?.closed).toBe(false);
+    expect(result.closingSentinel).toContain('"type":"content_block_stop","index":1');
+  });
 });

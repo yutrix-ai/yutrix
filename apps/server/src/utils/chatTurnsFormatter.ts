@@ -80,6 +80,12 @@ export function normalizeToolCalls(toolCalls: any[]): string {
 export function normalizeAssistantMessageToComparableText(message: any): string {
   if (!message) return "";
 
+  const textContent = extractTextFromContent(message.content);
+  if (textContent) {
+    const stripped = stripReasoningMarkers(textContent);
+    if (stripped) return stripped;
+  }
+
   if (Array.isArray(message.content)) {
     const toolBlocks = message.content.filter((block: any) => block?.type === "tool_use");
     if (toolBlocks.length > 0) {
@@ -96,9 +102,6 @@ export function normalizeAssistantMessageToComparableText(message: any): string 
   if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
     return normalizeToolCalls(message.tool_calls);
   }
-
-  const textContent = extractTextFromContent(message.content);
-  if (textContent) return stripReasoningMarkers(textContent);
 
   return "";
 }

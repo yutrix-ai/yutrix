@@ -69,7 +69,7 @@ export function stripReasoningMarkers(text: string): string {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, "")
     .replace(/<routing_trace>[\s\S]*?<\/routing_trace>/gi, "")
-    .replace(/\[tool_call:[^\]]+\]/gi, "")
+    .replace(/\[tool_(?:call|use):[^\]]+\]/gi, "")
     .trim();
 }
 

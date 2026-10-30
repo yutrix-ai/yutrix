@@ -327,6 +327,23 @@ async function findSessionByContextOverlap(payload: ChatLogPayload, inputText: s
             }
           }
         }
+        if (Array.isArray(msg?.content)) {
+          for (const block of msg.content) {
+            if (block?.type === "tool_use" && typeof block.id === "string" && block.id.length >= 8) {
+              pushSignature(block.id);
+            } else if (block?.type === "tool_result") {
+              if (typeof block.tool_use_id === "string" && block.tool_use_id.length >= 8) {
+                pushSignature(block.tool_use_id);
+              }
+              const resultText = typeof block.content === "string"
+                ? block.content
+                : extractTextFromContent(block.content);
+              if (resultText && resultText.length > 30) {
+                pushSignature(resultText.slice(0, 120));
+              }
+            }
+          }
+        }
       }
     }
   } else if (messages.length === 1) {
@@ -554,7 +571,7 @@ export async function getStickyModelForContinuation(
   if (!match || !match.serverSessionId) return null;
 
   const rows = await db
-    .select({ model: chatLogs.model, inputText: chatLogs.inputText })
+    .select({ model: chatLogs.model, inputText: chatLogs.inputText, status: chatLogs.status })
     .from(chatLogs)
     .where(eq(chatLogs.serverSessionId, match.serverSessionId))
     .orderBy(desc(chatLogs.turnId), desc(chatLogs.createdAt))
@@ -584,7 +601,7 @@ export async function getStickyTurnForContinuation(
   if (!match || !match.serverSessionId) return null;
 
   const rows = await db
-    .select({ model: chatLogs.model, inputText: chatLogs.inputText })
+    .select({ model: chatLogs.model, inputText: chatLogs.inputText, status: chatLogs.status })
     .from(chatLogs)
     .where(eq(chatLogs.serverSessionId, match.serverSessionId))
     .orderBy(desc(chatLogs.turnId), desc(chatLogs.createdAt))

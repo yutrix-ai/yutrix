@@ -73,9 +73,10 @@ export function shouldRecordStrategyRoutingHop(
 }
 
 export function selectStickyModelFromLogRows(
-  rows: Array<{ model?: string | null; inputText?: string | null }>,
+  rows: Array<{ model?: string | null; inputText?: string | null; status?: string | null }>,
 ): string | null {
   for (const row of rows) {
+    if (row.status === "failed") continue;
     if (looksLikeClientSidecarText(row.inputText)) continue;
     if (row.model) return row.model;
   }
@@ -83,9 +84,10 @@ export function selectStickyModelFromLogRows(
 }
 
 export function selectStickyTurnFromLogRows(
-  rows: Array<{ model?: string | null; inputText?: string | null }>,
+  rows: Array<{ model?: string | null; inputText?: string | null; status?: string | null }>,
 ): { model: string; inputText: string } | null {
   for (const row of rows) {
+    if (row.status === "failed") continue;
     if (looksLikeClientSidecarText(row.inputText)) continue;
     return { model: row.model || "", inputText: row.inputText || "" };
   }
