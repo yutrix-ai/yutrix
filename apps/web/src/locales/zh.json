@@ -600,6 +600,7 @@
         "exhausted": "已停用 (耗尽)"
       },
       "actions": {
+        "add": "添加密钥",
         "disable": "手动停用",
         "enable": "重新启用"
       },

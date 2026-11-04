@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "@/contexts/SettingsContext";
+import { fetchApi } from "@/lib/api";
 import { CheckCircle, XCircle, Plus, Trash2, Key, RefreshCw } from "lucide-react";
 import {
   Dialog,
@@ -39,13 +40,11 @@ export function ProviderApiKeysModal({ open, onOpenChange, provider, onUpdate }:
   const fetchKeys = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/providers/${provider.id}/keys?t=${Date.now()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setKeys(data);
-      }
-    } catch (e) {
+      const data = await fetchApi(`/admin/providers/${provider.id}/keys?t=${Date.now()}`);
+      setKeys(Array.isArray(data) ? data : []);
+    } catch (e: any) {
       console.error(e);
+      toast.error(e.message || t("providers.apiKeys.toasts.requestFailed", "请求失败"));
     } finally {
       setLoading(false);
     }
@@ -55,22 +54,16 @@ export function ProviderApiKeysModal({ open, onOpenChange, provider, onUpdate }:
     if (!newKey.trim()) return;
     setAdding(true);
     try {
-      const res = await fetch(`/api/admin/providers/${provider.id}/keys`, {
+      await fetchApi(`/admin/providers/${provider.id}/keys`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: newKey.trim() }),
       });
-      if (res.ok) {
-        setNewKey("");
-        await fetchKeys();
-        onUpdate();
-        toast.success(t("providers.apiKeys.toasts.addSuccess", "添加密钥成功"));
-      } else {
-        const data = await res.json();
-        toast.error(data.error || t("providers.apiKeys.toasts.addFailed", "添加密钥失败"));
-      }
+      setNewKey("");
+      await fetchKeys();
+      onUpdate();
+      toast.success(t("providers.apiKeys.toasts.addSuccess", "添加密钥成功"));
     } catch (e: any) {
-      toast.error(e.message || t("providers.apiKeys.toasts.requestFailed", "请求失败"));
+      toast.error(e.message || t("providers.apiKeys.toasts.addFailed", "添加密钥失败"));
     } finally {
       setAdding(false);
     }
@@ -78,32 +71,29 @@ export function ProviderApiKeysModal({ open, onOpenChange, provider, onUpdate }:
 
   const handleDelete = async (keyId: string) => {
     try {
-      const res = await fetch(`/api/admin/providers/${provider.id}/keys/${keyId}`, {
+      await fetchApi(`/admin/providers/${provider.id}/keys/${keyId}`, {
         method: "DELETE",
       });
-      if (res.ok) {
-        await fetchKeys();
-        onUpdate();
-      }
-    } catch (e) {
+      await fetchKeys();
+      onUpdate();
+    } catch (e: any) {
       console.error(e);
+      toast.error(e.message || t("providers.apiKeys.toasts.requestFailed", "请求失败"));
     }
   };
 
   const handleToggleStatus = async (keyId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'active' ? 'exhausted' : 'active';
-      const res = await fetch(`/api/admin/providers/${provider.id}/keys/${keyId}`, {
+      await fetchApi(`/admin/providers/${provider.id}/keys/${keyId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
-        await fetchKeys();
-        onUpdate();
-      }
-    } catch (e) {
+      await fetchKeys();
+      onUpdate();
+    } catch (e: any) {
       console.error(e);
+      toast.error(e.message || t("providers.apiKeys.toasts.requestFailed", "请求失败"));
     }
   };
 
@@ -128,7 +118,7 @@ export function ProviderApiKeysModal({ open, onOpenChange, provider, onUpdate }:
             onKeyDown={(e) => e.key === 'Enter' && handleAddKey()}
           />
           <Button onClick={handleAddKey} disabled={adding || !newKey.trim()}>
-            <Plus className="w-4 h-4 mr-1" /> {t("providers.actions.add", "添加")}
+            <Plus className="w-4 h-4 mr-1" /> {t("providers.apiKeys.actions.add", "添加")}
           </Button>
         </div>
 

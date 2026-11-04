@@ -65,7 +65,7 @@ async function migrateAndDropLegacyProviderKeyColumns() {
 
   const selectSql = `SELECT id, ${legacyColumns.map((column) => `"${column}"`).join(", ")} FROM providers`;
   const legacyRows = await db.run(sql.raw(selectSql));
-  const now = Date.now();
+  const now = Math.floor(Date.now() / 1000);
 
   for (const row of legacyRows.rows as any[]) {
     const providerId = row[0];
@@ -263,12 +263,7 @@ export async function bootstrap() {
   await migrateSqlite(db as any, { migrationsFolder });
   console.log("[PromptGate] Migrations completed.");
 
-  // Run auto migrations for missing columns
-  const { initAutoMigrations } = await import("./db");
-  await initAutoMigrations();
-  console.log("[PromptGate] Auto-migrations completed.");
-
-  // columns are migrated into the key pool and removed from the providers table.
+  // Migrate legacy provider key columns into the key pool before auto-migrations drop them.
   try {
     await migrateAndDropLegacyProviderKeyColumns();
   } catch (err) {
@@ -277,6 +272,11 @@ export async function bootstrap() {
       err,
     );
   }
+
+  // Run auto migrations for missing columns
+  const { initAutoMigrations } = await import("./db");
+  await initAutoMigrations();
+  console.log("[PromptGate] Auto-migrations completed.");
 
   try {
     await db.run(sql`ALTER TABLE chat_logs ADD COLUMN responseHash text`);

@@ -603,6 +603,7 @@
         "exhausted": "Disabled (Exhausted)"
       },
       "actions": {
+        "add": "Add Key",
         "disable": "Disable manually",
         "enable": "Re-enable"
       },
